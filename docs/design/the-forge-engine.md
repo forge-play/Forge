@@ -173,6 +173,12 @@ the per-project store.
   anything the deposit can key.
 - **The store pull.** A project store comes home to the box as shape, gated
   the way the app store promotes. On paper: `the-store-pull.md`, four drafts.
+- **The forge-workshop.** The template repo where the first question gets
+  asked; the same package; the live store stays home and the repo carries
+  the bundle. On paper: `the-forge-workshop.md`.
+- **The record gate.** Seven mechanical gates over a workshop's bundle,
+  beside the store's nine. On paper: `the-record-gate.md`; the store holds
+  a pointer.
 - **The trust block on this repo's own promotion.** The tool exists; the
   ratifying half is a verifier's act.
 

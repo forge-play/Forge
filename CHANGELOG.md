@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/forge-play/Forge/compare/v0.2.0...v0.3.0) (2026-09-03)
+
+
+### Added
+
+* **store-diff:** the build checks its store against the main one ([26e6a62](https://github.com/forge-play/Forge/commit/26e6a629cd6287e5e6f9b2aeca9f69312fdecfe1))
+
+
+### Fixed
+
+* **store-diff:** refuse a missing main path and a main path inside the checkout ([f2b0233](https://github.com/forge-play/Forge/commit/f2b023331e3a3de3eda9d3475b7a20690bb5cc6b))
+
 ## [0.2.0](https://github.com/forge-play/Forge/compare/v0.1.0...v0.2.0) (2026-09-03)
 
 

@@ -128,6 +128,32 @@ def test_a_sealed_project_answer_short_circuits_the_scan(home):
 
 
 @_needs_nestor
+def test_the_entry_reports_the_deposit_age_with_the_answer(home):
+    """Rule 3's second question, the-forge-shape.md §12: report the age and
+    the state with the answer, never silently. An empty store says `none`;
+    after a deposit the tier names the sha, the states and an age."""
+    from nestor.sqlite_store import SqliteStore
+    from forge import deposit
+    from forge.deposit import Run
+
+    e = entry.open_bite("a tiny cli that renames files", project_id=PROJECT, builder_id=BUILDER,
+                        responder=ScriptedResponder(), root=home / "cp")
+    assert e.tiers["deposit"].startswith("none")
+    assert list(e.tiers)[:2] == ["nestor", "deposit"], "asked, then how current the answer is"
+
+    store = SqliteStore(str(paths.project_nestor(PROJECT)))
+    deposit.deposit_ci(store, repo="forge-play/Forge", sha="cc9aab19ba2502e14e331e20e699f634fb4cb1a2",
+                       runs=[Run("Tests", "completed", "success", "1"), Run("CodeQL", "completed", "cancelled", "2")],
+                       actor_type="Bot", via="webhook_inbox")
+    e2 = entry.open_bite("a tiny cli that renames files", project_id=PROJECT, builder_id=BUILDER,
+                         responder=ScriptedResponder(), root=home / "cp")
+    t = e2.tiers["deposit"]
+    assert "forge-play/Forge@cc9aab19ba25" in t and "could_not_run 1" in t and "pass 1" in t
+    assert t.endswith(")") and " old: " in t
+    assert e2.tiers["nestor"].startswith("pending"), "a ci row never answers the decision ask"
+
+
+@_needs_nestor
 def test_the_box_seam_is_consulted_and_named(home):
     class FakeBox:
         name = "fake catalog"

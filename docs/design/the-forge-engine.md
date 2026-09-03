@@ -165,8 +165,20 @@ the per-project store.
 - **The box.** A real `BoxLookup` over the corpus and the app catalog.
 - **Model-proposed candidates.** The fork is the seam; a local model that
   writes forks into a plan is the first thing that can use it.
-- **The PR-time deposit.** CI outcome and decision edges written back into
-  the project's Nestor, by a propose-only identity.
+- **The PR-time deposit.** Built (2026-09-03): `forge/deposit.py` writes
+  `ci` rows and `refines` edges, propose-only, and reads willow-bot's webhook
+  inbox; `tools/pr_deposit.py` is the caller. Paper: `the-pr-time-deposit.md`.
+  `Entry.tiers["deposit"]` reports the store's last CI knowledge with its
+  age (Rule 3's second question), `none` when there is none. The bridge fix
+  in willow-bot (key on check id, carry `head_sha`) is on a branch there.
+- **The store pull.** A project store comes home to the box as shape, gated
+  the way the app store promotes. On paper: `the-store-pull.md`, four drafts.
+- **The forge-workshop.** The template repo where the first question gets
+  asked; the same package; the live store stays home and the repo carries
+  the bundle. On paper: `the-forge-workshop.md`.
+- **The record gate.** Seven mechanical gates over a workshop's bundle,
+  beside the store's nine. On paper: `the-record-gate.md`; the store holds
+  a pointer.
 - **The trust block on this repo's own promotion.** The tool exists; the
   ratifying half is a verifier's act.
 

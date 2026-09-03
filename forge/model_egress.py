@@ -1,22 +1,18 @@
 #!/usr/bin/env python3
-# ── SAFE App Store vendor note (The Forge, D7-A, 2026-08-11) ──────────────────
-# The DETECTION half of willow-mcp's src/willow_mcp/model_egress.py (Apache-2.0):
-# `model_host` / `_addresses` / `is_local_host`, copied byte-for-byte (below the
-# imports). This is the "is the model on this machine?" primitive D7 turns on —
-# fail-closed loopback detection (only all-loopback is local; an unparseable
-# URL, an unresolvable name, or a loopback/non-loopback mix all read as OFF the
-# machine and require a declared permission). Security-relevant and subtle
-# (literal-IP handling, no caching so a re-pointed host can't reuse an old
-# authorization), exactly the kind of thing rule 11 says reuse, not re-derive.
-#
-# What is deliberately NOT vendored: upstream's `denial()` and its
-# `from . import consent`. willow-mcp gates egress on an operator's standing
-# `consent.cloud_llm` file; the Forge gates it on the BUILD'S MANIFEST — a
-# cloud-fallback permission that already rides inside the D4 (sap-gate) manifest
-# signature, so the "declared, signed, bound-to-the-maker" property comes from
-# D4, not a separate consent store. That policy lives in `forge/model_route.py`
-# (the D7-A gate), which imports the detector below. Kept diffable against
-# upstream: if willow-mcp's copy of these three functions moves, reconcile.
+# ── home ────────────────────────────────────────────────────────────────────
+# The DETECTION half of model egress — `model_host` / `_addresses` /
+# `is_local_host`, the fail-closed "is the model on this machine?" primitive
+# D7 turns on (only all-loopback is local; an unparseable URL, an unresolvable
+# name, or a loopback/non-loopback mix all read as OFF the machine and require
+# a declared permission) — lives HERE as of 2026-09-03. It was written in
+# willow-mcp, vendored here on 2026-08-11, and came home once forge-play was
+# on PyPI: willow-mcp's src/willow_mcp/model_egress.py imports these three from
+# this module. What stays in willow-mcp on purpose: `denial()`, which reads
+# that repo's standing consent.cloud_llm. The Forge gates egress on the BUILD'S
+# MANIFEST instead — a cloud-fallback permission that rides inside the D4
+# (sap-gate) manifest signature — and that policy is forge/model_route.py,
+# which imports the detector below. Security-relevant and subtle: literal-IP
+# handling, no caching so a re-pointed host cannot reuse an old authorization.
 """model_egress (detection half) — is the model host on this machine?
 
 A model request is LOCAL (the vLLM/Ollama loopback default, no network) or it is

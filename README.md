@@ -78,9 +78,10 @@ is soft, and the engine degrades around its absence honestly:
 
 The Forge never imports `willow-mcp`. Willow depends on the Forge; the reverse
 would be a cycle, and `tests/test_no_reach_back.py` keeps it that way. Three
-modules (`human_loop`, `friction_floor`, `model_egress`) are vendored
-byte-for-byte from willow-mcp until they move home the other way;
-`tools/vendor_sync_check.py` keeps them honest meanwhile.
+modules that willow-mcp once owned — `human_loop`, `friction_floor`, and the
+detection half of `model_egress` — are canonical here, and willow-mcp imports
+them from `forge-play`; its `friction_floor` drift guard hashes this repo's
+copy against the willow-gate original.
 
 ## Development
 

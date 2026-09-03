@@ -1,0 +1,14 @@
+The Forge
+Copyright 2026 the SAFE App Store authors.
+
+This product includes software developed as part of the SAFE App Store
+(rudi193-cmd/safe-app-store), Apache-2.0.
+
+Vendored components (each Apache-2.0, copied rather than depended-on to keep the
+engine dependency-light; see each file's header for provenance):
+
+  forge/calibration.py     — calibration math, from oakenscrolls-office
+  forge/friction_floor.py  — sycophancy/mirror scorer, from willow-gate via willow-mcp
+  forge/human_loop.py      — attestation + human_required queue, from willow-mcp
+  forge/model_egress.py    — is_local_host egress detection, from willow-mcp
+  forge/_ids.py            — builder-id charset, from safe-app-store principal.py

@@ -1,0 +1,101 @@
+name: Tests
+
+# Ported from jeles (the fleet's cleanest chain) and trimmed to what this
+# repo has: no ruff/bandit config yet, no coverage floor yet. The three legs
+# that matter are kept — the matrix, the no-extras install, and the aggregate
+# `test` job that branch protection requires (auto-merge on the release PR
+# waits on it; with nothing required, GitHub will not arm auto-merge at all).
+#
+# Two things this suite needs to be honest about:
+#   * Nestor. The checkpoint tests seal decisions; with the fleet's per-verifier
+#     keyring in the environment they would correctly be refused (a synthetic
+#     verifier has no key). CI has no keyring, so nothing to unset here — but
+#     never export NESTOR_KEYRING into this job.
+#   * The soft dependencies. fsrs and codebase-memory-mcp are not installed
+#     here; their tests skip or degrade, and the no-extras leg proves the base
+#     install runs with nothing at all.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ${{ fromJSON(github.event_name == 'pull_request'
+          && '["3.11","3.13"]'
+          || '["3.11","3.12","3.13"]') }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # hatch-vcs derives the version from tags; a shallow checkout has none.
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install package with the test extra
+        run: pip install -e ".[test]"
+      - name: Run tests
+        run: python -m pytest tests/ -q
+
+  no-extras:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install with no extras
+        run: pip install -e . pytest pyyaml
+      - name: Assert the base install is dependency-free and Nestor is absent
+        run: |
+          python - <<'PY'
+          import importlib.util
+          from importlib.metadata import requires
+          declared = [r for r in (requires("forge-play") or []) if "extra ==" not in r]
+          assert not declared, f"base forge-play declared runtime deps: {declared}"
+          assert importlib.util.find_spec("nestor") is None, (
+              "nestor is installed in the no-extras job, so this leg is not "
+              "actually testing the soft-Nestor path"
+          )
+          assert importlib.util.find_spec("willow_mcp") is None, (
+              "willow_mcp is installed here; the engine must never depend on it"
+          )
+          print("base install is dependency-free; nestor and willow_mcp are absent")
+          PY
+      - name: Run tests without Nestor (soft-dependency path)
+        run: python -m pytest tests/ -q
+
+  test:
+    needs: [test-matrix, no-extras]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert every dependency actually succeeded
+        if: ${{ contains(needs.*.result, 'failure')
+                || contains(needs.*.result, 'cancelled')
+                || contains(needs.*.result, 'skipped') }}
+        run: |
+          echo "test-matrix=${{ needs.test-matrix.result }}"
+          echo "no-extras=${{ needs.no-extras.result }}"
+          echo "::error::a required job did not succeed — see the results above"
+          exit 1
+      - run: echo "all matrix legs and the no-extras install are green"

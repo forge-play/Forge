@@ -1,0 +1,74 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "forge-play"
+# The git tag is the single source of truth — see [tool.hatch.version]. The
+# version is deliberately not a literal here: kartikeya shipped a v0.0.8 tag
+# whose build produced 0.0.7 because a literal in this file went unbumped, and
+# willow-mcp's literal sat frozen 251 commits past its own release. This file
+# carried `0.1.0` for weeks with no tag and no release; that number was never
+# true of anything installed.
+dynamic = ["version"]
+description = "The Forge — a refuse-a-confident-wrong-answer harness (checkpoint loop + measuring panel) for SAFE-native AI app building"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Sean Campbell" }]
+requires-python = ">=3.11"
+keywords = ["checkpoint", "calibration", "governance", "human-in-the-loop", "nestor", "willow", "forge"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+# Zero runtime dependencies, on purpose — the same promise kartikeya and jeles
+# make, and the reason willow-mcp can take this package cheaply. Every heavy
+# piece (Nestor, fsrs, kartikeya, codebase-memory-mcp) is soft: the engine
+# degrades around its absence honestly (README, "Soft dependencies").
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/forge-play/Forge"
+Changelog = "https://github.com/forge-play/Forge/blob/master/CHANGELOG.md"
+
+[project.optional-dependencies]
+# pyyaml is for tests/test_release_wiring.py, which reads the release
+# workflows; nestor-meaning is the decision memory the checkpoint tests
+# exercise (they skip honestly without it).
+test = ["pytest>=8.0", "pyyaml", "nestor-meaning>=0.19.0,<1.0.0"]
+# The optional promotion-trust seam (forge/trust.py): turns §0.2's verified_by
+# from a string into a two-tier mechanism — the author provisionally seals the
+# promotion through willow-gate, a different verifier confers canonical via a
+# custody checkpoint signed by their key. Reuses nestor.cloud_seal wholesale;
+# fail-closes on import when the seam is absent (no gate → the host's local
+# check stands). nestor-meaning[gate] pulls in willow-gate transitively.
+trust = ["nestor-meaning[gate]"]
+
+[tool.hatch.version]
+# Derived from the git tag (hatch-vcs). At an exact tag `vX.Y.Z` the version is
+# X.Y.Z; off-tag builds get a `.devN+g<sha>` suffix PyPI rejects, so a publish
+# from an untagged commit fails loudly instead of shipping something
+# mislabelled. CI must check out with `fetch-depth: 0` or no tags are present.
+#
+# No tag exists yet; `.release-please-manifest.json` starts at 0.0.0 so the
+# first `feat:` proposes v0.1.0. Cutting a release is release-please's job
+# (`release-please-config.json`, `release-type: simple`) — let it pick the
+# number from the commits rather than tagging by hand.
+source = "vcs"
+
+[tool.hatch.build.targets.wheel]
+# The import name stays `forge`; only the distribution name is `forge-play`.
+packages = ["forge"]
+
+[tool.hatch.build.targets.sdist]
+include = ["forge/", "tests/", "tools/", "demo/", "docs/", "README.md", "CHANGELOG.md", "LICENSE", "NOTICE", "promotion.json"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

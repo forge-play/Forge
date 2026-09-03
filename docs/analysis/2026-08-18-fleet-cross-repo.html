@@ -1,0 +1,547 @@
+<title>Forge Fleet Analysis</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Source+Sans+3:ital,wght@0,300;0,400;0,600;0,700;1,400&display=swap">
+
+<style>
+  :root {
+    --ground: #F7F4F0;
+    --surface: #FFFFFF;
+    --text: #2C2520;
+    --text-muted: #6B5E52;
+    --accent: #C4613A;
+    --accent-dim: #D4714A22;
+    --brass: #8B7355;
+    --patina: #4A6B5A;
+    --patina-dim: #4A6B5A18;
+    --iron: #3D3530;
+    --rule: #D6CFC7;
+    --code-bg: #EDE8E2;
+    --card-bg: #FDFCFB;
+    --card-border: #E3DCD4;
+    --node-forge: #C4613A;
+    --node-nestor: #6B8FA3;
+    --node-store: #8B7355;
+    --node-grove: #7A6B91;
+    --node-willow: #5A8B6B;
+    --node-homestead: #A38B6B;
+    --node-prc: #6B7A8B;
+    --edge-active: #C4613A;
+    --edge-dormant: #C4C0BB;
+    --edge-new: #4A6B5A;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #1A1714;
+      --surface: #242019;
+      --text: #E8E0D6;
+      --text-muted: #9B8E82;
+      --accent: #D4714A;
+      --accent-dim: #D4714A1A;
+      --brass: #B89B73;
+      --patina: #6B9B7A;
+      --patina-dim: #6B9B7A15;
+      --iron: #C4BAB0;
+      --rule: #3D3530;
+      --code-bg: #2C2520;
+      --card-bg: #1F1B17;
+      --card-border: #3D3530;
+      --node-forge: #D4714A;
+      --node-nestor: #8BB0C4;
+      --node-store: #B89B73;
+      --node-grove: #9B8BB0;
+      --node-willow: #7AB08B;
+      --node-homestead: #C4AB8B;
+      --node-prc: #8B9BB0;
+      --edge-active: #D4714A;
+      --edge-dormant: #4A4440;
+      --edge-new: #6B9B7A;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #1A1714;
+    --surface: #242019;
+    --text: #E8E0D6;
+    --text-muted: #9B8E82;
+    --accent: #D4714A;
+    --accent-dim: #D4714A1A;
+    --brass: #B89B73;
+    --patina: #6B9B7A;
+    --patina-dim: #6B9B7A15;
+    --iron: #C4BAB0;
+    --rule: #3D3530;
+    --code-bg: #2C2520;
+    --card-bg: #1F1B17;
+    --card-border: #3D3530;
+    --node-forge: #D4714A;
+    --node-nestor: #8BB0C4;
+    --node-store: #B89B73;
+    --node-grove: #9B8BB0;
+    --node-willow: #7AB08B;
+    --node-homestead: #C4AB8B;
+    --node-prc: #8B9BB0;
+    --edge-active: #D4714A;
+    --edge-dormant: #4A4440;
+    --edge-new: #6B9B7A;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--text);
+    font-family: 'Source Sans 3', 'Source Sans Pro', system-ui, sans-serif;
+    font-size: 17px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 3rem 1.5rem 4rem;
+  }
+
+  h1 {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-weight: 700;
+    font-size: 2.2rem;
+    line-height: 1.2;
+    color: var(--text);
+    margin-bottom: 0.3rem;
+    text-wrap: balance;
+  }
+
+  .subtitle {
+    font-size: 1.05rem;
+    color: var(--text-muted);
+    margin-bottom: 0.5rem;
+  }
+
+  .dateline {
+    font-size: 0.82rem;
+    color: var(--brass);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin-bottom: 2.5rem;
+  }
+
+  h2 {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-weight: 600;
+    font-size: 1.45rem;
+    color: var(--text);
+    margin-top: 2.8rem;
+    margin-bottom: 1rem;
+    text-wrap: balance;
+  }
+
+  h3 {
+    font-weight: 600;
+    font-size: 1.05rem;
+    color: var(--iron);
+    margin-top: 1.8rem;
+    margin-bottom: 0.5rem;
+    letter-spacing: 0.01em;
+  }
+
+  p { margin-bottom: 1rem; max-width: 65ch; }
+
+  code {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 0.85em;
+    background: var(--code-bg);
+    padding: 0.15em 0.35em;
+    border-radius: 3px;
+    color: var(--accent);
+  }
+
+  .graph-section {
+    background: var(--surface);
+    border: 1px solid var(--card-border);
+    border-radius: 6px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+    overflow-x: auto;
+  }
+
+  .graph-section svg {
+    display: block;
+    margin: 0 auto;
+    max-width: 100%;
+    height: auto;
+  }
+
+  .legend {
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    margin-top: 1rem;
+    padding-top: 0.8rem;
+    border-top: 1px solid var(--rule);
+    font-size: 0.82rem;
+    color: var(--text-muted);
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .legend-swatch {
+    width: 18px;
+    height: 3px;
+    border-radius: 2px;
+  }
+
+  .finding {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 5px 5px 0;
+    padding: 1rem 1.2rem;
+    margin-bottom: 1rem;
+  }
+  .finding.green { border-left-color: var(--patina); }
+  .finding.brass { border-left-color: var(--brass); }
+  .finding-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 0.3rem;
+  }
+  .finding-label.alert { color: var(--accent); }
+  .finding-label.ready { color: var(--patina); }
+  .finding-label.note { color: var(--brass); }
+
+  .state-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.92rem;
+    margin: 1rem 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .state-table th {
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.5rem 0.8rem;
+    border-bottom: 2px solid var(--rule);
+  }
+  .state-table td {
+    padding: 0.6rem 0.8rem;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+  }
+  .state-table tr:last-child td { border-bottom: none; }
+
+  .pill {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0.15em 0.5em;
+    border-radius: 3px;
+  }
+  .pill.merged { background: var(--patina-dim); color: var(--patina); }
+  .pill.branch { background: var(--accent-dim); color: var(--accent); }
+  .pill.released { background: var(--patina-dim); color: var(--patina); }
+
+  .edge-list {
+    list-style: none;
+    padding: 0;
+    margin: 0.8rem 0;
+  }
+  .edge-list li {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--rule);
+    font-size: 0.95rem;
+  }
+  .edge-list li:last-child { border-bottom: none; }
+  .edge-arrow {
+    color: var(--brass);
+    font-weight: 600;
+    margin: 0 0.3rem;
+  }
+
+  .section-rule {
+    border: none;
+    border-top: 1px solid var(--rule);
+    margin: 2.5rem 0;
+  }
+
+  .summary-box {
+    background: var(--accent-dim);
+    border: 1px solid var(--accent);
+    border-radius: 5px;
+    padding: 1.2rem 1.4rem;
+    margin: 1.5rem 0;
+  }
+  .summary-box p { margin-bottom: 0.5rem; }
+  .summary-box p:last-child { margin-bottom: 0; }
+
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin: 1rem 0;
+  }
+  @media (max-width: 640px) {
+    .two-col { grid-template-columns: 1fr; }
+    h1 { font-size: 1.7rem; }
+  }
+
+  .repo-tag {
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 0.1em 0.4em;
+    border-radius: 3px;
+    white-space: nowrap;
+  }
+  .repo-tag.forge { background: #C4613A22; color: var(--node-forge); }
+  .repo-tag.nestor { background: #6B8FA322; color: var(--node-nestor); }
+  .repo-tag.store { background: #8B735522; color: var(--node-store); }
+  .repo-tag.grove { background: #7A6B9122; color: var(--node-grove); }
+  .repo-tag.willow { background: #5A8B6B22; color: var(--node-willow); }
+  .repo-tag.homestead { background: #A38B6B22; color: var(--node-homestead); }
+  .repo-tag.prc { background: #6B7A8B22; color: var(--node-prc); }
+
+  .footnote {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--rule);
+  }
+</style>
+
+<div class="page">
+
+<h1>How the last five days further the Forge</h1>
+<p class="subtitle">Cross-repo analysis: what landed, what's in flight, and where the edges strengthened</p>
+<p class="dateline">Aug 13 &ndash; 18, 2026 &middot; 6 Sonnet agents, 7 repos</p>
+
+<!-- DEPENDENCY GRAPH -->
+<div class="graph-section">
+<svg viewBox="0 0 720 340" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Forge dependency graph showing connections between repos">
+  <!-- edges (drawn first, behind nodes) -->
+  <!-- Forge -> Nestor (active, EntityResolver + cloud_seal) -->
+  <line x1="360" y1="72" x2="170" y2="172" stroke="var(--edge-active)" stroke-width="2.5" stroke-dasharray="none"/>
+  <!-- Forge -> willow-gate (dormant, trust.py import fails) -->
+  <line x1="360" y1="72" x2="550" y2="172" stroke="var(--edge-dormant)" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <!-- Forge -> kartikeya (dormant) -->
+  <line x1="360" y1="72" x2="660" y2="100" stroke="var(--edge-dormant)" stroke-width="1" stroke-dasharray="4,4"/>
+  <!-- Nestor -> homestead (both consume EntityResolver) -->
+  <line x1="170" y1="200" x2="90" y2="290" stroke="var(--edge-new)" stroke-width="1.5"/>
+  <!-- store -> Forge (extraction edge, incomplete) -->
+  <line x1="360" y1="200" x2="360" y2="72" stroke="var(--edge-active)" stroke-width="2" stroke-dasharray="8,3"/>
+  <!-- store -> promote_check -> Nestor -->
+  <line x1="340" y1="200" x2="190" y2="200" stroke="var(--brass)" stroke-width="1.5"/>
+  <!-- willow-mcp -> Grove (shared adaptor) -->
+  <line x1="550" y1="290" x2="450" y2="290" stroke="var(--edge-new)" stroke-width="2"/>
+  <!-- store -> PRC (readiness corpus, new) -->
+  <line x1="380" y1="220" x2="250" y2="290" stroke="var(--edge-new)" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <!-- Grove -> willow-mcp (20 new tools) -->
+  <line x1="470" y1="270" x2="530" y2="270" stroke="var(--edge-new)" stroke-width="2"/>
+
+  <!-- FORGE node -->
+  <rect x="300" y="40" width="120" height="52" rx="6" fill="var(--surface)" stroke="var(--node-forge)" stroke-width="2.5"/>
+  <text x="360" y="62" text-anchor="middle" fill="var(--node-forge)" font-family="Playfair Display, Georgia, serif" font-weight="700" font-size="16">The Forge</text>
+  <text x="360" y="80" text-anchor="middle" fill="var(--text-muted)" font-size="10" font-family="Source Sans 3, sans-serif">checkpoint + measure</text>
+
+  <!-- NESTOR node -->
+  <rect x="110" y="170" width="120" height="52" rx="6" fill="var(--surface)" stroke="var(--node-nestor)" stroke-width="2"/>
+  <text x="170" y="193" text-anchor="middle" fill="var(--node-nestor)" font-family="Source Sans 3, sans-serif" font-weight="600" font-size="14">Nestor</text>
+  <text x="170" y="210" text-anchor="middle" fill="var(--text-muted)" font-size="10" font-family="Source Sans 3, sans-serif">v0.5.0 &middot; seal + entity</text>
+
+  <!-- SAFE-APP-STORE node -->
+  <rect x="290" y="170" width="140" height="52" rx="6" fill="var(--surface)" stroke="var(--node-store)" stroke-width="2"/>
+  <text x="360" y="193" text-anchor="middle" fill="var(--node-store)" font-family="Source Sans 3, sans-serif" font-weight="600" font-size="14">safe-app-store</text>
+  <text x="360" y="210" text-anchor="middle" fill="var(--text-muted)" font-size="10" font-family="Source Sans 3, sans-serif">promote + playground</text>
+
+  <!-- WILLOW-GATE node (dormant) -->
+  <rect x="490" y="170" width="120" height="42" rx="6" fill="var(--surface)" stroke="var(--edge-dormant)" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="550" y="196" text-anchor="middle" fill="var(--text-muted)" font-family="Source Sans 3, sans-serif" font-weight="600" font-size="13">willow-gate</text>
+
+  <!-- GROVE node -->
+  <rect x="390" y="265" width="120" height="45" rx="6" fill="var(--surface)" stroke="var(--node-grove)" stroke-width="2"/>
+  <text x="450" y="285" text-anchor="middle" fill="var(--node-grove)" font-family="Source Sans 3, sans-serif" font-weight="600" font-size="13">Grove</text>
+  <text x="450" y="300" text-anchor="middle" fill="var(--text-muted)" font-size="9" font-family="Source Sans 3, sans-serif">OAuth + remote MCP</text>
+
+  <!-- WILLOW-MCP node -->
+  <rect x="520" y="265" width="120" height="45" rx="6" fill="var(--surface)" stroke="var(--node-willow)" stroke-width="2"/>
+  <text x="580" y="285" text-anchor="middle" fill="var(--node-willow)" font-family="Source Sans 3, sans-serif" font-weight="600" font-size="13">willow-mcp</text>
+  <text x="580" y="300" text-anchor="middle" fill="var(--text-muted)" font-size="9" font-family="Source Sans 3, sans-serif">v2.10 &middot; 20 grove tools</text>
+
+  <!-- HOMESTEAD node -->
+  <rect x="30" y="270" width="120" height="45" rx="6" fill="var(--surface)" stroke="var(--node-homestead)" stroke-width="2"/>
+  <text x="90" y="290" text-anchor="middle" fill="var(--node-homestead)" font-family="Source Sans 3, sans-serif" font-weight="600" font-size="13">homestead</text>
+  <text x="90" y="305" text-anchor="middle" fill="var(--text-muted)" font-size="9" font-family="Source Sans 3, sans-serif">Nestor seam &middot; 3 postures</text>
+
+  <!-- PRC node -->
+  <rect x="180" y="270" width="140" height="45" rx="6" fill="var(--surface)" stroke="var(--node-prc)" stroke-width="2"/>
+  <text x="250" y="290" text-anchor="middle" fill="var(--node-prc)" font-family="Source Sans 3, sans-serif" font-weight="600" font-size="13">prod-readiness</text>
+  <text x="250" y="305" text-anchor="middle" fill="var(--text-muted)" font-size="9" font-family="Source Sans 3, sans-serif">10k controls &middot; scanner</text>
+
+  <!-- kartikeya (ghost) -->
+  <text x="660" y="105" text-anchor="middle" fill="var(--text-muted)" font-size="11" font-family="Source Sans 3, sans-serif" font-style="italic">kartikeya</text>
+
+  <!-- edge labels -->
+  <text x="242" y="123" fill="var(--accent)" font-size="9" font-family="Source Sans 3, sans-serif" font-weight="600" transform="rotate(-28, 242, 123)">EntityResolver</text>
+  <text x="470" y="130" fill="var(--text-muted)" font-size="9" font-family="Source Sans 3, sans-serif" font-style="italic" transform="rotate(24, 470, 130)">dormant</text>
+  <text x="490" y="278" fill="var(--node-willow)" font-size="8" font-family="Source Sans 3, sans-serif" font-weight="600">adaptor</text>
+  <text x="360" y="145" fill="var(--accent)" font-size="9" font-family="Source Sans 3, sans-serif" font-weight="600">extraction</text>
+  <text x="300" y="295" fill="var(--edge-new)" font-size="8" font-family="Source Sans 3, sans-serif" font-style="italic">readiness corpus</text>
+</svg>
+<div class="legend">
+  <div class="legend-item"><div class="legend-swatch" style="background: var(--edge-active)"></div> Active dependency</div>
+  <div class="legend-item"><div class="legend-swatch" style="background: var(--edge-new)"></div> New / strengthened this week</div>
+  <div class="legend-item"><div class="legend-swatch" style="background: var(--edge-dormant)"></div> Dormant (import fails, degrades)</div>
+  <div class="legend-item"><div class="legend-swatch" style="background: var(--brass); height: 2px;" ></div> Promotion gate</div>
+</div>
+</div>
+
+<!-- HEADLINE FINDING -->
+<div class="summary-box">
+  <p><strong>The single biggest finding:</strong> The Forge's extraction from safe-app-store is incomplete. <code>host_repointed</code> was never flipped &mdash; the store still carries a full pre-extraction duplicate of every Forge module, and the readiness work of the last two days runs against that stale copy, not the promoted <code>/home/user/Forge</code> repo.</p>
+</div>
+
+<!-- WHAT LANDED -->
+<h2>What landed on default branches</h2>
+
+<div style="overflow-x: auto;">
+<table class="state-table">
+<thead>
+<tr><th>Repo</th><th>Key merge / release</th><th>Forge relevance</th></tr>
+</thead>
+<tbody>
+<tr>
+  <td><span class="repo-tag nestor">Nestor</span></td>
+  <td><span class="pill released">v0.5.0</span> Evidence for &lt;pair&gt;, complexity audit (Batches 1&ndash;3), README trim, <code>add_pair</code>/<code>import_bundle</code> decomposition, capability registry consolidation</td>
+  <td>Reduced agent ceremony fleet-wide. <code>EntityResolver</code> and <code>cloud_seal</code> surfaces untouched &mdash; Forge's soft-dependency contract unaffected.</td>
+</tr>
+<tr>
+  <td><span class="repo-tag store">safe-app-store</span></td>
+  <td><span class="pill merged">PR #199</span> homestead-health bites 2&ndash;7 (roster, immunizations, due-onto-Today, school form, emergency card, living lane, reference lane). Also: <span class="pill merged">PR #196</span> the-table/aetheris5e (5e combat + dice seam)</td>
+  <td>homestead-health is the <strong>first real test of the promotion pipeline</strong>. The three promo-recon branches (unmerged) are scouting exactly what gates the Forge's <code>promote_check</code> demands.</td>
+</tr>
+<tr>
+  <td><span class="repo-tag willow">willow-mcp</span></td>
+  <td><span class="pill released">v2.10.0</span> 20 new Grove MCP tools (agent-side successor to willow-2.0), sender lock via <code>grove_relay</code> capability, <code>grove_write</code> scoped to ratified matrix</td>
+  <td>No direct Forge import. But <code>grove_human_required</code> mirrors Forge's <code>human_loop</code> queue &mdash; the ready path for multi-agent checkpoint escalation.</td>
+</tr>
+<tr>
+  <td><span class="repo-tag grove">Grove</span></td>
+  <td><span class="pill merged">PR #34</span> Remote MCP adaptor restored (tunnel-agnostic for Pangolin), per-tool OAuth read/write scopes, audit bookkeeping fixes</td>
+  <td>No Forge coupling. The OAuth scope pattern (<code>grove:read</code>/<code>grove:write</code> per-tool, not ambient) is the same declared-not-ambient shape Forge uses for model routing.</td>
+</tr>
+<tr>
+  <td><span class="repo-tag homestead">homestead</span></td>
+  <td><span class="pill merged">PR #22</span> Three postures (pinned/reference/living) for homestead-health. <span class="pill merged">PR #20</span> Nestor seam pinned at v0.2.0</td>
+  <td>Parallel <code>EntityResolver</code> consumer &mdash; sibling to Forge, not dependent on it. The seam's root-move resilience validates the same soft-dependency pattern Forge uses.</td>
+</tr>
+<tr>
+  <td><span class="repo-tag prc">prod-readiness</span></td>
+  <td><span class="pill merged">9 PRs</span> Complete engineering lifecycle (16 phases, 10k controls), scanner vision, UI</td>
+  <td>Same shape as <code>promote_check.py</code> (fail-closed gate, evidence-cited, human decides). Not wired to Forge yet &mdash; only to the store-side duplicate.</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<!-- WHAT'S IN FLIGHT -->
+<h2>What's on unmerged branches</h2>
+
+<h3><span class="repo-tag nestor">Nestor</span> &mdash; four branches, all today</h3>
+
+<div class="finding green">
+  <div class="finding-label ready">Directly serves the Forge</div>
+  <p><strong>Fuzzy <code>constraints_on</code></strong> (<code>nestor/decision.py</code>, <code>nestor/cli.py</code>): when an exact-norm match fails, scans candidates with <code>StringMatcher</code> above a 0.55 bar (calibrated on the 418-decision dogfood corpus). Tags results <code>match: exact|fuzzy|none</code>. This is exactly what the Forge's <strong>recognize band</strong> needs &mdash; a re-worded prior decision that the recognize band would currently miss as "no prior memory" now gets found before escalating to full Socratic.</p>
+</div>
+
+<div class="finding brass">
+  <div class="finding-label note">Integrity hardening</div>
+  <p><strong>Plumbing fixes</strong>: <code>dogfood_store.py</code>'s <code>_bundle_digest</code> now hashes <code>(source_text, target_text, status, origin, reason)</code> instead of just the first three &mdash; a digest blind to provenance fields was a silent trust gap the Forge would inherit when trusting sealed decision memory.</p>
+</div>
+
+<div class="finding brass">
+  <div class="finding-label note">Ceremony reduction</div>
+  <p><strong>Change-class table</strong> in <code>AGENTS.md</code>: routes agents to <code>docs-only</code> / <code>lint-only</code> / <code>full</code> verification by changed path (IDEAS &sect;6.100). Reduces fleet-wide agent overhead, directly useful to safe-app-store's playground/promotion tiers.</p>
+</div>
+
+<h3><span class="repo-tag store">safe-app-store</span> &mdash; four branches, all today</h3>
+
+<div class="finding">
+  <div class="finding-label alert">Promotion pipeline live test</div>
+  <p><strong>Three promo-recon branches</strong> are the first real due-diligence scouts for a promotion. Each adds a doc under <code>docs/promotion/recon/</code>:</p>
+  <ul style="margin: 0.5rem 0 0.5rem 1.2rem; font-size: 0.95rem;">
+    <li><strong>jeles.md</strong>: homestead-health's <code>reference_lane.Reader</code> already satisfies <code>semantic_seam [M]</code>. Do NOT inject Jeles's reader (it would regress the H-7 wall).</li>
+    <li><strong>willow-gate.md</strong>: the cryptographic seal is NOT needed yet &mdash; string-floor <code>witnessed</code> suffices. <code>forge.trust</code> + <code>willow_gate.custody</code> confirmed absent (<code>ModuleNotFoundError</code>).</li>
+    <li><strong>willow-mcp.md</strong>: homestead-health calls no willow tools &mdash; promotes as "library-clean" under the MCP-shaped OR library-clean bar.</li>
+  </ul>
+  <p style="margin-top: 0.6rem;"><strong>Blocker</strong>: <code>promotion.json</code> does not exist yet. This is the single concrete missing artifact.</p>
+</div>
+
+<div class="finding green">
+  <div class="finding-label ready">homestead-health itself</div>
+  <p>7 bites complete, 128 tests green, two adversarial audits passed. Three postures: <strong>pinned</strong> (records, never overwritten), <strong>reference</strong> (public knowledge, no subject), <strong>living</strong> (a forgetting cell, overwrite-in-place). The living lane mechanism was found already built in <code>homestead/keep/logs.py</code> &mdash; a &sect;11 "house already knew" moment, called out in the plan.</p>
+</div>
+
+<!-- CROSS-REPO CONNECTIONS -->
+<hr class="section-rule">
+
+<h2>How the pieces further each other</h2>
+
+<h3>1. The Nestor &harr; Forge axis (the tightest coupling)</h3>
+<p>The Forge's checkpoint loop depends on Nestor's <code>EntityResolver</code> for all three bands. The fuzzy <code>constraints_on</code> change on the unmerged branch directly strengthens the recognize band &mdash; the Forge's ability to match a re-worded prior decision without falling through to full Socratic. Meanwhile, the plumbing digest fix hardens the trust chain the Forge's <code>trust.py</code> would rely on when pulling sealed decisions from Nestor.</p>
+<p>v0.5.0's complexity audit (decomposing <code>add_pair</code> and <code>import_bundle</code> into named steps, consolidating the capability registry) doesn't change the API surface the Forge calls, but makes Nestor more legible to the agents that will operate the Forge's checkpoint loop &mdash; the same "reduce ceremony" direction the change-class table takes.</p>
+
+<h3>2. The homestead-health promotion pipeline (the live test)</h3>
+<p>homestead-health in <code>apps/</code> is exercising the Forge's promotion apparatus for the first time against a real build. The three promo-recon branches are scouting exactly which of <code>promote_check.py</code>'s 9 gates apply and how:</p>
+<ul style="margin: 0.5rem 0 0.5rem 1.2rem;">
+  <li><code>witnessed [M]</code> &mdash; string floor, not the cryptographic <code>forge.trust.witnessed()</code> path (dormant)</li>
+  <li><code>semantic_seam [M]</code> &mdash; satisfied by the grown <code>reference_lane.Reader</code>, not Jeles injection</li>
+  <li>Library-clean path bypasses the MCP-shaped gate entirely</li>
+</ul>
+<p>This promotion, when it happens, will be the first to traverse <code>promote_check.py</code> end-to-end with full due-diligence documentation. The promo-recon pattern itself (scout each gate in a separate branch before attempting the promotion) is a reusable precedent.</p>
+
+<h3>3. The Grove &harr; willow-mcp unification (the coordination surface)</h3>
+<p>Both repos' Aug 17 PRs share branch name <code>claude/grove-adaptor-remote-restore-rlfsj6</code> &mdash; one change, two sides. willow-mcp's 20 new tools are the agent-facing surface; Grove's OAuth scope work secures that surface for remote access. The sender lock (<code>grove_relay</code> capability, not folded into <code>grove_write</code>) means an agent can't impersonate another agent through the coordination channel &mdash; the same "declared-not-ambient, fail-closed" discipline the Forge applies to model routing.</p>
+<p>The <code>grove_human_required</code> tool is particularly interesting: it surfaces the same human-required queue that Forge's <code>checkpoint_governance.py</code> writes to via <code>human_loop</code>. Today these are separate stores (Forge writes SOIL, Grove reads Postgres). If they converge, a parked checkpoint decision could surface in Grove's dashboard for a human to resume &mdash; the <code>park_checkpoint</code>/<code>resume_checkpoint</code> flow is already built.</p>
+
+<h3>4. The homestead seam pattern (validation of soft-dependency)</h3>
+<p>homestead's <code>nestor_seam.py</code> pins Nestor at v0.2.0 and resolves paths through homestead's own <code>paths.py</code>, not Nestor's. When Nestor renamed its home-paths module, the seam silently absorbed the change &mdash; "the seam earning its keep." This is the exact same soft-dependency pattern the Forge uses (<code>nestor_available()</code> gate, degrade to full-Socratic). Both repos now independently validate that the pattern works under real drift.</p>
+
+<h3>5. The production-readiness checklist as a future gate corpus</h3>
+<p>The checklist's 10,042 controls across 16 lifecycle phases have the same structural shape as <code>promote_check.py</code>: fail-closed, evidence-cited, human-decides. A store-side <code>readiness_corpus.py</code> already maps <code>promote_check</code> gates to specific control IDs (e.g., <code>witnessed</code> &rarr; <code>USEQ-E075330B</code>). This wiring currently hits the stale store-side duplicate, not the promoted Forge repo &mdash; the extraction incompleteness blocks it from being useful.</p>
+
+<!-- OPEN THREADS -->
+<hr class="section-rule">
+
+<h2>Open threads</h2>
+
+<div class="two-col">
+  <div class="finding">
+    <div class="finding-label alert">Forge extraction incomplete</div>
+    <p><code>stores/python/stored/the-forge.json</code> shows <code>state: building</code>, <code>host_repointed</code> still pending. The store carries a full duplicate of every Forge module. Readiness work targets the copy, not the real repo.</p>
+  </div>
+  <div class="finding">
+    <div class="finding-label alert">promotion.json missing</div>
+    <p>homestead-health has 128 tests green, two audits passed, three recon branches documenting gate satisfaction &mdash; but no <code>promotion.json</code> yet. This is the one concrete blocker for the first real promotion.</p>
+  </div>
+  <div class="finding brass">
+    <div class="finding-label note">Nestor branches need merge</div>
+    <p>Four Nestor branches from today with real fixes (fuzzy constraints, digest integrity, change-class table). The fuzzy <code>constraints_on</code> change is the most Forge-relevant &mdash; the recognize band benefits immediately.</p>
+  </div>
+  <div class="finding brass">
+    <div class="finding-label note">SOIL &harr; Postgres bridge</div>
+    <p>Forge's <code>human_loop</code> writes to SOIL; Grove's <code>grove_human_required</code> reads from Postgres. The park/resume checkpoint flow exists but the stores don't converge yet. This is the path to a human resuming a parked decision from the Grove dashboard.</p>
+  </div>
+</div>
+
+<p class="footnote">Analysis produced by 6 Sonnet agents (4 breadth, 2 depth) reading all 7 repos. Evidence paths cited throughout; no inference from filenames or absence of findings.</p>
+
+</div>

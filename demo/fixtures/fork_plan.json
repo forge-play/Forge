@@ -1,0 +1,34 @@
+{
+  "app_name": "rally-dates",
+  "entries": [
+    {
+      "kind": "file_write",
+      "dest_path": "README.md",
+      "content": "# rally-dates\n\nTells Rosalind which rally pictures have no date on them.\n"
+    },
+    {
+      "kind": "fork",
+      "decision_type": "where-the-dates-live",
+      "surface": "When a picture gets a date, where does the date go?",
+      "options": [
+        {"label": "sidecar json", "tradeoff": "the pictures stay untouched; the dates live in a file beside them and can be lost separately"},
+        {"label": "exif in place", "tradeoff": "the date travels with the picture forever; the original bytes change"}
+      ],
+      "recommended": "sidecar json",
+      "confidence": 0.8,
+      "resolves": {
+        "sidecar json": [
+          {"kind": "file_write", "dest_path": "dates.py", "content": "# writes <picture>.json beside each picture\n"}
+        ],
+        "exif in place": [
+          {"kind": "file_write", "dest_path": "dates.py", "content": "# writes DateTimeOriginal into each picture's EXIF\n"}
+        ]
+      }
+    },
+    {
+      "kind": "file_write",
+      "dest_path": "app.py",
+      "content": "print('which pics have no date?')\n"
+    }
+  ]
+}

@@ -1,0 +1,96 @@
+# forge/keywords.toml — the keyword → major table.
+#
+# "The first artifact to build is the keyword → major table. A flat file
+# somebody can read and argue with." (the-forge-shape.md §3)
+#
+# A real opening sentence contains almost no spec. It contains keywords, and a
+# regex finds them. Each keyword maps to one or more MAJORS — the kind of thing
+# the maker is asking for. One major: the entry knows what it is building. More
+# than one: a detectable condition with a scripted response — ASK. No model is
+# consulted at any point; this file IS the reasoning.
+#
+# Rows are deliberately few and deliberately arguable. Add a row when a real
+# sentence missed; argue about a row when it mapped wrong. `reason` is the
+# argument for the row, in one line. `caps` names what a build of that major
+# would need, in the store's own vocabulary (client_only, file_read, network…),
+# so the demo and the entry can say it out loud.
+#
+# The scan is word-boundary and case-insensitive. `aliases` are other spellings
+# of the same keyword (plurals, slang) that map to the same majors.
+
+[[map]]
+keyword = "site"
+aliases = ["sites", "website", "websites", "webpage", "webpages", "page", "pages"]
+major = "web"
+reason = "a site is served; web is the only major that serves"
+caps = ["network", "serve"]
+
+[[map]]
+keyword = "app"
+aliases = ["apps", "application", "applications"]
+major = "web"
+reason = "an app can be a served page — the web major, no install"
+caps = ["network", "serve"]
+
+[[map]]
+keyword = "app"
+aliases = ["apps", "application", "applications"]
+major = "mobile"
+reason = "an app can be a phone app — the mobile major, an APK to sign and admit"
+caps = ["toolchain:android", "sign"]
+
+[[map]]
+keyword = "app"
+aliases = ["apps", "application", "applications"]
+major = "desktop"
+reason = "an app can be a desktop program — the desktop major, runs where the maker sits"
+caps = ["client_only"]
+
+[[map]]
+keyword = "cli"
+aliases = ["command", "commandline", "command-line", "terminal", "script", "scripts"]
+major = "cli"
+reason = "runs in a terminal, takes arguments, prints; the smallest major there is"
+caps = ["client_only"]
+
+[[map]]
+keyword = "api"
+aliases = ["apis", "service", "services", "endpoint", "endpoints", "server"]
+major = "service"
+reason = "something other programs call; a service major has a contract, not a screen"
+caps = ["network", "serve"]
+
+[[map]]
+keyword = "bot"
+aliases = ["bots", "agent", "agents", "assistant"]
+major = "agent"
+reason = "acts on someone's behalf on a schedule or a trigger; the agent major needs a seat and a leash"
+caps = ["network", "seat"]
+
+[[map]]
+keyword = "pics"
+aliases = ["pic", "picture", "pictures", "photo", "photos", "photograph", "photographs", "image", "images"]
+major = "image tool"
+reason = "the maker wants to look at, sort, or fix pictures; a client-only tool over files"
+caps = ["client_only", "file_read"]
+
+[[map]]
+keyword = "date"
+aliases = ["dates", "timestamp", "timestamps", "exif", "metadata", "tag", "tags", "tagged"]
+major = "metadata tool"
+reason = "the maker wants to read or fix what is written ON the files, not the files"
+caps = ["client_only", "file_read", "file_write"]
+
+[[map]]
+keyword = "spreadsheet"
+aliases = ["spreadsheets", "csv", "table", "tables", "ledger", "tracker", "list", "lists"]
+major = "records tool"
+reason = "rows and columns the maker keeps; a records major is a store with a view"
+caps = ["client_only", "file_read", "file_write"]
+
+[[map]]
+keyword = "game"
+aliases = ["games"]
+major = "game"
+reason = "a loop with rules and a player; its own major because its bar is fun, not correctness"
+caps = ["client_only"]

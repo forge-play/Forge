@@ -1,0 +1,13 @@
+{
+  "app_id": "the-forge",
+  "author": "vishwakarma",
+  "verified_by": "rudi193",
+  "repo_url": "https://github.com/forge-play/Forge",
+  "host": "safe-app-store",
+  "core_module": "forge",
+  "pure_core": "forge",
+  "semantic_seam": "forge.checkpoint_memory:CheckpointMemory",
+  "host_repointed": true,
+  "major": "python",
+  "notes": "The host consumes the package: safe-app-store archived its store-side copies of the engine on 2026-08-18 and its readiness CLI imports forge.measure_panel from the installed package. No `trust` block yet: tools/promotion_trust.py produces one; the ratifying half is the verifier's act."
+}

@@ -48,7 +48,13 @@ These are not decisions of this paper; they are the walls it is built inside.
 
 @constraint severity=critical
 The deposit writes drafts and unsigned edges only. No path through it reaches
-`seal`, `seal_edge`, or a keyring.
+`seal`, `seal_edge`, or a keyring. The guard is a type, `deposit.ProposeOnly`,
+which exposes `propose`, `propose_edge` and `revise_draft` and nothing else
+(loki's review, 2026-09-03: a live `DecisionMemory` carries the sealing verbs,
+and a grep on the source was the only thing keeping them out). The grep test
+stays as the second guard. At a deployment where seals must not be trusted on
+stored status, `NESTOR_REQUIRE_SEAL_KEY=1` is the third, and it is the
+store's, not this module's.
 
 ## The row
 

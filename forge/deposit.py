@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 __all__ = [
-    "DOMAIN", "STATES", "DepositError", "Run", "outcome_state",
+    "DOMAIN", "STATES", "DepositError", "Run", "ProposeOnly", "outcome_state",
     "extract_decision_refs", "deposit_ci", "link_decisions", "read_inbox",
     "newest_deposit", "deposit_age", "human_age",
 ]
@@ -107,15 +107,44 @@ def extract_decision_refs(text: str) -> list[str]:
 
 # ── the store ──────────────────────────────────────────────────────────────
 
-def _decision_memory(store: Any, domain: str) -> Any:
-    try:
-        from nestor.decision import DecisionMemory  # type: ignore[import-not-found]
-    except ImportError as e:  # pragma: no cover - exercised by the no-extras leg
-        raise DepositError(
-            "Nestor is unavailable; the deposit has nowhere to write. "
-            "Install it: pip install nestor-meaning."
-        ) from e
-    return DecisionMemory(store, domain=domain)
+class ProposeOnly:
+    """The only Nestor surface this module holds: `propose`, `propose_edge`,
+    `revise_draft`. Nothing else is reachable through it — not `seal`, not
+    `seal_edge`, not the store. A `DecisionMemory` carries the sealing verbs
+    and would let a slip reach them; this facade makes the covenant a type,
+    so the grep test on the source is the second guard, not the only one
+    (loki, review of design/pr-time-deposit, 2026-09-03)."""
+
+    __slots__ = ("_propose", "_propose_edge", "_revise", "domain")
+
+    def __init__(self, store: Any, domain: str) -> None:
+        try:
+            from nestor import memory  # type: ignore[import-not-found]
+            from nestor.decision import DecisionMemory  # type: ignore[import-not-found]
+        except ImportError as e:  # pragma: no cover - exercised by the no-extras leg
+            raise DepositError(
+                "Nestor is unavailable; the deposit has nowhere to write. "
+                "Install it: pip install nestor-meaning."
+            ) from e
+        mem = DecisionMemory(store, domain=domain)
+        self.domain = domain
+        # Bound methods only. The DecisionMemory itself is not kept on self.
+        self._propose = mem.propose
+        self._propose_edge = mem.propose_edge
+        self._revise = lambda q, c, **kw: memory.revise_draft(q, c, domain, domain, store=store, **kw)
+
+    def propose(self, question: str, commitment: str, rationale: str = "", origin: str = "") -> dict:
+        return self._propose(question, commitment, rationale=rationale, origin=origin)
+
+    def propose_edge(self, src_id: str, dst_id: str, kind: str, reason: str = "") -> dict:
+        return self._propose_edge(src_id, dst_id, kind, reason=reason)
+
+    def revise_draft(self, question: str, commitment: str, reason: str = "", origin: str = "") -> dict:
+        return self._revise(question, commitment, reason=reason, origin=origin)
+
+
+def _decision_memory(store: Any, domain: str) -> ProposeOnly:
+    return ProposeOnly(store, domain)
 
 
 def _rows(store: Any) -> list[dict]:
@@ -216,10 +245,9 @@ def deposit_ci(store: Any, *, repo: str, sha: str, runs: Iterable[Run],
     # verb. The old row keeps its text and reason and gains `superseded_by`;
     # `memory_lineage` walks the chain. No edge is proposed for this — an
     # edge relates two decisions, and this is one question answered again.
-    from nestor import memory  # type: ignore[import-not-found]
-    row = memory.revise_draft(question, commitment, DOMAIN, DOMAIN,
-                              reason=(reason + " " if reason else "") + f"re-run via {via}",
-                              origin=origin, store=store)
+    row = mem.revise_draft(question, commitment,
+                           reason=(reason + " " if reason else "") + f"re-run via {via}",
+                           origin=origin)
     return Deposit(row=row, superseded=old["id"], states=states)
 
 

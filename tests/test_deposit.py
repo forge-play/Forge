@@ -245,6 +245,25 @@ def test_inbox_reader_carries_the_sender_type_verbatim(tmp_path):
     assert r.actor == {SHA: "Bot", "f" * 40: "Organization"}, "verbatim, unmapped; absent stays absent"
 
 
+# ── the covenant, as a type ────────────────────────────────────────────────
+
+@_needs_nestor
+def test_the_only_nestor_surface_is_propose_only(store):
+    """loki's finding: a live DecisionMemory carries seal and seal_edge, so a
+    grep on the source was the only guard. Now the object the module holds
+    cannot reach them at all."""
+    mem = deposit._decision_memory(store, deposit.DOMAIN)
+    assert isinstance(mem, deposit.ProposeOnly)
+    public = {n for n in dir(mem) if not n.startswith("_")}
+    assert public == {"propose", "propose_edge", "revise_draft", "domain"}
+    for forbidden in ("seal", "seal_edge", "store", "reject_pair", "reject_match"):
+        assert not hasattr(mem, forbidden), forbidden
+    with pytest.raises(AttributeError):
+        mem.seal  # noqa: B018
+    with pytest.raises(AttributeError):
+        setattr(mem, "seal", lambda *a, **k: None)  # __slots__: nothing can be bolted on
+
+
 # ── the covenant, on the source ────────────────────────────────────────────
 
 def test_the_module_never_names_seal_or_a_keyring():

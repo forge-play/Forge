@@ -119,13 +119,19 @@ def main(argv: list[str] | None = None) -> int:
         report["skipped"] = read.skipped
         for sha, runs in read.keyed.items():
             repo = a.repo or read.repo.get(sha, "")
-            entry = {"repo": repo, "sha": sha, "runs": [(r.name, r.state) for r in runs]}
+            # The actor is what the bridge copied from GitHub's `sender.type`.
+            # Anything but Bot or User (an Organization, or an empty field
+            # from an older bridge) is not guessed at: deposit_ci refuses it
+            # and the refusal is reported. --actor-type overrides by hand.
+            actor = a.actor_type or read.actor.get(sha, "")
+            entry = {"repo": repo, "sha": sha, "actor_type": actor,
+                     "runs": [(r.name, r.state) for r in runs]}
             try:
                 if a.dry_run:
                     entry["would_write"] = deposit._commitment(runs)
                 else:
                     d = deposit.deposit_ci(store, repo=repo, sha=sha, runs=runs,
-                                           actor_type=a.actor_type or "Bot", via="webhook_inbox")
+                                           actor_type=actor, via="webhook_inbox")
                     entry["deposit"] = d.to_dict()
             except deposit.DepositError as e:
                 entry["refused"] = str(e)

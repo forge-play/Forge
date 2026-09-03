@@ -38,7 +38,7 @@ from typing import Any, Iterable
 __all__ = [
     "DOMAIN", "STATES", "DepositError", "Run", "outcome_state",
     "extract_decision_refs", "deposit_ci", "link_decisions", "read_inbox",
-    "newest_deposit",
+    "newest_deposit", "deposit_age", "human_age",
 ]
 
 #: The Nestor domain CI rows live in. Never `decision`.
@@ -259,14 +259,70 @@ def link_decisions(store: Any, row_id: str, refs: Iterable[str]) -> Links:
     return out
 
 
-def newest_deposit(store: Any, repo: str) -> dict | None:
-    """The newest `ci` row for `repo`, or None. The read Rule 3's second
-    question will hang off: how old is the store's last CI knowledge."""
+def newest_deposit(store: Any, repo: str | None = None) -> dict | None:
+    """The newest live `ci` row, for `repo` or for any repo, or None. The read
+    Rule 3's second question hangs off: how old is the store's last CI
+    knowledge. Rows revised into history (`superseded_by` set) do not count;
+    the live row is the store's current knowledge."""
+    prefix = f"How did CI go for {repo}@" if repo else "How did CI go for "
     rows = [r for r in _rows(store)
-            if r.get("source_lang") == DOMAIN and r.get("source_text", "").startswith(f"How did CI go for {repo}@")]
+            if r.get("source_lang") == DOMAIN and r.get("source_text", "").startswith(prefix)
+            and not r.get("superseded_by")]
     if not rows:
         return None
     return max(rows, key=lambda r: r.get("created_at", ""))
+
+
+_SHA_IN_QUESTION = re.compile(r"^How did CI go for (?P<repo>[^@\s]+)@(?P<sha>[0-9a-fA-F]+)\?$")
+
+
+def _parse_when(s: str) -> datetime | None:
+    try:
+        d = datetime.fromisoformat(s)
+    except (TypeError, ValueError):
+        return None
+    return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+
+
+def deposit_age(store: Any, repo: str | None = None,
+                now: datetime | None = None) -> dict | None:
+    """Rule 3, second question: *was the answer current?* Returns None when
+    the store holds no `ci` row, else `{"repo", "sha", "at", "age_seconds",
+    "states"}` for the newest live row, where `states` counts the run states
+    named in its commitment. `at` is the row's `created_at`; the deposit's
+    own `at=` in the origin is the run's time and may differ. Never raises
+    on a malformed row: an unreadable date is `age_seconds: None`."""
+    row = newest_deposit(store, repo)
+    if row is None:
+        return None
+    m = _SHA_IN_QUESTION.match(row.get("source_text", ""))
+    when = _parse_when(row.get("created_at", ""))
+    age = None
+    if when is not None:
+        age = max(0.0, ((now or datetime.now(timezone.utc)) - when).total_seconds())
+    states: dict[str, int] = {}
+    for part in (row.get("target_text") or "").split(";"):
+        state = part.strip().split(":", 1)[0].strip()
+        if state in STATES:
+            states[state] = states.get(state, 0) + 1
+    return {"repo": m.group("repo") if m else "", "sha": m.group("sha") if m else "",
+            "at": row.get("created_at", ""), "age_seconds": age, "states": states}
+
+
+def human_age(seconds: float | None) -> str:
+    """`None` → "unknown age"; else the two largest units, `3d 4h`, `12m`, `0s`."""
+    if seconds is None:
+        return "unknown age"
+    s = int(seconds)
+    units = (("d", 86400), ("h", 3600), ("m", 60), ("s", 1))
+    parts = []
+    for name, size in units:
+        if s >= size:
+            parts.append(f"{s // size}{name}")
+            s %= size
+        if len(parts) == 2:
+            break
+    return " ".join(parts) or "0s"
 
 
 # ── the bot's inbox (shape C) ──────────────────────────────────────────────
@@ -281,6 +337,11 @@ class InboxRead:
     unkeyed: list[dict] = field(default_factory=list)
     skipped: int = 0
     repo: dict[str, str] = field(default_factory=dict)
+    #: sha -> the `sender_type` the bridge copied from the payload, verbatim
+    #: ("Bot", "User", "Organization", or ""). Not mapped here; the caller
+    #: decides what an unknown type means, and `deposit_ci` refuses anything
+    #: but Bot or User.
+    actor: dict[str, str] = field(default_factory=dict)
 
 
 def read_inbox(inbox: str | Path) -> InboxRead:
@@ -315,4 +376,7 @@ def read_inbox(inbox: str | Path) -> InboxRead:
         out.keyed.setdefault(sha, []).append(run)
         if item.get("repo"):
             out.repo[sha] = str(item["repo"])
+        sender = str(item.get("sender_type") or "")
+        if sender and sha not in out.actor:
+            out.actor[sha] = sender
     return out

@@ -14,6 +14,10 @@ checkpoint router. `open_bite` takes a maker's opening sentence and:
      absent is a REFUSAL (`EntryError`), not a soft degrade: `run_checkpoint`
      may run Socratic without memory because a fresh decision is still a
      decision; an entry that never asked has nothing to be honest about.
+     With the answer comes its age: `tiers["deposit"]` names the store's
+     newest CI row and how old it is, or `none` (the-forge-shape.md §12,
+     rule 3 — a stale answer reported as current turns "nobody asked" into
+     "the box says no").
   2. **looks in the box** — a `BoxLookup` seam. The real box (the corpus under
      ~/github) is willow-side; the default here returns nothing and SAYS so.
   3. **remote** — not built; recorded as `not_attempted`, never pretended.
@@ -36,7 +40,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from . import checkpoint, checkpoint_memory, majors, paths
+from . import checkpoint, checkpoint_memory, deposit, majors, paths
 
 __all__ = ["Entry", "EntryError", "BoxLookup", "NoBox", "Candidate", "open_bite",
            "DECISION_TYPE_MAJOR"]
@@ -84,7 +88,7 @@ class Entry:
     major: str | None = None
     answer: str | None = None                                     # a sealed project answer, if any
     candidates: list[Candidate] = field(default_factory=list)
-    tiers: dict[str, str] = field(default_factory=dict)          # nestor / box / remote / scan
+    tiers: dict[str, str] = field(default_factory=dict)          # nestor / deposit / box / remote / scan
     decision_outcome: checkpoint.CheckpointOutcome | None = None
 
     def to_dict(self) -> dict:
@@ -94,9 +98,11 @@ class Entry:
         return d
 
 
-def _ask_project_nestor(project_id: str, sentence: str) -> dict:
+def _ask_project_nestor(project_id: str, sentence: str) -> tuple[dict, object]:
     """Tier 1. Refuses if Nestor is not importable. Opens (creating) the
-    project store and resolves the sentence in the `decision` domain."""
+    project store and resolves the sentence in the `decision` domain. Returns
+    the resolution and the open store, so the deposit's age can be read from
+    the same store without opening it twice."""
     if not checkpoint_memory.nestor_available():
         raise EntryError(
             "Nestor is unavailable, and the Forge cannot start a build that never "
@@ -109,7 +115,20 @@ def _ask_project_nestor(project_id: str, sentence: str) -> dict:
     db.parent.mkdir(parents=True, exist_ok=True)
     cascade.set_ledger_path(paths.project_nestor_ledger(project_id))
     store = SqliteStore(str(db))
-    return answer.resolve(store, sentence, domain="decision")
+    return answer.resolve(store, sentence, domain="decision"), store
+
+
+def _deposit_tier(store: object) -> str:
+    """Rule 3's second question, reported with the answer, never silently:
+    how old is the store's last CI knowledge. `none` is an honest empty —
+    a store that was never deposited into says so, and a build reads that
+    as "nobody asked", not "the box says green"."""
+    age = deposit.deposit_age(store)
+    if age is None:
+        return "none: no CI row in the project store"
+    states = ", ".join(f"{k} {v}" for k, v in sorted(age["states"].items())) or "no runs parsed"
+    return (f"{deposit.human_age(age['age_seconds'])} old: "
+            f"{age['repo']}@{age['sha'][:12]} ({states})")
 
 
 def _major_from_chosen(chosen: str, known: list[str]) -> str | None:
@@ -138,13 +157,15 @@ def open_bite(
     e = Entry(sentence=sentence.strip(), project_id=project_id, builder_id=builder_id)
 
     # 1 — Nestor, first, or refuse.
-    r = _ask_project_nestor(project_id, e.sentence)
+    r, store = _ask_project_nestor(project_id, e.sentence)
     if r.get("verified"):
         e.answer = r.get("canonical")
         e.tiers["nestor"] = f"sealed (confidence {r.get('confidence', 0):.2f}, verifier {r.get('verifier', '')!r})"
     else:
         n = len(r.get("candidates") or [])
         e.tiers["nestor"] = "pending" + (f" ({n} unsealed candidate{'s' if n != 1 else ''})" if n else "")
+    # 1b — was the answer current? The store's last CI knowledge, with its age.
+    e.tiers["deposit"] = _deposit_tier(store)
 
     # 2 — the box.
     e.hits = majors.scan(e.sentence, table=table)

@@ -168,9 +168,9 @@ the per-project store.
 - **The PR-time deposit.** Built (2026-09-03): `forge/deposit.py` writes
   `ci` rows and `refines` edges, propose-only, and reads willow-bot's webhook
   inbox; `tools/pr_deposit.py` is the caller. Paper: `the-pr-time-deposit.md`.
-  Still to do: the store's age in `Entry.tiers`, and the bridge fix in
-  willow-bot (key on check id, carry `head_sha`) before the inbox carries
-  anything the deposit can key.
+  `Entry.tiers["deposit"]` reports the store's last CI knowledge with its
+  age (Rule 3's second question), `none` when there is none. The bridge fix
+  in willow-bot (key on check id, carry `head_sha`) is on a branch there.
 - **The store pull.** A project store comes home to the box as shape, gated
   the way the app store promotes. On paper: `the-store-pull.md`, four drafts.
 - **The forge-workshop.** The template repo where the first question gets

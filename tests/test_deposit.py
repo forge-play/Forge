@@ -210,6 +210,41 @@ def test_a_ci_row_never_answers_a_decision_check(store):
     assert r.get("state") != "sealed" and r.get("verified") is not True
 
 
+# ── the age (Rule 3, second question) ──────────────────────────────────────
+
+def test_human_age_reads_two_units():
+    assert deposit.human_age(None) == "unknown age"
+    assert deposit.human_age(0) == "0s"
+    assert deposit.human_age(59) == "59s"
+    assert deposit.human_age(3600 * 27 + 60 * 5 + 3) == "1d 3h"
+    assert deposit.human_age(60 * 12 + 30) == "12m 30s"
+
+
+@_needs_nestor
+def test_deposit_age_is_none_on_an_empty_store_and_reads_the_live_row(store):
+    assert deposit.deposit_age(store) is None
+    then = datetime(2026, 9, 3, 6, 0, tzinfo=timezone.utc)
+    deposit.deposit_ci(store, repo=REPO, sha=SHA, runs=RUNS, actor_type="Bot", via="webhook_inbox", now=then)
+    age = deposit.deposit_age(store, now=then.replace(hour=9))
+    assert age["repo"] == REPO and age["sha"] == SHA
+    assert age["states"] == {"pass": 2, "could_not_run": 1}
+    assert age["age_seconds"] is not None and age["age_seconds"] >= 0
+    assert deposit.deposit_age(store, repo="other/repo") is None
+    # a revision moves the live row; the age follows the live row, not history
+    rerun = [Run("Tests", "completed", "failure", "9", "u9")]
+    deposit.deposit_ci(store, repo=REPO, sha=SHA, runs=rerun, actor_type="Bot", via="gh")
+    assert deposit.deposit_age(store)["states"] == {"fail": 1}
+
+
+def test_inbox_reader_carries_the_sender_type_verbatim(tmp_path):
+    _item(tmp_path, "a", kind="check_run", head_sha=SHA, name="Tests", conclusion="success", sender_type="Bot")
+    _item(tmp_path, "b", kind="check_run", head_sha="f" * 40, name="Tests", conclusion="success",
+          sender_type="Organization")
+    _item(tmp_path, "c", kind="check_run", head_sha="e" * 40, name="Tests", conclusion="success")
+    r = deposit.read_inbox(tmp_path)
+    assert r.actor == {SHA: "Bot", "f" * 40: "Organization"}, "verbatim, unmapped; absent stays absent"
+
+
 # ── the covenant, on the source ────────────────────────────────────────────
 
 def test_the_module_never_names_seal_or_a_keyring():

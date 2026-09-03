@@ -168,6 +168,8 @@ the per-project store.
 - **The PR-time deposit.** CI outcome and decision edges written back into
   the project's Nestor, by a propose-only identity.
   On paper: `the-pr-time-deposit.md`, five drafts in the project store.
+- **The store pull.** A project store comes home to the box as shape, gated
+  the way the app store promotes. On paper: `the-store-pull.md`, four drafts.
 - **The trust block on this repo's own promotion.** The tool exists; the
   ratifying half is a verifier's act.
 

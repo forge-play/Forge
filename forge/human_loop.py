@@ -1,16 +1,14 @@
-# ── SAFE App Store vendor note (The Forge, human_loop adoption, 2026-08-11) ──
-# Vendored byte-for-byte (except this block) from `rudi193-cmd/willow-mcp`
-# src/willow_mcp/human_loop.py, Apache-2.0 -> Apache-2.0, zero license friction.
-# Vendored, not imported, for the same reason friction_floor.py is: this module
-# is pure, stdlib-only (uuid/datetime), over an INJECTED store, and willow-mcp
-# is not cleanly pip-installable. The store it expects is supplied by
-# forge/soil_store.py (a FilesystemSoilStore with the put/all/get interface the
-# functions below call). Adopted under checkpoint per
-# docs/design/the-forge-human-loop.md (D-HL-1): the seal is memory, this is the
-# non-forgeable governance record. Kept diffable against upstream on purpose —
-# if willow-mcp's copy moves, `diff` this against it and reconcile. Rule 11: the
-# house already grew the human-in-the-loop primitive; the Forge re-points it at
-# makers instead of rebuilding it.
+# ── home ────────────────────────────────────────────────────────────────────
+# This is the canonical human_loop. It was written in willow-mcp (ported from
+# willow-2.0's core/human_required.py + core/human_attestation.py), vendored
+# here byte-for-byte on 2026-08-11 under a drift check, and came HOME on
+# 2026-09-03 once forge-play was on PyPI: willow-mcp now depends on forge-play
+# and src/willow_mcp/human_loop.py is a re-export of this module (the
+# operator's 2026-09-02 decision — Willow depends on the engine). The store it
+# expects is injected: forge/soil_store.py's FilesystemSoilStore (put/all/get).
+# Adopted under checkpoint per docs/design/the-forge-human-loop.md (D-HL-1):
+# the seal is memory, this is the non-forgeable governance record. The Forge
+# never imports willow-mcp; tests/test_no_reach_back.py holds that line.
 """human_loop — the human-in-the-loop primitives: an attention queue and a
 durable attestation record.
 

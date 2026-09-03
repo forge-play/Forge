@@ -1,28 +1,15 @@
 #!/usr/bin/env python3
-# ── SAFE App Store vendor note (The Forge, bite 3, 2026-08-11) ───────────────
-# Second vendor hop: willow-gate  ->  willow-mcp  ->  safe-app-store.
-# Copied byte-for-byte (except this added block) from
-# `rudi193-cmd/willow-mcp` src/willow_mcp/friction_floor.py, which is itself a
-# byte-for-byte vendor of `rudi193-cmd/willow-gate`. All three repos are
-# Apache-2.0, so this copy carries zero license friction — the willow-gate
-# attribution and NOTICE-style provenance below are kept intact (Apache §4(b)/
-# (c)). Vendored, not imported, for the exact reason the willow-mcp header
-# already gives: this module is pure stdlib (re/statistics/dataclasses), no
-# egress, and the willow-mcp package around it pulls dependencies the store's
-# engagement gate (forge/checkpoint_engagement.py) does not want just to score
-# one string. Kept diffable against upstream on purpose — if willow-mcp's copy
-# moves, `diff` this against it and reconcile rather than re-deriving. Rule 11:
-# the house already grew this (willow-mcp `#66` sycophancy score); the Forge
-# re-points it at makers instead of rebuilding it.
-#
-#!/usr/bin/env python3
-# Vendored from willow-gate (willow-memory/willow-gate, src/willow_gate/
-# friction_floor.py), Apache-2.0. Copied rather than depended-on because this
-# module is pure stdlib (re/statistics/dataclasses) with NO egress and NO PGP,
-# whereas the willow-gate package pulls python-gnupg for its encrypted ledger.
-# Keeping the base dependency-free is worth the small vendored copy; if the full
-# gate ever lands as a dependency (seam doc D5), reconcile this copy then. Kept
-# byte-for-byte except this header so it stays diffable against upstream.
+# ── home ────────────────────────────────────────────────────────────────────
+# The fleet's canonical stdlib friction scorer lives HERE as of 2026-09-03.
+# Lineage: written for willow-gate (src/willow_gate/friction_floor.py), copied
+# into willow-mcp byte-for-byte because it is pure stdlib with no egress and no
+# PGP (the gate package pulls python-gnupg), vendored here on 2026-08-11 and
+# aimed at the maker's own rationale (the engagement gate: waved-through
+# decisions come back sooner). willow-mcp now imports it from forge-play;
+# willow-gate keeps its own copy inside the gate. Everything from the docstring
+# down is byte-for-byte with the willow-gate original and willow-mcp's drift
+# guard (tests/test_stance_friction.py) hashes THIS file to prove it — edit the
+# scorer in willow-gate first, then re-sync, never here alone.
 """friction_floor.py — a smoke detector for the mirror, not a wall.
 
 The gap WillowGate and the inversion-check don't cover: neither watches the

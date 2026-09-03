@@ -150,15 +150,15 @@ the per-project store.
   one source: the git tag.
 - Only commits that change what `pip install forge-play` gives someone cut a
   release (`pr-title.yml`, both directions).
-- The three vendored modules are byte-identical to their upstream
-  (`tools/vendor_sync_check.py`) until they move home.
+- `forge/friction_floor.py` is byte-identical to the willow-gate original
+  below its header; willow-mcp's drift guard hashes this file to prove it.
 - The demo never writes outside its own playground (`tests/test_demo.py`).
 
 ## What is next
 
-- **Vendoring goes home.** Once `forge-play` is on PyPI, willow-mcp pins
-  `forge-play>=0.1.0,<1.0.0` and imports `human_loop`, `friction_floor` and
-  `model_egress` from `forge`; the Forge drops the drift check.
+- **Vendoring went home (2026-09-03).** willow-mcp pins `forge-play>=0.1.0,<1.0.0`
+  and re-exports `human_loop`, `friction_floor` and the detection half of
+  `model_egress` from `forge`; `denial()` stays with willow-mcp's consent store.
 - **The host side.** The store's stub builder emits a `fork` from the entry's
   scan of a sentence, and its build spine calls `forge.build_loop.resolve`
   before the seam; the seam refuses an unresolved fork.

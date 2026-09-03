@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.0](https://github.com/forge-play/Forge/compare/v0.1.0...v0.2.0) (2026-09-03)
+
+
+### Added
+
+* **bundle:** cut a project store's bundle into a checkout at a ledger head ([3d9f845](https://github.com/forge-play/Forge/commit/3d9f8452741e4d3cb39fa91905120ee0c21394bc))
+* **entry:** report the store's last CI knowledge and its age with the answer ([ee9eaf6](https://github.com/forge-play/Forge/commit/ee9eaf6cc607e8aba223bf011263b07c647158f2))
+* **deposit:** the PR-time deposit — CI outcomes into the project Nestor, propose-only ([eda2507](https://github.com/forge-play/Forge/commit/eda25079073d51d64a0d7053cb1acdf354a88055))
+
+
+### Fixed
+
+* **deposit:** propose-only as a type, not a grep ([f675a29](https://github.com/forge-play/Forge/commit/f675a29113b05789d653718227ccf19240001e54))
+
 ## 0.1.0 (2026-09-03)
 
 

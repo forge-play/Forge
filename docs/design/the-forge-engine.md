@@ -167,6 +167,7 @@ the per-project store.
   writes forks into a plan is the first thing that can use it.
 - **The PR-time deposit.** CI outcome and decision edges written back into
   the project's Nestor, by a propose-only identity.
+  On paper: `the-pr-time-deposit.md`, five drafts in the project store.
 - **The trust block on this repo's own promotion.** The tool exists; the
   ratifying half is a verifier's act.
 

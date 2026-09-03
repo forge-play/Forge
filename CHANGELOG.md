@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.0 (2026-09-03)
+
+
+### Added
+
+* the Forge engine — the harness that refuses a confident wrong answer ([f611d90](https://github.com/forge-play/Forge/commit/f611d903ba75e47e77b321fc794dbb9d3af67758))
+
+## Changelog
+
 Maintained by release-please from conventional commits; the first tagged
 release will be `v0.1.0`. Entries below the first release heading are written
 by the tool. This section is the hand-written history of what the engine

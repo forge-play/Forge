@@ -179,6 +179,10 @@ the per-project store.
 - **The record gate.** Seven mechanical gates over a workshop's bundle,
   beside the store's nine. On paper: `the-record-gate.md`; the store holds
   a pointer.
+- **The store diff.** Built (2026-09-03): the entry's third tier reports how
+  far the project store is from the main one — verified upstream, proposed
+  here, conflicts, retired here but sealed there — or `not consulted`.
+  `forge/store_diff.py`, `tools/store_diff.py`. Paper: `the-store-diff.md`.
 - **The trust block on this repo's own promotion.** The tool exists; the
   ratifying half is a verifier's act.
 

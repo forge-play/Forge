@@ -35,12 +35,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from . import checkpoint, checkpoint_memory, deposit, majors, paths
+from . import checkpoint, checkpoint_memory, deposit, majors, paths, store_diff
 
 __all__ = ["Entry", "EntryError", "BoxLookup", "NoBox", "Candidate", "open_bite",
            "DECISION_TYPE_MAJOR"]
@@ -88,7 +89,7 @@ class Entry:
     major: str | None = None
     answer: str | None = None                                     # a sealed project answer, if any
     candidates: list[Candidate] = field(default_factory=list)
-    tiers: dict[str, str] = field(default_factory=dict)          # nestor / deposit / box / remote / scan
+    tiers: dict[str, str] = field(default_factory=dict)          # nestor / deposit / main / box / remote / scan
     decision_outcome: checkpoint.CheckpointOutcome | None = None
 
     def to_dict(self) -> dict:
@@ -131,6 +132,25 @@ def _deposit_tier(store: object) -> str:
             f"{age['repo']}@{age['sha'][:12]} ({states})")
 
 
+MAIN_ENV = "FORGE_MAIN_NESTOR"
+
+
+def _main_tier(store: object, main: str | Path | None) -> str:
+    """The third tier: how far the project store is from the main one
+    (docs/design/the-store-diff.md). `main` is a nestor.db path or an
+    exported bundle; falls back to $FORGE_MAIN_NESTOR. Never blocks. Three
+    states, none of them silent: the four counts; `not consulted` when no
+    main store was named; `could not read main` with the reason."""
+    target = main if main is not None else os.environ.get(MAIN_ENV, "")
+    if not target:
+        return f"not consulted (no main store given; set {MAIN_ENV} or pass main=)"
+    try:
+        d = store_diff.diff(store, target)
+    except Exception as err:  # noqa: BLE001 — every failure is a state, reported, never clean
+        return f"could not read main {Path(str(target)).name}: {type(err).__name__}: {str(err)[:80]}"
+    return store_diff.summary(d)
+
+
 def _major_from_chosen(chosen: str, known: list[str]) -> str | None:
     """A prior seal's canonical string is `label` or `label: rationale`; the
     label is one of the majors that were on offer. Longest prefix wins."""
@@ -151,6 +171,7 @@ def open_bite(
     box: BoxLookup | None = None,
     recognize_threshold: float = checkpoint.DEFAULT_RECOGNIZE_THRESHOLD,
     table: list[majors.Row] | None = None,
+    main: str | Path | None = None,
 ) -> Entry:
     if not isinstance(sentence, str) or not sentence.strip():
         raise EntryError("an empty sentence is not a bite")
@@ -166,6 +187,8 @@ def open_bite(
         e.tiers["nestor"] = "pending" + (f" ({n} unsealed candidate{'s' if n != 1 else ''})" if n else "")
     # 1b — was the answer current? The store's last CI knowledge, with its age.
     e.tiers["deposit"] = _deposit_tier(store)
+    # 1c — how far is this store from the main one? Four counts, or "not consulted".
+    e.tiers["main"] = _main_tier(store, main)
 
     # 2 — the box.
     e.hits = majors.scan(e.sentence, table=table)

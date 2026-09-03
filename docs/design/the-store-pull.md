@@ -2,6 +2,10 @@
 
 # The store pull — a project store comes home as shape
 
+> **Prior art, read before code:** `forge-play/forge-jig/docs/` (2026-08-31),
+> whose method section is the correction this paper needs: a docstring is prose
+> wherever it lives; only the call path and its tests report wiring.
+
 Beside `the-pr-time-deposit.md`. The deposit is per PR, into a project's own
 Nestor, propose-only. This is per store, from that Nestor into the box, and it
 is a promotion. The operator named the pattern on 2026-09-03: *"it might

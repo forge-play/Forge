@@ -2,6 +2,11 @@
 
 # The PR-time deposit — paper before code
 
+> **Prior art, read before code:** `forge-play/forge-jig/docs/WHERE-THINGS-ARE.md`
+> and `WHAT-EXISTS-ALREADY.md` (2026-08-31), and the bot at
+> `workshop/willow-bot`. The jig's first rule is the one this paper was first
+> written without: ask the corpus, then the box, then remote.
+
 The engine doc's list names it: *CI outcome and decision edges written back
 into the project's Nestor, by a propose-only identity.* The shape doc argued it
 (§12, §13) and left five things open. This paper closes what can be closed from
@@ -97,35 +102,54 @@ recorded so it is not mistaken for forgotten.
 ## Where each half runs
 
 The shape doc left it open: *workflow, hook, or merge queue*, and *store
-deposit or git deposit*. Two shapes fit the walls above.
+deposit or git deposit*. Three shapes fit the walls above, and the fleet
+already runs one of them.
 
-**A. Pull, from the box.** A tool in this repo (`tools/pr_deposit.py`) runs
-where the store is. Given a sha, it asks GitHub for the runs at that sha
-(`gh run list --commit <sha>`), the PR that merged it, and the PR's text; it
-maps the conclusions, writes the row and the edges through `forge.deposit`,
-and prints what it wrote. It runs by hand after a merge, or from a
-post-merge hook on the operator's checkout of master.
+**C. The event arrives on the box.** `workshop/willow-bot` is a signed
+webhook listener on the box. Its fleet bridge runs before any handler and,
+for every completed check run, files one JSON item into
+`$WILLOW_HOME/upstream_steward/webhook_inbox/<work_id>.json` with the
+conclusion, the check name, the run URL and the PR number, deduplicated on
+the path. That inbox is the deposit's inbound half. Nothing consumes it. The
+deposit tool reads that directory and writes the row through `forge.deposit`.
+No polling, no `gh`, no lease from any seat; the actor is the payload's
+sender type.
+
+Read at the code level, 2026-09-03, the bridge has four defects the consumer
+must not inherit and one it must work around:
+
+- **One check per PR.** The work id is `<repo>:check:<pr_number>`, and a
+  path that exists is skipped. The first completed check on a PR is filed;
+  every later one on the same PR is dropped silently. A PR with four
+  workflows leaves one item. The consumer cannot repair this; the bridge's
+  key must include the check id or the head sha.
+- **No head sha.** The item carries no `head_sha`, and the deposit keys on
+  the sha. The payload has it; the bridge does not copy it.
+- **A check with no PR** is keyed on the check id, so it is filed, but the
+  item cannot say which sha it belongs to. Same fix.
+- **The router drops could-not-run.** Success and failure get a voice line;
+  cancelled, skipped, stale and neutral return without a log line. The
+  bridge files them (it filters on `completed`, not on conclusion), so the
+  inbox is the honest record and the router is not.
+- **Not running here.** No inbox directory exists under either willow home,
+  the unit is not installed, and the bridge's default home is the decoy
+  path one level above the fleet's. Until the bot runs on this box under
+  the right home, the inbox is empty by construction.
+
+**A. Pull, from the box.** `tools/pr_deposit.py --sha` asks GitHub through
+`gh` for the runs at a sha and the PR that merged it. The backfill for
+history the bot never saw, and the path for a box without the bot. Needs the
+operator's `gh`; from a seat, it is egress the gate does not watch, and it
+must not be a warrant recipe.
 
 **B. Push, from CI.** A workflow job on `push: master` produces a Nestor
-bundle (the `export` format) as a run artifact; a local step imports it with
-`nestor import --apply`. The store still never leaves the box.
+bundle as a run artifact; a local step imports it. The shape for a box with
+neither the bot nor `gh`. Stays open, not wrong.
 
-**A first.** Three reasons, and all of them are §0.2.
-
-1. The credential that reads checks and the credential that commits never
-   meet. Shape A needs `checks: read` and a PR read, which is exactly the
-   `willows-bot` core (§13). Shape B needs a job that writes an artifact under
-   the same token that could, in another job, tag a release.
-2. Shape A puts no identity in CI and no bundle in transit. The propose-only
-   property is enforced by the API surface the tool is allowed to call, and
-   that surface is auditable in one file.
-3. Shape A works today with nothing new provisioned. The operator's `gh` is
-   logged in; the origin will say `actor=User` until the bot's installation
-   token is what runs it, and the row will say so honestly.
-
-Shape B is not wrong; it is the shape for a box that does not have `gh`. It
-stays open, and nothing in A forecloses it: the row format is the bundle
-format.
+**C first, A for backfill, B on the shelf.** C is event-driven and keeps
+§0.2 by construction: the bot reads and comments and cannot commit. The
+bridge fix (key on check id and carry `head_sha`) is a willow-bot change,
+small, and paper for it is a gap in the backlog (`1d737ffa2595`).
 
 @constraint severity=high
 The deposit tool gates on what it read, never on an exit code. A run that
@@ -148,7 +172,8 @@ row carries what the read will need (`at=` in the origin).
   proposes the row and the `supersedes` edge.
   `link_decisions(store, row, refs) -> list[edge]`, proposes `refines` edges,
   reports the unmatched.
-- `tools/pr_deposit.py` — the `gh`-driven caller. `--sha`, `--project-id`,
+- `tools/pr_deposit.py` — the caller. `--inbox <dir>` reads the bot's
+  webhook inbox (shape C); `--sha` asks `gh` (shape A, backfill). `--project-id`,
   `--dry-run` prints the row and edges and writes nothing.
 - `tests/test_deposit.py` — the mapping table, the regex, the supersedes
   chain, the refusal on a pending run, the unmatched-ref report, and that the
@@ -162,7 +187,7 @@ row carries what the read will need (`at=` in the origin).
 - A re-run supersedes; the question text is stable per sha.
 - A PR names its decisions with a `Decision:` trailer; nothing else links
   them.
-- Shape A (pull from the box) first; Shape B stays open.
+- Shape C (the bot's inbox on the box) first, A for backfill, B stays open.
 - Issues and files are not edge endpoints until they are pairs.
 
 ## Open

@@ -5,7 +5,6 @@
 
 ### Added
 
-* **store-diff:** the build checks its store against the main one ([465866a](https://github.com/forge-play/Forge/commit/465866ad6e36ae807cde5b00e04106983b0c53c0))
 * **store-diff:** the build checks its store against the main one ([26e6a62](https://github.com/forge-play/Forge/commit/26e6a629cd6287e5e6f9b2aeca9f69312fdecfe1))
 
 

@@ -26,6 +26,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--project-id", required=True)
     ap.add_argument("--main", required=True, help="the main store: a nestor.db path or an exported bundle .json")
     ap.add_argument("--domain", default=store_diff.DEFAULT_DOMAIN)
+    ap.add_argument("--repo-root", default=None,
+                    help="a workshop checkout; --main may not lie inside it (a checkout never holds a database)")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
 
@@ -34,7 +36,11 @@ def main(argv: list[str] | None = None) -> int:
     if not db.exists():
         print(f"no project store for {a.project_id!r} at {db}", file=sys.stderr)
         return 1
-    d = store_diff.diff(SqliteStore(str(db)), a.main, domain=a.domain)
+    try:
+        d = store_diff.diff(SqliteStore(str(db)), a.main, domain=a.domain, forbid_under=a.repo_root)
+    except store_diff.MainUnreadable as e:
+        print(f"refused: {e}", file=sys.stderr)
+        return 1
     if a.json:
         print(json.dumps(d.to_dict(), indent=2, sort_keys=True))
     else:

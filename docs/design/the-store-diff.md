@@ -63,6 +63,17 @@ and `conflicts` cannot show the rationale behind either answer. When the
 bundle version carries them, the diff reads them; until then it says what
 it could not read.
 
+## Two refusals (loki's review, 2026-09-03)
+
+- A main path that does not exist is refused before anything opens. Nestor's
+  store creates on open, so without the guard a mistyped `FORGE_MAIN_NESTOR`
+  became a fresh empty database and a diff that read "ahead by everything",
+  an undisclosed write from a verb that promises none.
+- A main path inside a workshop checkout is refused when the caller names
+  the checkout (`forbid_under`, the tool's `--repo-root`), for the reason
+  `bundle.cut` refuses a database there. The entry tier has no checkout to
+  name and does not check this; the tool and the pre-push hook do.
+
 ## Decisions taken
 
 - The diff is the entry's third tier and is write-free.

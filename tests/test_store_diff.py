@@ -115,6 +115,32 @@ def test_bundle_shaped_diff_needs_no_store_on_the_main_side():
     assert d.behind == 1 and d.ahead == 1 and d.conflicts == [] and d.agreed == 0
 
 
+# ── the refusals (loki, review of feat/store-diff) ─────────────────────────
+
+@_needs_nestor
+def test_a_missing_main_path_refuses_and_creates_nothing(stores, tmp_path):
+    proj, _ = stores
+    missing = tmp_path / "nowhere" / "nestor.db"
+    with pytest.raises(store_diff.MainUnreadable, match="not found"):
+        store_diff.diff(proj, missing)
+    assert not missing.exists() and not missing.parent.exists(), "a write-free verb created a database"
+    with pytest.raises(store_diff.MainUnreadable):
+        store_diff.diff(proj, tmp_path / "nowhere.json")
+
+
+@_needs_nestor
+def test_a_main_path_inside_the_checkout_refuses(stores, tmp_path):
+    proj, main = stores
+    checkout = tmp_path / "workshop"
+    (checkout / ".forge").mkdir(parents=True)
+    inside = checkout / ".forge" / "main.db"
+    inside.write_bytes(b"")
+    with pytest.raises(store_diff.MainUnreadable, match="inside the checkout"):
+        store_diff.diff(proj, inside, forbid_under=checkout)
+    # the same main outside the checkout is fine
+    assert store_diff.diff(proj, tmp_path / "main.db", forbid_under=checkout).main_live == 5
+
+
 # ── the entry tier ──────────────────────────────────────────────────────────
 
 class _Responder:
@@ -141,3 +167,8 @@ def test_the_entry_reports_the_main_diff_or_says_it_was_not_consulted(tmp_path, 
     e3 = entry.open_bite("a tiny cli that renames files", project_id="p", builder_id="b" * 32,
                          responder=_Responder(), root=tmp_path / "cp", main=tmp_path / "nope.json")
     assert e3.tiers["main"].startswith("could not read main"), e3.tiers["main"]
+    assert "MainUnreadable" in e3.tiers["main"] and not (tmp_path / "nope.json").exists()
+    e4 = entry.open_bite("a tiny cli that renames files", project_id="p", builder_id="b" * 32,
+                         responder=_Responder(), root=tmp_path / "cp", main=tmp_path / "nope.db")
+    assert e4.tiers["main"].startswith("could not read main") and not (tmp_path / "nope.db").exists(), \
+        "the entry tier must not create a main store that did not exist"

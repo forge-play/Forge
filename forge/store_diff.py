@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
-__all__ = ["Diff", "diff", "load_main", "summary"]
+__all__ = ["Diff", "MainUnreadable", "diff", "load_main", "summary"]
 
 DEFAULT_DOMAIN = "decision"
 
@@ -111,13 +111,38 @@ def _retired_norms(store: Any, live: dict[str, dict], all_rows: list[dict]) -> d
     return retired
 
 
-def load_main(main: Any) -> tuple[list[dict], str]:
+class MainUnreadable(Exception):
+    """The main store could not be read as named. Raised, never papered over:
+    a missing path would otherwise become a fresh empty database (Nestor's
+    store creates on open), which is an undisclosed write from a verb that
+    promises none, and a diff against nothing reads as "ahead by everything"."""
+
+
+def load_main(main: Any, *, forbid_under: str | Path | None = None) -> tuple[list[dict], str]:
     """Rows of the main store, from a store object, a bundle dict, a path to a
-    bundle (.json) or a path to a store (.db). Returns (rows, description)."""
+    bundle (.json) or a path to a store (.db). Returns (rows, description).
+
+    A path that does not exist raises `MainUnreadable` before anything is
+    opened. With `forbid_under`, a main path that resolves inside that
+    directory (a workshop checkout) is refused too, for the same reason
+    `bundle.cut` refuses a database in a checkout: the main store lives home
+    or arrives as a bundle, never inside the repo."""
     if isinstance(main, dict):
         return list(main.get("pairs") or []), f"bundle (digest {str(main.get('digest', ''))[:12]})"
     if isinstance(main, (str, Path)):
         p = Path(main)
+        if forbid_under is not None:
+            root = Path(forbid_under).resolve()
+            try:
+                p.resolve().relative_to(root)
+            except ValueError:
+                pass
+            else:
+                raise MainUnreadable(f"main store {p} is inside the checkout {root}; a checkout never holds "
+                                     f"a Nestor database (docs/design/the-forge-workshop.md)")
+        if not p.is_file():
+            raise MainUnreadable(f"main store not found: {p} (nothing was created; refusing to diff against an "
+                                 f"empty store that did not exist)")
         if p.suffix.lower() == ".json":
             b = json.loads(p.read_text(encoding="utf-8"))
             return list(b.get("pairs") or []), f"bundle {p.name} (digest {str(b.get('digest', ''))[:12]})"
@@ -138,12 +163,14 @@ def _ref(r: dict) -> dict:
             "verifier": r.get("verifier", "")}
 
 
-def diff(project_store: Any, main: Any, domain: str = DEFAULT_DOMAIN) -> Diff:
-    """Compare the project store's live rows in `domain` with the main store's."""
+def diff(project_store: Any, main: Any, domain: str = DEFAULT_DOMAIN,
+         *, forbid_under: str | Path | None = None) -> Diff:
+    """Compare the project store's live rows in `domain` with the main store's.
+    `forbid_under` names a checkout the main path may not lie inside."""
     all_rows = _project_rows(project_store)
     proj = _live(all_rows, domain)
     retired = _retired_norms(project_store, proj, all_rows)
-    main_rows, main_desc = load_main(main)
+    main_rows, main_desc = load_main(main, forbid_under=forbid_under)
     mn = _live(main_rows, domain)
 
     d = Diff(domain=domain, project_live=len(proj), main_live=len(mn), agreed=0, main_source=main_desc)

@@ -75,10 +75,16 @@ not a judgment:
 | `cancelled`, `timed_out`, `skipped`, `action_required`, `neutral`, `stale`, empty, unknown | `could_not_run` |
 | run still `in_progress` / `queued` | `pending` — the deposit refuses; come back when it is done |
 
-The question is stable per sha. A re-run at the same sha proposes a **new**
-row and a `supersedes` edge from the new row to the previous one; the newest
-of the chain is the answer, the older ones are the history. That is the same
-convention the project store already uses for its own revised drafts.
+The question is stable per sha. A re-run at the same sha with a different
+outcome **revises** the live draft with Nestor's own draft-over-draft verb
+(`memory.revise_draft`): the old row keeps its text and reason and gains
+`superseded_by`, the ledger records a `supersede` with no verifier, and
+`memory_lineage` walks the chain. The same outcome deposited twice writes
+nothing. No edge is proposed for a re-run; an edge relates two decisions, and
+a re-run is one question answered again. (The first draft of this paper
+proposed a new row plus a `supersedes` edge; the store refused the second
+draft with `ConflictingDraftError` and named the verb, which is the better
+answer.)
 
 ## The edges
 
@@ -92,7 +98,7 @@ recorded so it is not mistaken for forgotten.
   that matches no pair, or more than one, is reported and skipped, never
   guessed. This is the only way a PR relates to a decision, and it is in the
   maker's hand at PR time.
-- **CI row → earlier CI row.** `supersedes`, on a re-run at the same sha.
+- **CI row → earlier CI row.** Not an edge: `revise_draft` lineage, above.
 - **PR ↔ issue, file ↔ file.** Not yet. An edge needs both endpoints to be
   pairs in the store (`propose_edge` refuses otherwise, decision 0144), and
   neither an issue nor a file is a pair today. When the corpus lane lands in
@@ -184,7 +190,8 @@ row carries what the read will need (`at=` in the origin).
 - The CI outcome lives in its own domain, `ci`; the decision verbs do not see
   it.
 - Four states, mapped by table; `pending` refuses.
-- A re-run supersedes; the question text is stable per sha.
+- A re-run revises the live draft (Nestor lineage, not an edge); the question
+  text is stable per sha; the same outcome twice writes nothing.
 - A PR names its decisions with a `Decision:` trailer; nothing else links
   them.
 - Shape C (the bot's inbox on the box) first, A for backfill, B stays open.

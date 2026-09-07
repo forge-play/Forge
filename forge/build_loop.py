@@ -75,7 +75,9 @@ def _predict(builder_id: str, x: decision_extract.Extracted, root: Path) -> dict
         return None
     claim = f"{x.decision.decision_type}: maker picks {x.recommended}"
     try:
-        rec = calibration_ledger.record_prediction(builder_id, claim, x.confidence, kind="fork", root=root)
+        rec = calibration_ledger.record_prediction(
+            builder_id, claim, x.confidence, kind="fork",
+            decision_type=x.decision.decision_type, root=root)
     except calibration_ledger.CalibrationLedgerError as e:
         # The same claim already settled (a re-run of a resolved plan). A
         # settled prediction is history; do not re-open it, do not fabricate.
@@ -83,11 +85,20 @@ def _predict(builder_id: str, x: decision_extract.Extracted, root: Path) -> dict
     return {"claim": claim, "confidence": x.confidence, "prediction_id": rec["id"]}
 
 
-def _settle(builder_id: str, pred: dict | None, hit: bool, root: Path) -> None:
+def _settle(builder_id: str, pred: dict | None, hit: bool, root: Path,
+            outcome: checkpoint.CheckpointOutcome | None = None) -> None:
+    """Settle the prediction and stamp the join. `outcome` is the ask this
+    prediction was about — the one moment both objects are in the same frame.
+    Before 2026-09-07 they were appended to two separate lists on `Resolved`
+    with no cross-reference, so the correlation existed for one loop iteration
+    and was then thrown away (docs/design/the-forge-pedagogy.md §5)."""
     if pred is None or pred.get("already_settled"):
         return
-    rec = calibration_ledger.resolve_prediction(builder_id, pred["prediction_id"], hit, root=root)
+    rec = calibration_ledger.resolve_prediction(
+        builder_id, pred["prediction_id"], hit, decision=outcome, root=root)
     pred["outcome"] = rec["outcome"]
+    pred["decision_ref"] = rec["decision_ref"]
+    pred["band"] = rec["band"]
 
 
 def resolve(
@@ -122,7 +133,7 @@ def resolve(
                 f"memory answered {outcome.chosen!r} for {x.decision.decision_type!r}, which names none of "
                 f"{[o.label for o in x.decision.options]} — refusing to guess")
         out.chosen[x.decision.decision_type] = label
-        _settle(builder_id, pred, label == x.recommended, root)
+        _settle(builder_id, pred, label == x.recommended, root, outcome)
         if pred is not None:
             out.predictions.append(pred)
 

@@ -1,4 +1,4 @@
-"""Tests for stores/calibration_ledger.py — the model's confidence mirror
+"""Tests for stores/led.py — the model's confidence mirror
 (docs/design/the-forge-measure.md, the `calibration` class).
 
 A prediction is a (confidence, outcome) pair the model states while building;
@@ -142,3 +142,71 @@ def test_signal_never_blocks_and_is_isolated_per_builder(tmp_path):
     assert led.overconfidence_signal(other, root=root) is None
     # each builder's records live in its own file — the calibrated one is clean
     assert led.scorecard(other, root=root)["summary"]["overconfidence"] <= 0
+
+
+# ── the join: a row that can be traced back to the decision that produced it ─
+#
+# docs/design/the-forge-pedagogy.md §5. Until 2026-09-07 a row carried six
+# fields and no key of any kind, so "for decisions that took band X, what was
+# the calibration outcome?" had no answer at any sample size.
+
+class _FakeOutcome:
+    """Duck-typed stand-in for checkpoint.CheckpointOutcome — resolve_prediction
+    reads it with getattr precisely so calibration stays free of a checkpoint
+    import (calibration is the lower layer)."""
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
+
+
+def test_resolving_with_a_decision_stamps_the_join(tmp_path):
+    led.record_prediction(
+        BUILDER, "where-the-dates-live: maker picks sidecar json", 0.8,
+        kind="fork", decision_type="where-the-dates-live", root=tmp_path)
+    rec = led.resolve_prediction(
+        BUILDER, led._prediction_id("where-the-dates-live: maker picks sidecar json"),
+        False,
+        decision=_FakeOutcome(pair_id="abc-123", band="socratic", matched_band="auto",
+                              match_confidence=0.95, engagement=0.0,
+                              decision_type="where-the-dates-live"),
+        root=tmp_path)
+    assert rec["decision_ref"] == "abc-123"
+    assert rec["band"] == "socratic" and rec["matched_band"] == "auto"
+    assert rec["match_confidence"] == 0.95 and rec["engagement"] == 0.0
+
+
+def test_resolving_without_a_decision_leaves_the_row_honestly_unjoined(tmp_path):
+    """A caller with no decision to point at must not get a fabricated key."""
+    led.record_prediction(BUILDER, "a claim", 0.7, root=tmp_path)
+    rec = led.resolve_prediction(
+        BUILDER, led._prediction_id("a claim"), True, root=tmp_path)
+    assert rec["decision_ref"] == "" and rec["band"] == ""
+
+
+def test_scorecard_groups_without_changing_the_maths(tmp_path):
+    """`group_by` reuses calibration.summary per group — no new estimator — and
+    the ungrouped header stays, so a grouped read is never mistaken for the
+    whole picture."""
+    for i, (band, hit) in enumerate([("auto", False), ("auto", False), ("socratic", True)]):
+        claim = f"claim {i}"
+        led.record_prediction(BUILDER, claim, 0.9, root=tmp_path)
+        led.resolve_prediction(
+            BUILDER, led._prediction_id(claim), hit,
+            decision=_FakeOutcome(pair_id=f"p{i}", band=band, matched_band=band,
+                                  match_confidence=0.9, engagement=None, decision_type="t"),
+            root=tmp_path)
+    card = led.scorecard(BUILDER, group_by="band", root=tmp_path)
+    assert card["resolved"] == 3, "the ungrouped header survives grouping"
+    assert card["groups"]["auto"]["n"] == 2 and card["groups"]["socratic"]["n"] == 1
+    # stated 0.9 confidence, 0/2 correct in auto — the shape §5 predicts
+    assert card["groups"]["auto"]["summary"]["hit_rate"] == 0.0
+    assert card["groups"]["auto"]["summary"]["overconfidence"] == pytest.approx(0.9)
+    assert card["groups"]["socratic"]["summary"]["hit_rate"] == 1.0
+
+
+def test_rows_written_before_the_field_existed_group_as_unset(tmp_path):
+    """"We did not record this" is not a band."""
+    led.record_prediction(BUILDER, "old row", 0.8, root=tmp_path)
+    led.resolve_prediction(
+        BUILDER, led._prediction_id("old row"), True, root=tmp_path)
+    card = led.scorecard(BUILDER, group_by="band", root=tmp_path)
+    assert list(card["groups"]) == ["(unset)"]

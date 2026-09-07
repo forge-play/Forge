@@ -115,7 +115,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal, Protocol
 
@@ -308,6 +308,25 @@ class CheckpointOutcome:
     *human* sign-off (`by_human`) is the caller's binding, default False — see
     `run_checkpoint`'s `by_human` and `_attest`; without a D11 identity the Forge
     cannot prove a human answered, so it does not claim one by default.
+
+    `pair_id`: the decision's stable Nestor identity — the SAME key
+    `checkpoint_schedule` cards and `_attest` already use. It was computed on
+    every memory-backed path and then discarded; carrying it is what lets a
+    later calibration outcome be joined back to the decision that produced it
+    (`docs/design/the-forge-pedagogy.md` §5). `""` on the soft-Nestor path,
+    which has no pair. Note it identifies the DECISION, not the occurrence: it
+    is stable across a held→regressed→held cycle by design.
+    `match_confidence`: the raw similarity `checkpoint_memory.check` returned —
+    the continuous quantity the band is a discretization of. Recorded so band
+    effects can be read as a regression discontinuity around the two
+    thresholds rather than as three opaque buckets. `None` when memory was
+    never consulted.
+    `matched_band`: which band the MEMORY proposed, independent of which path
+    actually ran. `band` alone cannot say: both escape paths ("not this" from
+    auto, "it's different" from recognize) fall through to a full Socratic and
+    honestly report `band="socratic"`, which makes a rejected match
+    indistinguishable from a fresh decision — and rejected matches are the most
+    interesting cohort there is. `matched_band != band` IS the rejection.
     """
 
     decision_type: str
@@ -320,6 +339,9 @@ class CheckpointOutcome:
     engagement: float | None = None
     rubber_stamp: bool = False
     attestation_id: str = ""
+    pair_id: str = ""
+    match_confidence: float | None = None
+    matched_band: "Band | None" = None
 
 
 # ── the flow ─────────────────────────────────────────────────────────────────
@@ -437,11 +459,19 @@ def _seal_socratic_answer(
     root: Path,
     by_human: bool,
     project: str = "",
+    matched_band: "Band | None" = None,
+    match_confidence: float | None = None,
 ) -> CheckpointOutcome:
     """Run a full Socratic pass, seal the result, and attest it — the shared
     tail every path that falls through to full Socratic (a fresh decision-type,
     or either band's own "it's different" escape) ends on. `cm` must already be
-    open; this never opens or closes it."""
+    open; this never opens or closes it.
+
+    `matched_band`/`match_confidence` describe what memory PROPOSED before the
+    maker rejected it, and are passed only by the two escape paths — a fresh
+    decision leaves them None. The returned `band` stays `"socratic"`, which is
+    the honest report of what ran; `matched_band` is what makes a rejected
+    match distinguishable from a decision nothing matched."""
     chosen_label, rationale, deferred = _full_socratic(decision, responder)
     canonical = _deferred_canonical(chosen_label) if deferred else f"{chosen_label}: {rationale}"
     cm.seal(decision.surface, canonical, origin=_origin(project))
@@ -459,6 +489,9 @@ def _seal_socratic_answer(
         engagement=engagement,
         rubber_stamp=rubber_stamp,
         attestation_id=attestation_id,
+        pair_id=pair_id or "",
+        match_confidence=match_confidence,
+        matched_band=matched_band,
     )
 
 
@@ -534,6 +567,9 @@ def run_checkpoint(
                     sealed=True,  # already sealed going in — no re-seal, still a true fact
                     memory_available=True,
                     attestation_id=attestation_id,
+                    pair_id=result.get("provenance", {}).get("pair_id") or "",
+                    match_confidence=result["confidence"],
+                    matched_band="auto",
                 )
             # "Not this" -> the recognize-band "different" path, restated
             # for the auto band's own identifying handle: a real tier-1 hit
@@ -545,7 +581,8 @@ def run_checkpoint(
                 pair_id=pair_id,
                 reason="maker said this was not the same call as the prior sealed answer",
             )
-            return _seal_socratic_answer(cm, decision, responder, builder_id=builder_id, root=root, by_human=by_human, project=project)
+            return _seal_socratic_answer(cm, decision, responder, builder_id=builder_id, root=root, by_human=by_human, project=project,
+                                         matched_band="auto", match_confidence=result["confidence"])
 
         # ── recognize band: a real, sub-threshold hit ───────────────────
         # `canonical` is always None below Nestor's own seal threshold (see
@@ -575,6 +612,9 @@ def run_checkpoint(
                     sealed=True,
                     memory_available=True,
                     attestation_id=attestation_id,
+                    pair_id=pair_id or "",
+                    match_confidence=result["confidence"],
+                    matched_band="recognize",
                 )
             # "It's different" -> teach the memory not to conflate the two,
             # then fall through to full Socratic. No pair_id available at
@@ -585,10 +625,14 @@ def run_checkpoint(
                 target_text=prior_canonical,
                 reason="maker said this was not the same call as the recognized prior seal",
             )
-            return _seal_socratic_answer(cm, decision, responder, builder_id=builder_id, root=root, by_human=by_human, project=project)
+            return _seal_socratic_answer(cm, decision, responder, builder_id=builder_id, root=root, by_human=by_human, project=project,
+                                         matched_band="recognize", match_confidence=result["confidence"])
 
         # ── socratic band: low confidence, or nothing sealed yet at all ──
-        return _seal_socratic_answer(cm, decision, responder, builder_id=builder_id, root=root, by_human=by_human, project=project)
+        # Memory proposed nothing, so `matched_band` stays None — a genuinely
+        # fresh decision, distinguishable from the two rejections above.
+        return _seal_socratic_answer(cm, decision, responder, builder_id=builder_id, root=root, by_human=by_human, project=project,
+                                     match_confidence=result["confidence"])
 
 
 # ── the async pause seam (D-HL-5) ──────────────────────────────────────────────
@@ -732,21 +776,10 @@ def _cmd_demo(args: argparse.Namespace) -> int:
         root=Path(args.root),
         recognize_threshold=args.recognize_threshold,
     )
-    print(json.dumps(
-        {
-            "decision_type": outcome.decision_type,
-            "chosen": outcome.chosen,
-            "rationale": outcome.rationale,
-            "band": outcome.band,
-            "deferred": outcome.deferred,
-            "sealed": outcome.sealed,
-            "memory_available": outcome.memory_available,
-            "engagement": outcome.engagement,
-            "rubber_stamp": outcome.rubber_stamp,
-            "attestation_id": outcome.attestation_id,
-        },
-        indent=2,
-    ))
+    # `asdict` rather than a hand-listed dict: the hand-listed one silently
+    # omitted every field added after it was written, which is how a CLI
+    # reports a stale shape while looking complete.
+    print(json.dumps(asdict(outcome), indent=2))
     return 0
 
 

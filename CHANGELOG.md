@@ -5,7 +5,6 @@
 
 ### Added
 
-* **checkpoint:** record which project a decision was taken in ([84a2529](https://github.com/forge-play/Forge/commit/84a2529427b0c005a1cb8e8da3ce8de0f5527399))
 * **checkpoint:** record which project a decision was taken in ([408001b](https://github.com/forge-play/Forge/commit/408001b905ba918c4ab027bc6f0a21b8bd3183fc))
 
 ## [0.4.0](https://github.com/forge-play/Forge/compare/v0.3.0...v0.4.0) (2026-09-07)

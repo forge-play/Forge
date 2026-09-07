@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.0](https://github.com/forge-play/Forge/compare/v0.5.0...v0.6.0) (2026-09-07)
+
+
+### Added
+
+* **checkpoint:** carry the keys that join a band to its calibration outcome ([75928cb](https://github.com/forge-play/Forge/commit/75928cbdcaa834151c3cdc1c85b1cf692c7e414d))
+* **engagement:** a probe for what the engagement gate actually rewards ([554744c](https://github.com/forge-play/Forge/commit/554744c2bde0871934b4c0a5bd3da96fec1f7a38))
+
+
+### Fixed
+
+* **entry:** --why no longer fabricates a rationale nobody typed ([c42b73e](https://github.com/forge-play/Forge/commit/c42b73e0073942954555c02d243f8a725b06130c))
+
 ## [0.5.0](https://github.com/forge-play/Forge/compare/v0.4.0...v0.5.0) (2026-09-07)
 
 

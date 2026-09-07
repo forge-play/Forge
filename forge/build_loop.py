@@ -154,8 +154,14 @@ def resolve(
 # ── CLI (dev shape) ─────────────────────────────────────────────────────────
 
 class _PickResponder:
-    def __init__(self, picks: dict[str, str], why: str):
-        self._picks, self._why = picks, why
+    """`why=None` seals an empty rationale rather than inventing one — the same
+    rule as `entry._PickResponder`, and for the same measured reason: the old
+    default `"picked at the command line"` scored 0.350 against the 0.34
+    rubber-stamp floor and so was never flagged
+    (docs/design/the-forge-engagement-defect.md §1)."""
+
+    def __init__(self, picks: dict[str, str], why: str | None):
+        self._picks, self._why = picks, why or ""
 
     def confirm(self, prompt: str) -> bool:
         print(f"[confirm] {prompt}\n[confirm] -> yes", file=sys.stderr)
@@ -174,7 +180,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--root", default=str(checkpoint_memory.DEFAULT_CHECKPOINT_ROOT))
     p.add_argument("--choose", action="append", default=[], metavar="TYPE=LABEL",
                    help="what to pick if asked, per decision_type (default: first option)")
-    p.add_argument("--why", default="picked at the command line")
+    p.add_argument("--why", default=None,
+                   help="the rationale, if asked. No default: a rationale nobody "
+                        "typed is not one.")
     p.add_argument("--json", action="store_true")
     return p
 

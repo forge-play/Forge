@@ -247,10 +247,25 @@ def open_bite(
 
 class _PickResponder:
     """Non-interactive: confirm yes; choose `--choose LABEL` (or the first
-    option) with `--why`."""
+    option) with `--why`.
 
-    def __init__(self, choose: str | None, why: str):
-        self._choose, self._why = choose, why
+    `why=None` means the maker gave no rationale, and this responder does NOT
+    invent one. It seals an empty rationale, which `checkpoint._engagement_fields`
+    scores 0.0 and flags `rubber_stamp=True` — "the loudest rubber-stamp there
+    is," which is exactly what a choice nobody explained should read as.
+
+    Until 2026-09-07 `--why` defaulted to the string `"picked at the command
+    line"`. That is argparse help text, not a reason, and it reached the ledger
+    as a sealed rationale (docs/design/the-positional-default.md). Worse, it
+    scored 0.350 against a 0.34 floor — clearing it on a homonym, since `line`
+    is in the friction scorer's grounding lexicon as in *file, line* — so the
+    one rationale in the system that is definitionally not a decision was the
+    one the engagement gate never flagged, and it graded `Good`, pushing the
+    review interval OUT (docs/design/the-forge-engagement-defect.md §1).
+    A rationale nobody typed is not one."""
+
+    def __init__(self, choose: str | None, why: str | None):
+        self._choose, self._why = choose, why or ""
 
     def confirm(self, prompt: str) -> bool:
         print(f"[confirm] {prompt}\n[confirm] -> yes", file=sys.stderr)
@@ -272,7 +287,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--builder", required=True, dest="builder_id")
     p.add_argument("--root", default=str(checkpoint_memory.DEFAULT_CHECKPOINT_ROOT))
     p.add_argument("--choose", default=None, help="the major to pick if asked (default: first)")
-    p.add_argument("--why", default="picked at the command line", help="the rationale, if asked")
+    p.add_argument("--why", default=None,
+                   help="the rationale, if asked. No default: a rationale nobody "
+                        "typed is not one, and an absent one seals empty and flags "
+                        "as a rubber-stamp rather than passing as a reason.")
     p.add_argument("--json", action="store_true")
     return p
 

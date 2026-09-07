@@ -34,6 +34,7 @@ from typing import Any
 from . import paths
 
 __all__ = ["BUNDLE_DIR", "BUNDLE_NAME", "HEAD_NAME", "BundleError", "Cut", "Check",
+           "main",
            "cut", "check", "find_databases"]
 
 #: Where a checkout keeps its bundle. A dot-directory at the repo root, so it
@@ -72,10 +73,12 @@ class Check:
     head: dict | None = None
     digest_recomputed: str = "not_checked"   # "ok" | "mismatch" | "not_checked" (Nestor absent)
     databases: list[str] = field(default_factory=list)
+    state: str = "ok"                        # "ok" | "uncut" | "failed"
 
     def to_dict(self) -> dict:
-        return {"ok": self.ok, "problems": list(self.problems), "head": self.head,
-                "digest_recomputed": self.digest_recomputed, "databases": list(self.databases)}
+        return {"ok": self.ok, "state": self.state, "problems": list(self.problems),
+                "head": self.head, "digest_recomputed": self.digest_recomputed,
+                "databases": list(self.databases)}
 
 
 def _nestor():
@@ -160,7 +163,22 @@ def check(repo_root: str | Path) -> Check:
     hold together: both present and readable, digests equal, the bundle's
     digest recomputes (when Nestor is here to recompute it), and no database
     anywhere under `repo_root`. Never raises; every failure is a problem
-    line, and `ok` is False if there is one."""
+    line, and `ok` is False if there is one.
+
+    Three states, because two were not enough. A workshop instantiated a
+    minute ago has no ledger head to cut from, so it has neither file, and
+    reporting that as a failure makes every new workshop red for doing
+    nothing wrong — which teaches its maker that red means nothing. So
+    **neither file present** is `uncut`: no problems, `ok` True. **One
+    present and the other missing** is still `failed`, because a half-pair
+    is genuinely broken. A database in the checkout is `failed` either way;
+    the workshop rule does not care how far along the workshop is.
+
+    The tradeoff, stated rather than hidden: a checkout that cut a bundle
+    and then lost *both* files reads as `uncut`. Nothing inside the two
+    files can distinguish that from never having cut one — the evidence
+    lives in the repository's history, not in its working tree. `uncut` is
+    the honest name for what this function can actually see."""
     repo_root = Path(repo_root)
     out = repo_root / BUNDLE_DIR
     c = Check(ok=True)
@@ -169,11 +187,13 @@ def check(repo_root: str | Path) -> Check:
         c.problems.append(f"database in the checkout: {d}")
 
     head_path, bundle_path = out / HEAD_NAME, out / BUNDLE_NAME
+    uncut = not head_path.is_file() and not bundle_path.is_file()
     head: dict | None = None
     bundle: dict | None = None
     for name, p in ((HEAD_NAME, head_path), (BUNDLE_NAME, bundle_path)):
         if not p.is_file():
-            c.problems.append(f"missing {BUNDLE_DIR}/{name}")
+            if not uncut:
+                c.problems.append(f"missing {BUNDLE_DIR}/{name}")
             continue
         try:
             loaded = json.loads(p.read_text(encoding="utf-8"))
@@ -202,4 +222,74 @@ def check(repo_root: str | Path) -> Check:
                 c.problems.append(f"bundle digest does not recompute: {detail}")
 
     c.ok = not c.problems
+    c.state = "ok" if c.ok and not uncut else ("uncut" if c.ok else "failed")
     return c
+
+
+# ── the command line ───────────────────────────────────────────────────────
+# This lives in `forge/` and not in `tools/` because `tools/` is not in the
+# wheel: the build packages `forge` alone, so a maker who ran
+# `pip install forge-play` had the library and no way to invoke it. The first
+# bite worked only because `forge/entry.py` happens to carry a `__main__`;
+# the cut and the check had neither that nor a console script, which made
+# step 6 of the first-bite sequence (the-forge-workshop.md) unreachable from
+# a real install. `tools/store_export.py` is now a shim over this.
+
+def main(argv: list[str] | None = None) -> int:
+    """`forge-export` — cut a workshop's bundle into its checkout, or check one.
+
+        forge-export --project-id my-workshop --repo-root .          # cut
+        forge-export --repo-root . --check                           # check
+        forge-export --project-id my-workshop --repo-root . --json   # cut, JSON out
+
+    Exit 0 when the cut succeeds, when the check holds, or when the checkout
+    is `uncut`; 1 on a refusal or a failed check, with the reasons printed.
+    Writes nothing to the store, ever.
+    """
+    import argparse
+    import sys
+
+    ap = argparse.ArgumentParser(prog="forge-export",
+                                 description=(main.__doc__ or "").strip().split("\n")[0])
+    ap.add_argument("--repo-root", required=True, help="the workshop checkout")
+    ap.add_argument("--project-id", help="the per-project Nestor to cut from (required unless --check)")
+    ap.add_argument("--check", action="store_true",
+                    help=f"re-read {BUNDLE_DIR}/{HEAD_NAME} and {BUNDLE_DIR}/{BUNDLE_NAME} and report")
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args(argv)
+
+    if a.check:
+        c = check(a.repo_root)
+        if a.json:
+            print(json.dumps(c.to_dict(), indent=2, sort_keys=True))
+        elif c.state == "uncut":
+            print(f"uncut — no {BUNDLE_DIR}/{HEAD_NAME} and no {BUNDLE_DIR}/{BUNDLE_NAME} in "
+                  f"{a.repo_root}. Nothing has been cut yet; this is not a failure.")
+        else:
+            print("ok" if c.ok else "FAILED")
+            for p in c.problems:
+                print(f"  - {p}")
+            if c.head:
+                print(f"  head {c.head.get('head', '')[:16]}  digest {c.head.get('digest', '')[:16]}  "
+                      f"cut {c.head.get('cut_at', '')}  recomputed: {c.digest_recomputed}")
+        return 0 if c.ok else 1
+
+    if not a.project_id:
+        ap.error("--project-id is required to cut")
+    try:
+        c = cut(a.project_id, a.repo_root)
+    except BundleError as e:
+        print(f"refused: {e}", file=sys.stderr)
+        return 1
+    if a.json:
+        print(json.dumps(c.to_dict(), indent=2, sort_keys=True))
+    else:
+        print(f"cut {a.project_id} at head {c.head[:16]}  digest {c.digest[:16]}  "
+              f"pairs {c.counts.get('pairs', 0)} sealed {c.counts.get('sealed', 0)}")
+        print(f"  {c.bundle_path}\n  {c.head_path}")
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main())

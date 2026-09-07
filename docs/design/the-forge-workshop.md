@@ -40,7 +40,7 @@ and §8 give the same answer from two sides:
 - **The repo carries the exported bundle**, which is shape: questions,
   commitments, edges, warrants with recipes and digests, rejections, the
   ledger chain. `nestor export` writes it; the store pull reads it. A
-  workshop checkout holds `forge/bundle.json` (name open) and never a
+  workshop checkout holds `.forge/bundle.json` and never a
   database.
 
 @constraint severity=critical
@@ -73,22 +73,34 @@ itself, because the workshop is the project.
 6. **Export.** The bundle is cut at the ledger head and committed beside the
    code. That commit is the first thing the pull can read.
 
-Steps 2 to 4 exist and are tested. Step 5 exists on two unpushed branches.
-Step 6 is the export half of `tools/store_pull.py`, not yet written. Step 1
-is the template itself.
+Steps 2 to 4 exist and are tested. Steps 5 and 6 are built and shipped:
+`forge/deposit.py` with `tools/pr_deposit.py`, and `forge/bundle.py` with the
+`forge-export` console script. The branches this paragraph once called
+unpushed — `design/pr-time-deposit`, `feat/bundle-export`, `feat/store-diff` —
+are merged, and the code is in the published 0.3.0 wheel. Step 1 is the
+template itself, and is the last of the six.
 
 ## What the template holds
 
 - `README.md` that opens with the question and nothing else.
 - `pyproject.toml` depending on `forge-play` with the fleet's pin shape.
-- `forge/bundle.json` (empty at instantiation) and `forge/HEAD` (the ledger
-  head it was cut at).
+- `.forge/bundle.json` and `.forge/HEAD` (the ledger head it was cut at).
+  Absent at instantiation, not empty: `bundle.check` reports a checkout with
+  neither file as `uncut` rather than failed, so a workshop that has not yet
+  taken its first bite is not red for it.
 - `.github/workflows/tests.yml`, ported from this repo's, so the deposit has
   runs to read.
 - `pull_request_template.md` with a `Decision:` line, so the trailer is
   offered rather than remembered.
 - No `.mcp.json` that grants the orchestrator seat. The jig's config is the
-  model: Nestor first with the corpus verbs registered, willow second.
+  model: Nestor first with the corpus verbs registered, willow second. It
+  ships as `.mcp.json.example`, because the fleet gitignores `**/.mcp.json`
+  — a live MCP config carries box-local paths, so a template that shipped one
+  would ship someone else's box.
+- `nestor-meaning` as a **runtime** dependency, not an optional one. The
+  engine keeps Nestor soft and its base install dependency-free; a workshop
+  cannot, because `forge.entry` refuses outright without it (§11), and a
+  template whose first command cannot run is not a template.
 
 ## The keyword row
 
@@ -109,7 +121,8 @@ workshops, not guessed before the first.
 
 ## Open
 
-- The bundle's path and name in the template.
+- ~~The bundle's path and name in the template.~~ Settled by the code:
+  `.forge/bundle.json` and `.forge/HEAD`, per `forge.bundle.BUNDLE_DIR`.
 - Whether `project_id` is derived from the repo name or declared in the
   template's config; derivation keeps the two from drifting, declaration
   survives a rename.

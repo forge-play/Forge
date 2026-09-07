@@ -6,7 +6,6 @@
 ### Added
 
 * **checkpoint:** carry the keys that join a band to its calibration outcome ([75928cb](https://github.com/forge-play/Forge/commit/75928cbdcaa834151c3cdc1c85b1cf692c7e414d))
-* **checkpoint:** measure what the engagement gate rewards, and join a band to its outcome ([52be58e](https://github.com/forge-play/Forge/commit/52be58eed323b0fe2ed15f0f36ae2a892c72bfd5))
 * **engagement:** a probe for what the engagement gate actually rewards ([554744c](https://github.com/forge-play/Forge/commit/554744c2bde0871934b4c0a5bd3da96fec1f7a38))
 
 

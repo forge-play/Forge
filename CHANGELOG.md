@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/forge-play/Forge/compare/v0.7.0...v0.7.1) (2026-09-07)
+
+
+### Fixed
+
+* **calibration:** the engagement score no longer moves a review date ([01d398d](https://github.com/forge-play/Forge/commit/01d398d20fc3bd6fbd15ac933540482f976ad1e1))
+
 ## [0.7.0](https://github.com/forge-play/Forge/compare/v0.6.0...v0.7.0) (2026-09-07)
 
 

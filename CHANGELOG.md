@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.0](https://github.com/forge-play/Forge/compare/v0.6.0...v0.7.0) (2026-09-07)
+
+
+### Added
+
+* **entry:** say when a sealed row's signature could not be checked ([47ba5c0](https://github.com/forge-play/Forge/commit/47ba5c0daa5b3caa8b672e86ca4b440cd2ac7114))
+
+
+### Fixed
+
+* **entry:** an ambiguous major with no choice refuses instead of taking index zero ([be6a00f](https://github.com/forge-play/Forge/commit/be6a00ffa6ef6f588c4c6486c9678534fce88d01))
+
 ## [0.6.0](https://github.com/forge-play/Forge/compare/v0.5.0...v0.6.0) (2026-09-07)
 
 

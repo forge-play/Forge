@@ -860,3 +860,62 @@ def test_a_workshop_projects_its_own_decisions_out_of_a_cross_project_store(tmp_
     # The property that matters: nothing from the other project is in the
     # projection, however many rows share the builder and the decision-type.
     assert all("private-books" not in r["origin"] for r in mine)
+
+
+# ── the join keys: pair_id, match_confidence, matched_band ──────────────────
+#
+# docs/design/the-forge-pedagogy.md §5 asks "for decisions that took band X,
+# what was the later calibration outcome?" Before 2026-09-07 that was
+# unanswerable: `band` lived only on this in-memory dataclass and was consumed
+# by three print statements, and `pair_id` was computed on every memory-backed
+# path and then discarded. These pin the keys that make the question askable.
+
+@_needs_nestor
+def test_auto_carries_the_join_keys(tmp_path):
+    """A memory-backed outcome carries the Nestor pair_id it was already
+    computing, the raw similarity the band discretizes, and the band memory
+    proposed."""
+    root = tmp_path / "checkpoints"
+    _seal_original_auth_decision(root)
+    out = checkpoint.run_checkpoint(
+        Decision(decision_type=DECISION_TYPE, surface=ORIGINAL_SURFACE, options=list(AUTH_OPTIONS)),
+        builder_id=BUILDER_A, responder=ScriptedResponder(confirm_answers=[True]), root=root)
+    assert out.band == "auto" and out.matched_band == "auto"
+    assert out.pair_id, "the pair_id was computed for the attestation; it must survive"
+    assert out.match_confidence is not None and out.match_confidence >= 0.92
+
+
+@_needs_nestor
+def test_a_rejected_match_is_distinguishable_from_a_fresh_decision(tmp_path):
+    """The cohort §5 most needs and could not see. Both escape paths fall
+    through to a full Socratic and honestly report band="socratic" — which made
+    a match the maker REJECTED look identical to a decision nothing matched.
+    `matched_band` is what separates them; `matched_band != band` is the
+    rejection."""
+    root = tmp_path / "checkpoints"
+    _seal_original_auth_decision(root)
+
+    rejected = checkpoint.run_checkpoint(
+        Decision(decision_type=DECISION_TYPE, surface=ORIGINAL_SURFACE, options=list(AUTH_OPTIONS)),
+        builder_id=BUILDER_A,
+        responder=ScriptedResponder(
+            confirm_answers=[False],
+            choose_answers=[ChoiceResult(chosen_label="JWT bearer token",
+                                         rationale="revocation is handled at the gateway now")]),
+        root=root)
+    assert rejected.band == "socratic", "what ran really was a full Socratic — reported honestly"
+    assert rejected.matched_band == "auto", "…but memory HAD proposed an auto match, and it was rejected"
+    assert rejected.matched_band != rejected.band
+
+    fresh = checkpoint.run_checkpoint(
+        Decision(decision_type="a-decision-type-nothing-has-ever-matched",
+                 surface="Should the cache be write-through or write-back?",
+                 options=[checkpoint.Option("write-through", "slower writes, simpler recovery"),
+                          checkpoint.Option("write-back", "faster writes, dirty-page bookkeeping")]),
+        builder_id=BUILDER_A,
+        responder=ScriptedResponder(
+            choose_answers=[ChoiceResult(chosen_label="write-back",
+                                         rationale="writes dominate this workload")]),
+        root=root)
+    assert fresh.band == "socratic" and fresh.matched_band is None, \
+        "nothing was proposed, so nothing was rejected"

@@ -108,6 +108,7 @@ def record_prediction(
     *,
     prediction_id: str | None = None,
     kind: str = "",
+    decision_type: str = "",
     root: Path | None = None,
 ) -> dict:
     """Record the model's stated confidence in a claim, pending ground truth.
@@ -116,7 +117,12 @@ def record_prediction(
     no `prediction_id`, the id is derived from the claim text, so re-stating the
     same claim UPDATES its (still-pending) confidence rather than duplicating it.
     Refuses to re-record a claim that has already been RESOLVED — a settled data
-    point is history, not something a later re-prediction may overwrite."""
+    point is history, not something a later re-prediction may overwrite.
+
+    `decision_type` is recorded as its own field rather than left to be parsed
+    back out of `claim`'s prefix — a decision_type containing a colon, or a
+    reworded claim, breaks that parse silently. It is the coarse grouping axis
+    `scorecard(group_by=...)` reads."""
     if not isinstance(claim, str) or not claim.strip():
         raise CalibrationLedgerError("claim must be a non-empty string")
     c = _check_confidence(confidence)
@@ -134,8 +140,21 @@ def record_prediction(
         "claim": claim,
         "confidence": c,
         "kind": kind,
+        "decision_type": decision_type,
         "outcome": None,
         "resolved": False,
+        # ── the join, filled at RESOLVE time, not here ──────────────────────
+        # A prediction is recorded BEFORE the ask, on purpose — that is what
+        # makes it a prediction. The decision's `pair_id` does not exist until
+        # the seal does, and the band is not known until the maker answers, so
+        # neither can honestly be written now. `resolve_prediction` stamps them
+        # when they are real. Declared here so a row's shape is one thing, and
+        # so a never-resolved row plainly reads as unjoined.
+        "decision_ref": "",
+        "band": "",
+        "matched_band": None,
+        "match_confidence": None,
+        "engagement": None,
     }
     store.put(PREDICTIONS, record, record_id=pid)
     return record
@@ -146,13 +165,23 @@ def resolve_prediction(
     prediction_id: str,
     outcome: bool,
     *,
+    decision: "object | None" = None,
     root: Path | None = None,
 ) -> dict:
     """Settle a pending prediction with ground truth (`outcome` True/False).
 
     Refuses an unknown id, and refuses to re-resolve an already-settled one — a
     double-resolve would silently rewrite history (the same single-use guard the
-    governance resume seam already learned to keep)."""
+    governance resume seam already learned to keep).
+
+    `decision` is the `checkpoint.CheckpointOutcome` the ask produced. Passing
+    it stamps the join — `decision_ref` (its Nestor `pair_id`), the `band` that
+    ran, the `matched_band` memory proposed, the raw `match_confidence`, and the
+    seal-time `engagement` — so a later reader can ask "for decisions that took
+    band X, what was the calibration outcome?" Duck-typed rather than imported
+    to keep this module free of a checkpoint dependency (calibration is the
+    lower layer; `build_loop` is what knows about both). Omitting it leaves the
+    row unjoined, which is honest for a caller that has no decision to point at."""
     store = _store(builder_id, root)
     record = store.get(PREDICTIONS, prediction_id)
     if record is None:
@@ -164,25 +193,57 @@ def resolve_prediction(
         )
     record["outcome"] = bool(outcome)
     record["resolved"] = True
+    if decision is not None:
+        record["decision_ref"] = getattr(decision, "pair_id", "") or ""
+        record["band"] = getattr(decision, "band", "") or ""
+        record["matched_band"] = getattr(decision, "matched_band", None)
+        record["match_confidence"] = getattr(decision, "match_confidence", None)
+        record["engagement"] = getattr(decision, "engagement", None)
+        if not record.get("decision_type"):
+            record["decision_type"] = getattr(decision, "decision_type", "") or ""
     store.put(PREDICTIONS, record, record_id=prediction_id)
     return record
 
 
-def scorecard(builder_id: str, *, root: Path | None = None) -> dict:
+def scorecard(builder_id: str, *, group_by: str = "", root: Path | None = None) -> dict:
     """The model's calibration mirror: the `calibration.summary` header (brier,
     log_score, hit_rate, overconfidence) plus the `calibration.bins` reliability
     table, over the builder's RESOLVED predictions, with a pending count so a
-    thin scorecard reads as thin, not as confident."""
+    thin scorecard reads as thin, not as confident.
+
+    `group_by` names a row field (`"band"`, `"matched_band"`, `"decision_type"`,
+    `"kind"`) and adds a `groups` mapping of that field's values to their own
+    summary/bins. The maths is unchanged — `calibration.summary` per group, no
+    new estimator. The ungrouped header always stays, so a grouped read can
+    never be mistaken for the whole picture.
+
+    Rows written before a field existed simply have no value for it and land
+    under `""`/`None` rendered as `"(unset)"` — reported as its own group rather
+    than silently folded into another, because "we did not record this" is not
+    a band."""
     store = _store(builder_id, root)
     all_recs = store.all(PREDICTIONS)
-    pairs = [(float(r["confidence"]), bool(r["outcome"])) for r in all_recs if r.get("resolved")]
-    return {
+    resolved = [r for r in all_recs if r.get("resolved")]
+    pairs = [(float(r["confidence"]), bool(r["outcome"])) for r in resolved]
+    card = {
         "builder_id": store.builder_id,
         "resolved": len(pairs),
         "pending": sum(1 for r in all_recs if not r.get("resolved")),
         "summary": calibration.summary(pairs),
         "bins": calibration.bins(pairs),
     }
+    if group_by:
+        groups: dict[str, list[tuple[float, bool]]] = {}
+        for r in resolved:
+            key = r.get(group_by)
+            key = "(unset)" if key in (None, "") else str(key)
+            groups.setdefault(key, []).append((float(r["confidence"]), bool(r["outcome"])))
+        card["group_by"] = group_by
+        card["groups"] = {
+            k: {"n": len(v), "summary": calibration.summary(v), "bins": calibration.bins(v)}
+            for k, v in sorted(groups.items())
+        }
+    return card
 
 
 def overconfidence_signal(

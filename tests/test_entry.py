@@ -187,3 +187,63 @@ def test_the_demo_finds_its_table():
     friction if it is missing. It exists now."""
     from forge import majors
     assert majors.DEFAULT_TABLE.name == "keywords.toml" and majors.DEFAULT_TABLE.exists()
+
+
+# ── the --why default: a rationale nobody typed is not one ──────────────────
+#
+# docs/design/the-positional-default.md's @prompt: "the test that matters is a
+# sentence with two or more majors and no --choose, run non-interactively." Its
+# open-gaps table names the `--why` default as its own row. These are that row.
+#
+# A test asserting the *right* major was chosen would be testing the keyword
+# table, not this.
+
+def test_why_has_no_default():
+    """`--why` must not fabricate a rationale. Until 2026-09-07 it defaulted to
+    the string "picked at the command line", which reached the ledger as a
+    sealed rationale and — scoring 0.350 against a 0.34 floor, on the homonym
+    `line` — was the one rationale in the system the engagement gate never
+    flagged (docs/design/the-forge-engagement-defect.md §1)."""
+    a = entry.build_parser().parse_args(["s", "--project", "p", "--builder", "b"])
+    assert a.why is None, "--why must have no default"
+
+
+def test_pick_responder_does_not_invent_a_rationale():
+    """With no --why, the CLI responder seals an EMPTY rationale rather than
+    argparse's help text."""
+    r = entry._PickResponder(choose="web", why=None)
+    d = Decision(decision_type=entry.DECISION_TYPE_MAJOR,
+                 surface="could be web, mobile, desktop — which major?",
+                 options=[checkpoint.Option("web", "a site"),
+                          checkpoint.Option("mobile", "an app")])
+    assert r.choose(d).rationale == ""
+
+
+@_needs_nestor
+def test_no_rationale_is_the_loudest_rubber_stamp(home):
+    """Two or more majors, no --choose, no --why, non-interactive. The choice
+    still happens (refusing on an ambiguous major is a separate open gap), but
+    it is now recorded honestly: an empty rationale scores 0.0 and flags, per
+    checkpoint._engagement_fields' "the loudest rubber-stamp there is".
+
+    Before this fix the same run scored 0.350 and graded `Good`, which pushed
+    the review interval OUT — the engine's least-considered decision was also
+    the one it re-asked least often."""
+    out = entry.open_bite(SENTENCE, project_id=PROJECT, builder_id=BUILDER,
+                          responder=entry._PickResponder(choose=None, why=None),
+                          root=home / "cp").decision_outcome
+    assert out.band == "socratic" and out.rationale == ""
+    assert out.engagement == 0.0
+    assert out.rubber_stamp is True, "an unexplained choice must read as a rubber-stamp"
+
+
+@_needs_nestor
+def test_the_old_default_would_have_escaped_the_flag(home):
+    """The regression this fix exists to prevent, pinned as an executable fact:
+    the retired default string clears the rubber-stamp floor. If a future change
+    makes this pass as thin, the --why default was not the whole problem — and
+    the engagement defect paper's §1 needs revisiting, not deleting."""
+    from forge import checkpoint_engagement
+    surface = "could be web, mobile, desktop — which major?"
+    assert checkpoint_engagement.engagement_score("picked at the command line", surface) >= \
+        checkpoint_engagement.RUBBER_STAMP_FLOOR

@@ -147,7 +147,7 @@ they have none yet"* — which, measured, is not what happens either.
 | gap | state | waiting on |
 |---|---|---|
 | Refuse, prompt, or record-unsealed on an ambiguous major. | open | The four options above. Refusal is the default reading of §11's precedent. |
-| `--why` defaulting to `"picked at the command line"` puts argparse's help text into the record as a rationale. | open | It should have no default; a rationale nobody typed is not one. |
+| `--why` defaulting to `"picked at the command line"` puts argparse's help text into the record as a rationale. | **closed 2026-09-07** | Fixed: `--why` has no default, and `_PickResponder` seals an empty rationale rather than inventing one — which `_engagement_fields` scores 0.0 and flags as "the loudest rubber-stamp there is." Measured harm before the fix: the string scored **0.350** against a 0.34 floor and was **not** flagged, so it graded `Good` and pushed the review interval *out* — the engine's least-considered decision was also the one it re-asked least often. It cleared the floor on a homonym: `line` is in the friction scorer's grounding lexicon as in *file, line*. See `the-forge-engagement-defect.md` §1; pinned by `tests/test_entry.py::test_no_rationale_is_the_loudest_rubber_stamp`. |
 | `has_sealed` trusts unverified seals whenever the keyring is absent — which is every real run of the entry. | open | Upstream of this paper: either the entry runs with a keyring, or `has_sealed` must weigh `by_human`. |
 | No `tool` row in the keyword table, and the first real sentence used the word. | **deliberately open** | `the-forge-workshop.md`: the row to argue is measured after the first ten workshops, not guessed after the first. This is workshop one. Record the miss; do not add the row. |
 

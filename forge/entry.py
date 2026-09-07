@@ -226,9 +226,15 @@ def open_bite(
         options=options,
         recommended=None,
     )
+    # `project` rides through to the sealed row's `origin` (the-two-stores.md).
+    # The checkpoint memory is per-builder and cross-project — that is what
+    # `has_sealed` needs — so the project is a field on the row, never part of
+    # the domain key. It is what makes "the decisions taken in THIS workshop" a
+    # filter rather than a guess about which rows belong to the repository
+    # being exported.
     outcome = checkpoint.run_checkpoint(
         decision, builder_id=builder_id, responder=responder, root=root,
-        recognize_threshold=recognize_threshold,
+        recognize_threshold=recognize_threshold, project=project_id,
     )
     e.decision_outcome = outcome
     e.major = _major_from_chosen(outcome.chosen, ask)

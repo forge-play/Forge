@@ -405,6 +405,29 @@ def _attest(builder_id: str, pair_id: str | None, chosen: str, root: Path, by_hu
     return rec["id"]
 
 
+def _origin(project: str) -> str:
+    """The row's `origin`, carrying which project the decision was taken in.
+
+    A field, deliberately, and NOT part of the domain key. The domain is
+    `builder:<id>:decision:<type>`, and a builder's checkpoint memory is
+    cross-project on purpose — `has_sealed` asks "has this maker engaged this
+    decision-type at all", and a memory that reset per project would not be
+    calibration. Folding the project into the domain would answer a different,
+    worse question.
+
+    What it buys is `the-two-stores.md`'s projection: the decisions taken in
+    THIS project become a filter over rows rather than a guess about which
+    ones belong to the repository being exported. A guess that is wrong once
+    publishes a maker's unrelated work.
+
+    Same space-separated `key=value` shape `deposit.py` writes
+    (`<repo>@<sha> actor=… via=… at=…`), so one convention reads both stores.
+    Empty when no project was named: an absent project is recorded as absent,
+    never as a default.
+    """
+    return f"project={project}" if project else ""
+
+
 def _seal_socratic_answer(
     cm: "checkpoint_memory.CheckpointMemory",
     decision: Decision,
@@ -413,6 +436,7 @@ def _seal_socratic_answer(
     builder_id: str,
     root: Path,
     by_human: bool,
+    project: str = "",
 ) -> CheckpointOutcome:
     """Run a full Socratic pass, seal the result, and attest it — the shared
     tail every path that falls through to full Socratic (a fresh decision-type,
@@ -420,7 +444,7 @@ def _seal_socratic_answer(
     open; this never opens or closes it."""
     chosen_label, rationale, deferred = _full_socratic(decision, responder)
     canonical = _deferred_canonical(chosen_label) if deferred else f"{chosen_label}: {rationale}"
-    cm.seal(decision.surface, canonical)
+    cm.seal(decision.surface, canonical, origin=_origin(project))
     engagement, rubber_stamp = _engagement_fields(rationale, deferred, decision.surface)
     pair_id = cm.check(decision.surface).get("provenance", {}).get("pair_id")
     attestation_id = _attest(builder_id, pair_id, canonical, root, by_human)
@@ -446,6 +470,7 @@ def run_checkpoint(
     root: Path = checkpoint_memory.DEFAULT_CHECKPOINT_ROOT,
     recognize_threshold: float = DEFAULT_RECOGNIZE_THRESHOLD,
     by_human: bool = False,
+    project: str = "",
 ) -> CheckpointOutcome:
     """The D8 checkpoint, end to end: soft-Nestor gate, then route by band,
     present/confirm accordingly, seal what needs sealing. See module
@@ -520,7 +545,7 @@ def run_checkpoint(
                 pair_id=pair_id,
                 reason="maker said this was not the same call as the prior sealed answer",
             )
-            return _seal_socratic_answer(cm, decision, responder, builder_id=builder_id, root=root, by_human=by_human)
+            return _seal_socratic_answer(cm, decision, responder, builder_id=builder_id, root=root, by_human=by_human, project=project)
 
         # ── recognize band: a real, sub-threshold hit ───────────────────
         # `canonical` is always None below Nestor's own seal threshold (see
@@ -538,7 +563,7 @@ def run_checkpoint(
                 # Seal the NEW wording to the SAME answer — next time this
                 # exact phrasing is an auto hit, per the design doc's own
                 # "loose recognition" line.
-                cm.seal(decision.surface, prior_canonical)
+                cm.seal(decision.surface, prior_canonical, origin=_origin(project))
                 pair_id = cm.check(decision.surface).get("provenance", {}).get("pair_id")
                 attestation_id = _attest(builder_id, pair_id, prior_canonical, root, by_human)
                 return CheckpointOutcome(
@@ -560,10 +585,10 @@ def run_checkpoint(
                 target_text=prior_canonical,
                 reason="maker said this was not the same call as the recognized prior seal",
             )
-            return _seal_socratic_answer(cm, decision, responder, builder_id=builder_id, root=root, by_human=by_human)
+            return _seal_socratic_answer(cm, decision, responder, builder_id=builder_id, root=root, by_human=by_human, project=project)
 
         # ── socratic band: low confidence, or nothing sealed yet at all ──
-        return _seal_socratic_answer(cm, decision, responder, builder_id=builder_id, root=root, by_human=by_human)
+        return _seal_socratic_answer(cm, decision, responder, builder_id=builder_id, root=root, by_human=by_human, project=project)
 
 
 # ── the async pause seam (D-HL-5) ──────────────────────────────────────────────
@@ -605,13 +630,21 @@ def resume_checkpoint(
     responder: Responder,
     root: Path = checkpoint_memory.DEFAULT_CHECKPOINT_ROOT,
     by_human: bool = False,
+    project: str = "",
 ) -> CheckpointOutcome:
     """A human is now present for a parked item: rebuild the `Decision` from the
     stored evidence, run the FULL `run_checkpoint` flow (band routing + seal +
     attest + engagement — a resumed decision is decided for real, by the human
     now present), and resolve the queue item in place (states-not-deletions).
     Returns the `CheckpointOutcome`. Raises `CheckpointError` if `item_id` has
-    no parked decision (already resumed, or never parked)."""
+    no parked decision (already resumed, or never parked).
+
+    `project` must be supplied by the resumer. A parked item records the
+    surface, options and recommendation and NOT the project it was parked in,
+    so this path cannot recover it. Left empty, the resumed seal carries no
+    project and falls out of every workshop projection — recorded as absent
+    rather than guessed, which is the honest failure and still a real one
+    (`the-two-stores.md`)."""
     parked = checkpoint_governance.get_parked_decision(builder_id, item_id, root=root)
     if parked is None:
         raise CheckpointError(
@@ -635,7 +668,8 @@ def resume_checkpoint(
         recommended=parked.get("recommended"),
     )
     outcome = run_checkpoint(
-        decision, builder_id=builder_id, responder=responder, root=root, by_human=by_human
+        decision, builder_id=builder_id, responder=responder, root=root,
+        by_human=by_human, project=project,
     )
     # Only CONSUME the parked item if the decision actually committed. If
     # run_checkpoint took its soft-Nestor path (sealed=False, no attestation),

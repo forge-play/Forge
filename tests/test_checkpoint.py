@@ -736,7 +736,7 @@ def test_resume_leaves_the_item_open_when_the_seal_fails(tmp_path, monkeypatch):
     decision = Decision(decision_type=DECISION_TYPE, surface=ORIGINAL_SURFACE, options=AUTH_OPTIONS)
     item_id = checkpoint.park_checkpoint(decision, builder_id=BUILDER_A, root=root)
 
-    def _unsealed(decision, *, builder_id, responder, root, by_human=False):
+    def _unsealed(decision, *, builder_id, responder, root, by_human=False, project=""):
         return checkpoint.CheckpointOutcome(
             decision_type=decision.decision_type, chosen="x", rationale="", band="socratic",
             deferred=False, sealed=False, memory_available=False,
@@ -750,3 +750,113 @@ def test_resume_leaves_the_item_open_when_the_seal_fails(tmp_path, monkeypatch):
     # NOT consumed: still open, and the parked decision is still retrievable
     assert len(_gov.open_items(BUILDER_A, root=root)) == 1
     assert _gov.get_parked_decision(BUILDER_A, item_id, root=root) is not None
+
+
+# ── the project field on the row (the-two-stores.md) ────────────────────────
+#
+# The point of these is not that a string reaches a column. It is the two
+# properties the paper argues for: a workshop can filter its own decisions out
+# of a cross-project store, and adding the project did NOT segment calibration.
+
+
+def _rows(builder_id, decision_type, root):
+    """Every candidate row in this builder/decision-type's memory."""
+    with checkpoint.checkpoint_memory.open_checkpoint_memory(
+        builder_id, decision_type, root=root
+    ) as cm:
+        return list(cm._store.memory_candidates(cm.domain, cm.domain))
+
+
+def _decision(dt, surface):
+    return Decision(
+        decision_type=dt,
+        surface=surface,
+        options=(Option("keep", "stays as it is"), Option("move", "goes elsewhere")),
+    )
+
+
+@_needs_nestor
+def test_a_sealed_row_carries_the_project_in_its_origin(tmp_path):
+    root = tmp_path / "checkpoints"
+    responder = ScriptedResponder(
+        choose_answers=[ChoiceResult(chosen_label="keep", rationale="it reads fine here")]
+    )
+    out = checkpoint.run_checkpoint(
+        _decision("shape-of-the-thing", "Where does source-trail live?"),
+        builder_id=BUILDER_A, responder=responder, root=root, project="source-trail",
+    )
+    assert out.sealed is True
+    rows = _rows(BUILDER_A, "shape-of-the-thing", root)
+    assert [r["origin"] for r in rows] == ["project=source-trail"]
+
+
+@_needs_nestor
+def test_no_project_records_absence_never_a_default(tmp_path):
+    """An absent project is absent. Defaulting it would put a row into a
+    workshop's projection that was never taken in that workshop."""
+    root = tmp_path / "checkpoints"
+    responder = ScriptedResponder(
+        choose_answers=[ChoiceResult(chosen_label="keep", rationale="no project named")]
+    )
+    checkpoint.run_checkpoint(
+        _decision("shape-of-the-thing", "Where does this live?"),
+        builder_id=BUILDER_A, responder=responder, root=root,
+    )
+    assert [r["origin"] for r in _rows(BUILDER_A, "shape-of-the-thing", root)] == [""]
+
+
+@_needs_nestor
+def test_the_project_is_a_field_not_a_domain_key_so_calibration_stays_cross_project(tmp_path):
+    """The load-bearing one. `has_sealed` is D8's trigger and must answer
+    "has this MAKER engaged this decision-type at all" — across every project
+    they have worked in. Folding the project into the domain would reset a
+    maker's calibration each time they opened a new workshop, which is not
+    calibration. Sealing under one project must therefore be visible when the
+    same builder meets the same decision-type in a different one."""
+    root = tmp_path / "checkpoints"
+    checkpoint.run_checkpoint(
+        _decision("shape-of-the-thing", "Where does source-trail live?"),
+        builder_id=BUILDER_A,
+        responder=ScriptedResponder(
+            choose_answers=[ChoiceResult(chosen_label="keep", rationale="argued in workshop one")]
+        ),
+        root=root, project="source-trail",
+    )
+
+    # A different project, same builder, same decision-type.
+    with checkpoint.checkpoint_memory.open_checkpoint_memory(
+        BUILDER_A, "shape-of-the-thing", root=root
+    ) as cm:
+        assert cm.has_sealed() is True, (
+            "calibration was segmented by project — has_sealed must span projects"
+        )
+
+
+@_needs_nestor
+def test_a_workshop_projects_its_own_decisions_out_of_a_cross_project_store(tmp_path):
+    """What the field buys: the decisions taken in THIS project are a filter,
+    not a guess about which rows belong to the repository being exported. A
+    guess that is wrong once publishes a maker's unrelated work."""
+    root = tmp_path / "checkpoints"
+    for project, rationale, surface in (
+        ("source-trail", "argued for the workshop", "Where does source-trail live?"),
+        ("private-books", "a different project entirely", "Where do the books live?"),
+        ("source-trail", "argued again, same workshop", "Where does its store live?"),
+    ):
+        checkpoint.run_checkpoint(
+            _decision("shape-of-the-thing", surface),
+            builder_id=BUILDER_A,
+            responder=ScriptedResponder(
+                confirm_answers=[False],  # "it's different" — force a fresh seal each time
+                choose_answers=[ChoiceResult(chosen_label="keep", rationale=rationale)],
+            ),
+            root=root, project=project,
+        )
+
+    rows = _rows(BUILDER_A, "shape-of-the-thing", root)
+    mine = [r for r in rows if r["origin"] == "project=source-trail"]
+    theirs = [r for r in rows if r["origin"] == "project=private-books"]
+    assert len(mine) == 2 and len(theirs) == 1, f"origins: {[r['origin'] for r in rows]}"
+    # The property that matters: nothing from the other project is in the
+    # projection, however many rows share the builder and the decision-type.
+    assert all("private-books" not in r["origin"] for r in mine)

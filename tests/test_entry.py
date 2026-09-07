@@ -221,20 +221,76 @@ def test_pick_responder_does_not_invent_a_rationale():
 
 @_needs_nestor
 def test_no_rationale_is_the_loudest_rubber_stamp(home):
-    """Two or more majors, no --choose, no --why, non-interactive. The choice
-    still happens (refusing on an ambiguous major is a separate open gap), but
-    it is now recorded honestly: an empty rationale scores 0.0 and flags, per
+    """A major WAS chosen (--choose web) but no reason was given. The choice is
+    recorded honestly: an empty rationale scores 0.0 and flags, per
     checkpoint._engagement_fields' "the loudest rubber-stamp there is".
 
-    Before this fix the same run scored 0.350 and graded `Good`, which pushed
-    the review interval OUT — the engine's least-considered decision was also
-    the one it re-asked least often."""
+    Before the --why fix the same run scored 0.350 and graded `Good`, which
+    pushed the review interval OUT — the engine's least-considered decision was
+    also the one it re-asked least often.
+
+    (This used to run with `choose=None`; that path now refuses outright — see
+    `test_an_ambiguous_major_with_no_choice_refuses` — so the rubber-stamp
+    property is asserted where it still applies: a real pick, no reason.)"""
     out = entry.open_bite(SENTENCE, project_id=PROJECT, builder_id=BUILDER,
-                          responder=entry._PickResponder(choose=None, why=None),
+                          responder=entry._PickResponder(choose="web", why=None),
                           root=home / "cp").decision_outcome
     assert out.band == "socratic" and out.rationale == ""
     assert out.engagement == 0.0
     assert out.rubber_stamp is True, "an unexplained choice must read as a rubber-stamp"
+
+
+# ── gap 1: an ambiguous major with no choice must refuse ────────────────────
+#
+# the-positional-default.md's @prompt, verbatim: "a sentence with two or more
+# majors and no `--choose`, run non-interactively. Assert that nothing reaches
+# `checkpoint_memory` — not an unsealed row, not an attestation. A test that
+# asserts the *right* major was chosen is testing the table, not this."
+
+@_needs_nestor
+def test_an_ambiguous_major_with_no_choice_refuses(home):
+    with pytest.raises(entry.EntryError) as e:
+        entry.open_bite(SENTENCE, project_id=PROJECT, builder_id=BUILDER,
+                        responder=entry._PickResponder(choose=None, why=None),
+                        root=home / "cp")
+    msg = str(e.value)
+    assert "list position is not a decision" in msg
+    assert "--choose" in msg, "a refusal must say how to proceed"
+    assert not msg.startswith("REFUSED"), \
+        "main() already prefixes REFUSED: — carrying it here too printed it twice"
+
+
+@_needs_nestor
+def test_the_refusal_writes_nothing_to_memory(home):
+    """The half that matters. A refusal that still left a row behind would be
+    the same failure wearing an error message."""
+    root = home / "cp"
+    with pytest.raises(entry.EntryError):
+        entry.open_bite(SENTENCE, project_id=PROJECT, builder_id=BUILDER,
+                        responder=entry._PickResponder(choose=None, why=None),
+                        root=root)
+    with checkpoint_memory.open_checkpoint_memory(
+            BUILDER, entry.DECISION_TYPE_MAJOR, root=root) as cm:
+        assert cm.has_sealed() is False, "nothing may be sealed from a non-decision"
+        assert cm.check(
+            f"'{SENTENCE}' could be web, mobile, desktop — which major?"
+        )["canonical"] is None, "not even an unsealed row"
+
+    # ...and no attestation, which is the other thing @prompt names.
+    from forge import human_loop, soil_store
+    store = soil_store.FilesystemSoilStore(BUILDER, root=root)
+    assert human_loop.list_attestations(store) == []
+
+
+@_needs_nestor
+def test_one_unambiguous_major_still_needs_no_choice(home):
+    """The refusal is about ambiguity, not about --choose being mandatory. One
+    option is not a decision the maker has to make."""
+    e = entry.open_bite("a tiny cli that renames files", project_id=PROJECT,
+                        builder_id=BUILDER,
+                        responder=entry._PickResponder(choose=None, why=None),
+                        root=home / "cp")
+    assert e.major == "cli" and e.decision_outcome is None
 
 
 @_needs_nestor
@@ -247,3 +303,43 @@ def test_the_old_default_would_have_escaped_the_flag(home):
     surface = "could be web, mobile, desktop — which major?"
     assert checkpoint_engagement.engagement_score("picked at the command line", surface) >= \
         checkpoint_engagement.RUBBER_STAMP_FLOOR
+
+
+# ── gap 3: a sealed row whose signature nobody could check ──────────────────
+
+@_needs_nestor
+def test_the_entry_says_when_a_seal_could_not_be_verified(home, monkeypatch):
+    """`is_verified_seal` degrades to a bare `status == 'sealed'` test when no
+    key is configured — Nestor warns about it at runtime — and a builder id
+    absent from the keyring is refused outright, so every real run of the entry
+    is the unconfigured case. Reporting "sealed" without that qualification is
+    how "nobody verified this" reads as "the box says yes"."""
+    monkeypatch.setattr(entry.checkpoint_memory, "seal_signatures_verified", lambda: False)
+    root = home / "cp"
+    e1 = entry.open_bite(SENTENCE, project_id=PROJECT, builder_id=BUILDER,
+                         responder=entry._PickResponder(choose="web", why=None), root=root)
+    assert e1.decision_outcome.band == "socratic"
+
+    e2 = entry.open_bite(SENTENCE, project_id=PROJECT, builder_id=BUILDER,
+                         responder=ScriptedResponder(choose=None), root=root)
+    assert e2.decision_outcome.matched_band is not None, "a prior seal answered"
+    assert "SIGNATURE NOT VERIFIED" in e2.tiers["scan"]
+
+
+@_needs_nestor
+def test_a_verifiable_seal_carries_no_warning(home, monkeypatch):
+    """The qualification must be a report, not a permanent decoration — with
+    signing configured it disappears."""
+    monkeypatch.setattr(entry.checkpoint_memory, "seal_signatures_verified", lambda: True)
+    root = home / "cp"
+    entry.open_bite(SENTENCE, project_id=PROJECT, builder_id=BUILDER,
+                    responder=entry._PickResponder(choose="web", why=None), root=root)
+    e2 = entry.open_bite(SENTENCE, project_id=PROJECT, builder_id=BUILDER,
+                         responder=ScriptedResponder(choose=None), root=root)
+    assert "NOT VERIFIED" not in e2.tiers["scan"]
+
+
+def test_seal_signatures_verified_never_raises():
+    """A probe that cannot answer says "not verified" rather than exploding —
+    the same fail-loud-not-open posture as the rest of this module."""
+    assert isinstance(checkpoint_memory.seal_signatures_verified(), bool)

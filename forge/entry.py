@@ -181,7 +181,19 @@ def open_bite(
     r, store = _ask_project_nestor(project_id, e.sentence)
     if r.get("verified"):
         e.answer = r.get("canonical")
-        e.tiers["nestor"] = f"sealed (confidence {r.get('confidence', 0):.2f}, verifier {r.get('verifier', '')!r})"
+        # The qualification is not decoration. A sealed row is trusted through
+        # `is_verified_seal`, which degrades to a bare `status == 'sealed'`
+        # test when no key is configured — and a builder id absent from the
+        # keyring is refused outright, so every real run of this entry is the
+        # unconfigured case. Reporting "sealed" without saying whether anyone
+        # could check the signature is how "nobody verified this" reads as
+        # "the box says yes" (docs/design/the-positional-default.md, gap 3).
+        e.tiers["nestor"] = (
+            f"sealed (confidence {r.get('confidence', 0):.2f}, "
+            f"verifier {r.get('verifier', '')!r})"
+            + ("" if checkpoint_memory.seal_signatures_verified()
+               else " — SIGNATURES NOT VERIFIED (no seal key or keyring; "
+                    "any 'sealed' row is trusted)"))
     else:
         n = len(r.get("candidates") or [])
         e.tiers["nestor"] = "pending" + (f" ({n} unsealed candidate{'s' if n != 1 else ''})" if n else "")
@@ -240,6 +252,11 @@ def open_bite(
     e.major = _major_from_chosen(outcome.chosen, ask)
     e.tiers["scan"] = f"{len(ask)} majors → checkpoint band {outcome.band}" + (
         f", chose {e.major}" if e.major else f", chose {outcome.chosen!r} (not a major on offer)")
+    # An auto or recognize band means a prior sealed row answered instead of the
+    # maker. Say whether that row's signature was checkable, for the same reason
+    # the nestor tier does.
+    if outcome.matched_band is not None and not checkpoint_memory.seal_signatures_verified():
+        e.tiers["scan"] += " — prior seal's SIGNATURE NOT VERIFIED"
     return e
 
 
@@ -275,6 +292,30 @@ class _PickResponder:
         print(f"[choose] {decision.surface}", file=sys.stderr)
         for o in decision.options:
             print(f"  - {o.label}: {o.tradeoff}", file=sys.stderr)
+        # ── the positional default, refused ──────────────────────────────────
+        # This line used to read `self._choose or decision.options[0].label`,
+        # and that `or` is the whole of docs/design/the-positional-default.md:
+        # on the first sentence anyone typed at the engine outside a test, three
+        # majors were offered, index zero was taken, and it was sealed at
+        # confidence 1.0 and reported as success. Nobody decided that.
+        #
+        # The entry already knows how to refuse — Nestor absent is an outright
+        # EntryError. Both are the same condition, *the engine does not know*,
+        # and only one of them was treated as such. The rule is not "ask a human
+        # every time"; it is that not knowing must not be recorded as knowing.
+        #
+        # Raised from `choose`, this lands BEFORE `_seal_socratic_answer` seals
+        # anything: `_full_socratic` calls the responder first and `cm.seal`
+        # only with what it returns. So no row and no attestation is written.
+        if self._choose is None and len(decision.options) > 1:
+            raise EntryError(
+                f"{decision.surface} — and no --choose was given. "
+                f"A default chosen by list position is not a decision, and "
+                f"nothing derived from one may be sealed "
+                f"(docs/design/the-positional-default.md). Re-run with "
+                f"--choose {decision.options[0].label!r} (or another of: "
+                f"{', '.join(o.label for o in decision.options)})."
+            )
         label = self._choose or decision.options[0].label
         print(f"[choose] -> {label}", file=sys.stderr)
         return checkpoint.ChoiceResult(chosen_label=label, rationale=self._why)

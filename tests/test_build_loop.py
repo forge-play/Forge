@@ -1,4 +1,4 @@
-"""forge/build_loop.py — the forks resolved through memory, and the calibration
+"""forge/bl.py — the forks resolved through memory, and the calibration
 ledger finally called from somewhere that is not its own tests.
 
 Nestor-gated (the checkpoint router seals). The ScriptedResponder mirrors
@@ -15,7 +15,7 @@ import pytest
 from forge import build_loop as bl
 from forge import calibration_ledger, checkpoint_memory
 from forge import plan_shape as ps
-from forge.checkpoint import ChoiceResult, Decision
+from forge.checkpoint import ChoiceResult, Decision, Option
 
 _needs_nestor = pytest.mark.skipif(not checkpoint_memory.nestor_available(), reason="nestor not installed")
 
@@ -149,3 +149,39 @@ def test_cli_resolves_and_prints_a_scorecard(tmp_path, capsys):
     assert d["chosen"] == {"where-the-dates-live": "exif in place"}
     assert d["scorecard"]["resolved"] == 1 and d["predictions"][0]["outcome"] is False
     assert all(e["kind"] == "file_write" for e in d["plan"]["entries"])
+
+
+# ── the positional default, refused on this side too ────────────────────────
+
+def test_a_fork_with_no_choose_refuses_rather_than_taking_index_zero():
+    """build_loop's CLI responder had the same `or d.options[0].label` the
+    entry's did (docs/design/the-positional-default.md). A fork is a decision by
+    construction — resolving one by list position and sealing it is the exact
+    failure the paper names."""
+    r = bl._PickResponder(picks={}, why=None)
+    d = Decision(
+        decision_type="where-the-dates-live",
+        surface="When a picture gets a date, where does the date go?",
+        options=[Option("sidecar json", "the pictures stay untouched"),
+                 Option("exif in place", "the date travels with the picture")])
+    with pytest.raises(bl.BuildLoopError) as e:
+        r.choose(d)
+    assert "list position is not a decision" in str(e.value)
+    assert "--choose 'where-the-dates-live=sidecar json'" in str(e.value), \
+        "a refusal must say how to proceed"
+
+
+def test_a_named_pick_is_honoured():
+    r = bl._PickResponder(picks={"where-the-dates-live": "exif in place"}, why=None)
+    d = Decision(
+        decision_type="where-the-dates-live", surface="where?",
+        options=[Option("sidecar json", "a"), Option("exif in place", "b")])
+    assert r.choose(d).chosen_label == "exif in place"
+
+
+def test_a_single_option_needs_no_pick():
+    """The refusal is about ambiguity, not about --choose being mandatory."""
+    r = bl._PickResponder(picks={}, why=None)
+    d = Decision(decision_type="t", surface="s",
+                            options=[Option("only", "the one option")])
+    assert r.choose(d).chosen_label == "only"

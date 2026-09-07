@@ -65,10 +65,20 @@ and the attestation beside it, in `rudi193.soil.json`:
 
 ## Why it compounds
 
-`checkpoint_memory.has_sealed` is D8's trigger: has this builder sealed *any*
-decision under this decision-type. A true answer downgrades the next decision
-from the full Socratic checkpoint to a lighter-touch confirm. It resolves
-through `is_verified_seal`.
+> **Corrected 2026-09-07.** This section named `has_sealed` as the mechanism.
+> Measured, `run_checkpoint` never calls `has_sealed` — it branches on
+> `check()` → `EntityResolver.resolve` → `memory.best_sealed`. `has_sealed` has
+> exactly one non-CLI caller, `checkpoint_calibration.resurface`. The
+> compounding is real and the reasoning below holds, but it runs through
+> `check()`, which makes the blast radius **larger** than this paper claimed:
+> it is the auto band itself, not just resurfacing. Both paths bottom out in
+> `is_verified_seal`, so the measurement quoted below stands.
+
+`checkpoint_memory.has_sealed` asks whether this builder has sealed *any*
+decision under this decision-type; `check()` asks whether THIS wording resolves
+to a sealed match, and a hit is what downgrades the next decision from the full
+Socratic checkpoint to a lighter-touch confirm. Both resolve through
+`is_verified_seal`.
 
 Measured both ways, on the row above:
 
@@ -141,14 +151,24 @@ they have none yet"* — which, measured, is not what happens either.
   sealable.
 - The rejection stays in the ledger; the wrong answer is evidence.
 - `by_human` is recorded and must be consulted, not merely stored.
+- **(2026-09-07)** The refusal belongs in the responder, not in `open_bite`.
+  `open_bite` cannot tell a maker from a script — the contract it is handed is
+  `Responder`, and a real interactive responder facing two options is not a
+  defect. The line that fabricates is `self._choose or options[0].label`, so
+  that is the line that refuses. Both shipped responders carry it; a responder
+  someone else writes is their own contract to keep.
+- **(2026-09-07)** Where a trust fix is not yet available, report the absence
+  rather than either pretending or bricking the engine. "Sealed, and nobody
+  could check the signature" is a different fact from "sealed", and the reader
+  gets both.
 
 ## Open
 
 | gap | state | waiting on |
 |---|---|---|
-| Refuse, prompt, or record-unsealed on an ambiguous major. | open | The four options above. Refusal is the default reading of §11's precedent. |
+| Refuse, prompt, or record-unsealed on an ambiguous major. | **closed 2026-09-07** | **Refuse**, per the `@constraint` above and §11's precedent. Both shipped CLI responders — `entry._PickResponder` and `build_loop._PickResponder` — raise rather than take `options[0].label` when more than one option is on offer and none was named. Raised from `choose`, which lands before `_seal_socratic_answer` calls `cm.seal`, so no row and no attestation is written; pinned by `tests/test_entry.py::test_the_refusal_writes_nothing_to_memory`. The refusal names the options and the flag to re-run with. One unambiguous major still needs no `--choose`: this is about ambiguity, not about making the flag mandatory. |
 | `--why` defaulting to `"picked at the command line"` puts argparse's help text into the record as a rationale. | **closed 2026-09-07** | Fixed: `--why` has no default, and `_PickResponder` seals an empty rationale rather than inventing one — which `_engagement_fields` scores 0.0 and flags as "the loudest rubber-stamp there is." Measured harm before the fix: the string scored **0.350** against a 0.34 floor and was **not** flagged, so it graded `Good` and pushed the review interval *out* — the engine's least-considered decision was also the one it re-asked least often. It cleared the floor on a homonym: `line` is in the friction scorer's grounding lexicon as in *file, line*. See `the-forge-engagement-defect.md` §1; pinned by `tests/test_entry.py::test_no_rationale_is_the_loudest_rubber_stamp`. |
-| `has_sealed` trusts unverified seals whenever the keyring is absent — which is every real run of the entry. | open | Upstream of this paper: either the entry runs with a keyring, or `has_sealed` must weigh `by_human`. |
+| `has_sealed` trusts unverified seals whenever the keyring is absent — which is every real run of the entry. | **reported 2026-09-07; the trust decision stays open** | Both proposed fixes were measured and neither is available yet. *Run with a keyring*: a builder id absent from the keyring is refused outright, so this is not reachable from the entry today. *Weigh `by_human`*: `by_human` is structurally `False` — it defaults False in `run_checkpoint` and neither `entry` nor `build_loop` passes it; only the `WILLOW_HUMAN_ORCHESTRATOR` seat sets it True. Gating on it would make the auto band never fire and every decision socratic forever, and gating `has_sealed` alone would only make `resurface` refuse on every current run. So what shipped is the third thing: **say so**. `checkpoint_memory.seal_signatures_verified()` reports whether a signature is checked at all, and the entry appends the qualification to the `nestor` tier and to the `scan` tier whenever a prior seal answered — the same rule `measure_panel` follows when it names an unmeasured class *unseen* rather than *sound*. The trust change itself waits on D11 identity; `NESTOR_REQUIRE_SEAL_KEY=1` is the upstream hard-refusal for anyone who wants it now. |
 | No `tool` row in the keyword table, and the first real sentence used the word. | **deliberately open** | `the-forge-workshop.md`: the row to argue is measured after the first ten workshops, not guessed after the first. This is workshop one. Record the miss; do not add the row. |
 
 @prompt

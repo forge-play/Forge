@@ -183,6 +183,19 @@ the per-project store.
   far the project store is from the main one — verified upstream, proposed
   here, conflicts, retired here but sealed there — or `not consulted`.
   `forge/store_diff.py`, `tools/store_diff.py`. Paper: `the-store-diff.md`.
+- **The positional default.** Found 2026-09-07 on the first real sentence: an
+  ambiguous major with no `--choose` takes `options[0]`, seals it at confidence
+  1.0 with `--why`'s argparse default as its rationale, and flips `has_sealed`
+  so the next decision argues less. The engine's own confident wrong answer.
+  On paper: `the-positional-default.md`. The instance was rejected, not
+  deleted; the ledger carries both the seal and the retraction.
+- **The two stores.** A maker's decisions land in the per-builder checkpoint
+  memory (`<home>/checkpoints/<id>.db`, cross-project); `forge/bundle.py`
+  exports the per-project store, which only `deposit.py` ever writes. So a
+  workshop's bundle carries `ci` rows and nothing else, and cannot carry the
+  decisions the workshop and store-pull papers say it does. A checkpoint row
+  has no project field, so the projection that would fix it is not yet
+  computable. On paper: `the-two-stores.md`.
 - **The trust block on this repo's own promotion.** The tool exists; the
   ratifying half is a verifier's act.
 

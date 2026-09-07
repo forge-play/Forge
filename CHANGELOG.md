@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/forge-play/Forge/compare/v0.4.0...v0.5.0) (2026-09-07)
+
+
+### Added
+
+* **checkpoint:** record which project a decision was taken in ([408001b](https://github.com/forge-play/Forge/commit/408001b905ba918c4ab027bc6f0a21b8bd3183fc))
+
 ## [0.4.0](https://github.com/forge-play/Forge/compare/v0.3.0...v0.4.0) (2026-09-07)
 
 

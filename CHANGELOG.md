@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/forge-play/Forge/compare/v0.3.0...v0.4.0) (2026-09-07)
+
+
+### Added
+
+* **bundle:** a workshop can cut and check its bundle from a pip install ([f8490e1](https://github.com/forge-play/Forge/commit/f8490e13779dc1f6e2f023e9c04e068021bc149f))
+
 ## [0.3.0](https://github.com/forge-play/Forge/compare/v0.2.0...v0.3.0) (2026-09-03)
 
 

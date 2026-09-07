@@ -11,7 +11,6 @@
 ### Fixed
 
 * **entry:** an ambiguous major with no choice refuses instead of taking index zero ([be6a00f](https://github.com/forge-play/Forge/commit/be6a00ffa6ef6f588c4c6486c9678534fce88d01))
-* **entry:** refuse an ambiguous major, and say when a seal's signature was never checked ([1df9dc7](https://github.com/forge-play/Forge/commit/1df9dc7eae98affc6003aeb07f18278f466979a3))
 
 ## [0.6.0](https://github.com/forge-play/Forge/compare/v0.5.0...v0.6.0) (2026-09-07)
 

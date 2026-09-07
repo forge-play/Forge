@@ -400,10 +400,24 @@ def test_held_justification_is_scored_and_surfaced_on_the_outcome(tmp_path):
 
 @_needs_nestor
 @_needs_fsrs
-def test_a_re_argued_hold_is_due_later_than_a_thin_hold_which_is_due_later_than_none(tmp_path):
-    """The wire actually moving the schedule: Easy (re-argued) pushes the next
-    review well past Good (declined) past Hard (thin). This is the whole point
-    of closing the wire — the signal bends the cadence, it isn't just recorded."""
+def test_the_rationale_no_longer_moves_the_review_date(tmp_path):
+    """The wire, CUT 2026-09-07. This test previously asserted the opposite —
+    `due_easy > due_good > due_hard` — and it was right about the mechanism: with
+    FSRS installed a re-argued hold really did push the next review out nine days
+    while a thin one stayed same-day.
+
+    What changed is the belief that the score means anything. Measured
+    (`python -m forge.engagement_probe --separability`), a thirty-word rationale
+    naming a tradeoff and the bare word "yes" are the same point in the four
+    features `friction_score` computes, so the classes are not linearly
+    separable and no reweighting recovers the distinction. A signal that cannot
+    tell "yes" from an argument must not decide when a maker is asked again
+    (docs/design/the-forge-engagement-defect.md; the-forge-pedagogy.md §9).
+
+    So all three justifications now schedule identically. The score is still
+    asked for, still computed, and still surfaced on the outcome — it is
+    evidence, and the test above still pins it. It just no longer moves a date.
+    """
     def _due(builder, justify_answers):
         root = tmp_path / builder
         _seal_original_auth_decision(root, builder_id=builder)
@@ -412,12 +426,19 @@ def test_a_re_argued_hold_is_due_later_than_a_thin_hold_which_is_due_later_than_
             responder=ScriptedResponder(confirm_answers=[True], justify_answers=justify_answers),
             root=root, now=_T0,
         )
-        return datetime.fromisoformat(o.next_due)
+        return datetime.fromisoformat(o.next_due), o.engagement
 
-    due_easy = _due("a" * 32, [_SUBSTANTIVE_JUSTIFICATION])
-    due_good = _due("b" * 32, [])                    # declined -> Good
-    due_hard = _due("c" * 32, [_THIN_JUSTIFICATION])
-    assert due_easy > due_good > due_hard
+    due_easy, eng_easy = _due("a" * 32, [_SUBSTANTIVE_JUSTIFICATION])
+    due_good, eng_good = _due("b" * 32, [])                    # declined
+    due_hard, eng_hard = _due("c" * 32, [_THIN_JUSTIFICATION])
+
+    assert due_easy == due_good == due_hard, (
+        "the rationale must not bend the review cadence while the signal that "
+        "would bend it cannot separate an argument from 'yes'")
+    # ...and the scores that used to drive it are still recorded, still different.
+    assert eng_easy > 0.66 and eng_hard < 0.34 and eng_good is None, (
+        "cutting the wire must not delete the evidence — the annotation is how "
+        "a human sees the defect at all")
 
 
 @_needs_nestor

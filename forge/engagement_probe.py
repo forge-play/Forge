@@ -264,16 +264,149 @@ def _render(rows: list[dict], s: dict) -> str:
     return "\n".join(out)
 
 
+# ── separability: could ANY reweighting of these four terms work? ───────────
+
+def _feature_vector(text: str, context: str) -> list[float]:
+    """The four terms `friction_score` combines, BEFORE weighting — the raw
+    feature space. `decompose` reports the weighted contributions; this reports
+    the inputs, which is what the question below is about."""
+    d = decompose(text, context)
+    low = text.lower()
+    toks = set(friction_floor._WORD.findall(low))
+    pushback_n = len(friction_floor._PUSHBACK & toks)
+    grounding_n = len(d["grounding_hits"])
+    return [
+        min(1.0, pushback_n / 2),
+        min(1.0, grounding_n / 2),
+        min(1.0, d["unechoed_fraction"] * 1.5),
+        1.0 if "?" in text else 0.0,
+    ]
+
+
+def separability(corpus: tuple[dict, ...] = CORPUS) -> dict:
+    """Is the corpus linearly separable in `friction_score`'s four features?
+
+    This is the question behind remedy 2 in
+    docs/design/the-forge-engagement-defect.md — "wrap rather than re-vendor,
+    reweight the terms for our subject." Reweighting is exactly a choice of
+    linear coefficients, so if the labels are not linearly separable in these
+    features, NO reweighting can work and the remedy is dead without anyone
+    needing to try one.
+
+    Two things are reported. **Collisions** are the decisive part: rows with
+    identical feature vectors and opposite labels. A collision cannot be fixed
+    by any function of these features at all, linear or otherwise — the
+    distinction is simply not encoded. The **perceptron** is the general check,
+    and it converges if and only if the classes are linearly separable.
+
+    Deterministic: fixed corpus, fixed learning rate, zero init, no randomness."""
+    rows = []
+    for r in corpus:
+        f = _feature_vector(r["text"], r["context"])
+        rows.append({"id": r["id"], "kind": r["kind"], "features": f,
+                     "should_pass": r["kind"] == "real"})
+
+    # ── collisions ──────────────────────────────────────────────────────────
+    by_vec: dict[tuple, list[dict]] = {}
+    for r in rows:
+        by_vec.setdefault(tuple(r["features"]), []).append(r)
+    collisions = [
+        {"features": list(v), "ids": [x["id"] for x in group],
+         "labels": sorted({x["kind"] for x in group})}
+        for v, group in by_vec.items()
+        if len({x["should_pass"] for x in group}) > 1
+    ]
+
+    # ── perceptron: converges iff linearly separable ─────────────────────────
+    w = [0.0] * 4
+    bias = 0.0
+    lr = 0.05
+    epochs_run = 0
+    separable = False
+    for epoch in range(1, _PERCEPTRON_EPOCHS + 1):
+        epochs_run = epoch
+        errors = 0
+        for r in rows:
+            score = sum(wi * fi for wi, fi in zip(w, r["features"])) + bias
+            if (score > 0) != r["should_pass"]:
+                sign = 1.0 if r["should_pass"] else -1.0
+                w = [wi + lr * sign * fi for wi, fi in zip(w, r["features"])]
+                bias += lr * sign
+                errors += 1
+        if errors == 0:
+            separable = True
+            break
+
+    return {
+        "rows": rows,
+        "collisions": collisions,
+        "linearly_separable": separable,
+        "epochs": epochs_run,
+        "weights": [round(x, 4) for x in w] if separable else None,
+        "verdict": (
+            "reweighting cannot fix this: the classes are not linearly separable "
+            "in friction_score's four features, so no choice of coefficients "
+            "separates them"
+            if not separable else
+            "the classes ARE linearly separable — a reweighting exists; "
+            "revisit remedy 2 in the-forge-engagement-defect.md"
+        ),
+    }
+
+
+# Perceptron convergence is bounded by (R/margin)² updates. With 12 points whose
+# features all lie in [0,1], a separable arrangement converges in the low
+# hundreds; 20k epochs is ~240k updates, several orders of margin. Larger values
+# only make the suite slower without making the verdict any more certain.
+_PERCEPTRON_EPOCHS = 20_000
+_FEATURE_NAMES = ("pushback", "grounding", "novelty", "question")
+
+
+def _render_separability(s: dict) -> str:
+    w = max(len(r["id"]) for r in s["rows"])
+    out = ["could any reweighting of friction_score's terms separate these?", "",
+           f"{'id':<{w}}  {'label':<14} " + " ".join(f"{n:>9}" for n in _FEATURE_NAMES) + "  should_pass",
+           f"{'-' * w}  {'-' * 14} " + " ".join("-" * 9 for _ in _FEATURE_NAMES) + "  -----------"]
+    for r in s["rows"]:
+        out.append(f"{r['id']:<{w}}  {r['kind']:<14} "
+                   + " ".join(f"{v:>9.2f}" for v in r["features"])
+                   + f"  {r['should_pass']}")
+    out.append("")
+    if s["collisions"]:
+        out.append("IDENTICAL FEATURE VECTORS, OPPOSITE LABELS — no function of")
+        out.append("these features can separate these rows, reweighted or not:")
+        for c in s["collisions"]:
+            vec = ", ".join(f"{n}={v:.2f}" for n, v in zip(_FEATURE_NAMES, c["features"]))
+            out.append(f"  [{vec}]")
+            out.append(f"    {', '.join(c['ids'])}   ({' vs '.join(c['labels'])})")
+        out.append("")
+    out.append(f"linearly separable : {s['linearly_separable']} "
+               f"(perceptron, {s['epochs']} epochs)")
+    out.append("")
+    out.append(s["verdict"])
+    return "\n".join(out)
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="engagement_probe.py",
         description="what the engagement gate actually rewards — read-only")
+    p.add_argument("--separability", action="store_true",
+                   help="ask whether ANY reweighting of the four terms could "
+                        "separate the corpus (remedy 2 in the defect paper)")
     p.add_argument("--json", action="store_true")
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.separability:
+        sep = separability()
+        print(json.dumps(sep, indent=2, sort_keys=True) if args.json
+              else _render_separability(sep))
+        # Exit 1 while reweighting cannot rescue the scorer — the same
+        # gateable-rather-than-remembered posture as the default mode.
+        return 0 if sep["linearly_separable"] else 1
     rows = probe()
     s = summary(rows)
     if args.json:

@@ -288,16 +288,33 @@ def resurface(
 
         prompt = f"You decided {prior!r} for {decision_type!r}. Does that still hold?"
         if responder.confirm(prompt):
-            # ── the engagement→grade wire (bite 3) ──────────────────────────
-            # A bare "yes it holds" is the rubber-stamp bite 3 exists to catch.
-            # So after the confirm, ask WHY it still holds and score that
-            # rationale: a re-argued hold grades FSRS Easy (resurface later), a
-            # thin one Hard (sooner), and declining to justify is no signal ->
-            # Good (unchanged from before the wire). Duck-typed: a Responder
-            # without `justify` is simply never asked, and this degrades to the
-            # pre-wire behavior (engagement None -> Good). Never punitive, never
-            # a block — the maker's hold is honored regardless; only the review
-            # cadence bends.
+            # ── the engagement→grade wire: CUT 2026-09-07 ───────────────────
+            # The wire ran from 2026-08-11 to 2026-09-07: a re-argued hold
+            # graded FSRS Easy (resurface later), a thin one Hard (sooner). The
+            # intent was right and the signal is not sound enough to carry it.
+            #
+            # Measured (docs/design/the-forge-engagement-defect.md, and
+            # `python -m forge.engagement_probe --separability`): in the four
+            # features `friction_score` computes, a thirty-word rationale naming
+            # a tradeoff and the bare word "yes" are the SAME POINT —
+            # pushback 0, grounding 0, novelty 1.0, question 0. So are argparse's
+            # old `--why` default and a genuine one-line reason. The classes are
+            # not linearly separable, which means no reweighting recovers the
+            # distinction: it was never encoded. `novelty` is a ratio, so a
+            # one-word non-answer scores maximum novelty.
+            #
+            # A signal that cannot tell "yes" from an argument must not decide
+            # when a maker is asked again. `engagement=None` is the path
+            # `grade()` already documents as "the deliberate degraded path", and
+            # it grades Good — the pre-wire behaviour, restored.
+            #
+            # The rationale is still ASKED and still SCORED and still returned
+            # on the outcome. Deleting it would destroy the record of the
+            # defect, and the annotation is evidence a human can read. What it
+            # no longer does is move a date by itself. See
+            # docs/design/the-forge-pedagogy.md §9: a loop that reads the maker
+            # may change when they are asked — but only on a signal that means
+            # something, and this one does not yet.
             held_rationale = _ask_justification(responder, prior, decision_type)
             engagement = (
                 checkpoint_engagement.engagement_score(held_rationale, surface)
@@ -305,7 +322,7 @@ def resurface(
                 else None
             )
             next_due = _record_review(
-                builder_id, pair_id, checkpoint_schedule.OUTCOME_HELD, now, root, engagement=engagement
+                builder_id, pair_id, checkpoint_schedule.OUTCOME_HELD, now, root
             )
             return ResurfaceOutcome(
                 decision_type=decision_type,
@@ -356,12 +373,14 @@ def resurface(
         )
         cm.seal(surface, new_canonical)
 
-        # The new answer's own engagement, surfaced for observability. It does
-        # NOT bend the grade here: a regression is `Again` regardless (grade()
+        # The new answer's own engagement, surfaced for observability. It never
+        # bent the grade here — a regression is `Again` regardless (grade()
         # short-circuits on regressed before looking at engagement — you did
         # not hold it, so how hard you argued the replacement doesn't change
-        # that this one lapsed). A deferral ("you choose") has no rationale to
-        # score -> None.
+        # that this one lapsed) — and since 2026-09-07 it is not passed to the
+        # scheduler at all, so "the wire is cut" is true on both paths rather
+        # than only on the one where it mattered. A deferral ("you choose") has
+        # no rationale to score -> None.
         engagement = (
             checkpoint_engagement.engagement_score(rationale, surface)
             if (rationale and not deferred)
@@ -369,7 +388,7 @@ def resurface(
         )
         # Same pair_id (the reseal was in-place); grade the SAME card Again.
         next_due = _record_review(
-            builder_id, pair_id, checkpoint_schedule.OUTCOME_REGRESSED, now, root, engagement=engagement
+            builder_id, pair_id, checkpoint_schedule.OUTCOME_REGRESSED, now, root
         )
         return ResurfaceOutcome(
             decision_type=decision_type,

@@ -179,7 +179,20 @@ class _PickResponder:
         return True
 
     def choose(self, d: checkpoint.Decision) -> checkpoint.ChoiceResult:
-        label = self._picks.get(d.decision_type) or d.options[0].label
+        # The same positional default entry._PickResponder refuses, and for the
+        # same reason — a fork with two options and no `--choose TYPE=LABEL` for
+        # it would otherwise resolve to index zero and be sealed as a decision.
+        # Refused here rather than in `resolve` because this is the line that
+        # would fabricate it (docs/design/the-positional-default.md).
+        pick = self._picks.get(d.decision_type)
+        if pick is None and len(d.options) > 1:
+            raise BuildLoopError(
+                f"REFUSED: {d.decision_type!r} offers "
+                f"{', '.join(o.label for o in d.options)} and no --choose named "
+                f"one. A default chosen by list position is not a decision. "
+                f"Re-run with --choose '{d.decision_type}={d.options[0].label}'."
+            )
+        label = pick or d.options[0].label
         print(f"[choose] {d.surface}\n[choose] -> {label}", file=sys.stderr)
         return checkpoint.ChoiceResult(chosen_label=label, rationale=self._why)
 

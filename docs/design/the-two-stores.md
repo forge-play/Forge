@@ -95,6 +95,15 @@ That suggests the smallest honest change is not an export path but a field: the
 project on the checkpoint row, so the projection is a filter rather than a
 guess. Everything else follows from it, and nothing else is safe without it.
 
+**Built 2026-09-07.** `run_checkpoint(..., project=...)` stamps `project=<id>`
+into the sealed row's `origin`. The domain key is unchanged, deliberately, and
+a test pins it: a seal taken in one project is still what `has_sealed` sees
+when the same builder meets that decision-type in another. An omitted project
+is recorded as empty, never defaulted — a default would put a row into a
+workshop's projection that was never taken there. `resume_checkpoint` takes
+the project too, but a parked item does not store one, so a resumer must
+supply it; that is named in its docstring rather than guessed.
+
 Three questions that a field alone does not settle:
 
 - **Which direction writes.** Does the checkpoint also propose into the project
@@ -120,7 +129,7 @@ Three questions that a field alone does not settle:
 
 | gap | state | waiting on |
 |---|---|---|
-| A checkpoint row records builder and decision-type, never project — so "the decisions taken in this workshop" cannot be computed. | **open, and upstream of the rest** | Adding the field is small; it is the join everything else needs. |
+| ~~A checkpoint row records builder and decision-type, never project — so "the decisions taken in this workshop" cannot be computed.~~ | **settled** | Closed: `run_checkpoint(..., project=...)` writes `project=<id>` into the row's `origin`, the same `key=value` shape `deposit.py` uses. A **field, not a domain key** — the domain stays `builder:<id>:decision:<type>` so `has_sealed` keeps spanning projects, and a test asserts a seal taken in one project is still visible to the same builder in another. The projection is now a filter. `_origin()` in `forge/checkpoint.py`. |
 | Whether the checkpoint proposes into the project store, or the export projects from the builder store at cut time. | open | The two-writes / one-derived-view argument above. |
 | Two makers, one workshop: a per-maker projection makes the bundle depend on who cuts it. | open | Conflicts with the ledger head being the pin. |
 | A maker's seal and a verifier's seal are both "sealed" and mean different things across this join. | open | `the-store-pull.md`'s "nothing sealed crosses the seam" reads differently depending on which is meant. |

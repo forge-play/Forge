@@ -121,12 +121,19 @@ workshops, not guessed before the first.
 
 ## Open
 
-- ~~The bundle's path and name in the template.~~ Settled by the code:
-  `.forge/bundle.json` and `.forge/HEAD`, per `forge.bundle.BUNDLE_DIR`.
-- Whether `project_id` is derived from the repo name or declared in the
-  template's config; derivation keeps the two from drifting, declaration
-  survives a rename.
-- What the template's README says after the question. Less is right.
+The gaps, and what each is waiting on. Settled rows are kept struck rather
+than deleted: a gap that was closed by a fact is evidence about how the
+question got answered, and deleting it loses the answer with the question.
+
+| gap | state | waiting on |
+|---|---|---|
+| ~~The bundle's path and name in the template.~~ | **settled** | Closed by the code: `.forge/bundle.json` and `.forge/HEAD`, per `forge.bundle.BUNDLE_DIR`. |
+| ~~A fresh workshop reports its uncut bundle as a failure.~~ | **settled** | Closed in `forge-play` 0.4.0: `bundle.check` has three states, `uncut` is not a failure. |
+| ~~A workshop cannot cut or check its bundle from a pip install.~~ | **settled** | Closed in `forge-play` 0.4.0: `forge-export` is a declared console script; `tools/` was never in the wheel. |
+| **An instantiated workshop inherits no branch protection.** | **open** | A template repo does not carry branch protection into its copies, and org-level rulesets return `403: Upgrade to GitHub Team` on the Free plan. So every new workshop starts unprotected, and the `test` job that exists to be required is required nowhere. Either the org moves to Team, or whatever instantiates a workshop sets protection as a step. Decide before the first real workshop, not after. |
+| **Org community-health files do not reach a working tree.** | **mitigated, not closed** | `forge-play/.github` inherits `CONTRIBUTING.md`, `SECURITY.md` and the templates to every repo — rendered by GitHub's UI, for humans. They live in a different repository, so a clone does not contain them and an agent reading the tree sees none of them. The template carries `CLAUDE.md` for this reason. Every other repo in the fleet has the same gap and no such file. |
+| Whether `project_id` is derived from the repo name or declared in the template's config. | open | Derivation keeps the two from drifting; declaration survives a rename. The template derives today. |
+| What the template's README says after the question. | open | Less is right. |
 
 @prompt
 When building the template: put nothing in it that the engine could ship

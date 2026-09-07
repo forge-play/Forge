@@ -58,11 +58,41 @@ def test_find_databases_sees_every_shape_and_skips_git(tmp_path):
     assert bundle.find_databases(tmp_path / "nope") == []
 
 
-def test_check_on_an_empty_checkout_names_what_is_missing(tmp_path):
+def test_a_fresh_checkout_is_uncut_not_failed(tmp_path):
+    """A workshop instantiated a minute ago has no ledger head to cut from,
+    so it has neither file. That is `uncut`, and it is not a failure — a new
+    workshop that is red for doing nothing wrong teaches its maker to ignore
+    red."""
     c = bundle.check(tmp_path)
-    assert not c.ok
-    assert c.problems == ["missing .forge/HEAD", "missing .forge/bundle.json"]
+    assert c.state == "uncut"
+    assert c.ok and c.problems == []
     assert c.digest_recomputed == "not_checked"
+    assert c.to_dict()["state"] == "uncut"
+
+
+def test_a_half_pair_is_still_a_failure(tmp_path):
+    """Only *neither* file is uncut. One present and the other missing is a
+    checkout that cut a bundle and lost half of it."""
+    out = tmp_path / ".forge"
+    out.mkdir()
+    (out / "HEAD").write_text(json.dumps({"head": "abc", "digest": "d"}))
+    c = bundle.check(tmp_path)
+    assert c.state == "failed" and not c.ok
+    assert c.problems == ["missing .forge/bundle.json"]
+
+    (out / "HEAD").unlink()
+    (out / "bundle.json").write_text(json.dumps({"digest": "d", "pairs": []}))
+    c = bundle.check(tmp_path)
+    assert c.state == "failed" and not c.ok
+    assert c.problems == ["missing .forge/HEAD"]
+
+
+def test_uncut_does_not_excuse_a_database_in_the_checkout(tmp_path):
+    """The workshop rule does not care how far along the workshop is."""
+    (tmp_path / "nestor.db").write_text("no")
+    c = bundle.check(tmp_path)
+    assert c.state == "failed" and not c.ok
+    assert c.problems == ["database in the checkout: nestor.db"]
 
 
 def test_check_flags_a_database_even_when_the_files_agree(tmp_path):
@@ -161,3 +191,61 @@ def test_a_second_cut_moves_the_head_with_the_ledger(home):
     assert second.counts["pairs"] == 3 and second.digest != first.digest
     assert second.head == ledger.head(str(paths.project_nestor_ledger(PROJECT)))
     assert bundle.check(repo).ok
+
+
+# ── the command line ───────────────────────────────────────────────────────
+# The CLI lives in forge/bundle.py, not tools/, because tools/ is not in the
+# wheel. These tests are the ones that would have caught that: they exercise
+# what a maker who ran `pip install forge-play` actually has.
+
+def test_the_console_script_is_declared_so_a_pip_install_can_invoke_it():
+    """`tools/store_export.py` is not installed by the wheel. Without a
+    declared entry point a workshop has the library and no command, and step
+    6 of the-forge-workshop.md is unreachable from a real install."""
+    from importlib.metadata import entry_points
+    scripts = {e.name: e.value for e in entry_points(group="console_scripts")}
+    assert scripts.get("forge-export") == "forge.bundle:main", (
+        "forge-export is not installed; reinstall the package after changing "
+        "[project.scripts]"
+    )
+
+
+def test_the_cli_reports_uncut_and_exits_zero(tmp_path, capsys):
+    rc = bundle.main(["--repo-root", str(tmp_path), "--check"])
+    out = capsys.readouterr().out
+    assert rc == 0, "a fresh workshop must not fail its own CI"
+    assert "uncut" in out and "not a failure" in out
+
+
+def test_the_cli_reports_a_half_pair_as_failed_and_exits_one(tmp_path, capsys):
+    out_dir = tmp_path / ".forge"
+    out_dir.mkdir()
+    (out_dir / "HEAD").write_text(json.dumps({"head": "abc", "digest": "d"}))
+    rc = bundle.main(["--repo-root", str(tmp_path), "--check"])
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "FAILED" in out and "missing .forge/bundle.json" in out
+
+
+def test_the_cli_json_carries_the_state(tmp_path, capsys):
+    rc = bundle.main(["--repo-root", str(tmp_path), "--check", "--json"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 0 and payload["state"] == "uncut" and payload["ok"] is True
+
+
+def test_the_cli_refuses_a_cut_with_no_project_id(tmp_path):
+    with pytest.raises(SystemExit) as e:
+        bundle.main(["--repo-root", str(tmp_path)])
+    assert e.value.code == 2
+
+
+@_needs_nestor
+def test_the_cli_cuts_and_then_checks_clean(home, tmp_path, capsys):
+    _make_store(PROJECT)
+    repo = tmp_path / "checkout"
+    repo.mkdir()
+    assert bundle.main(["--project-id", PROJECT, "--repo-root", str(repo)]) == 0
+    assert "cut " + PROJECT in capsys.readouterr().out
+    assert bundle.main(["--repo-root", str(repo), "--check"]) == 0
+    assert "ok" in capsys.readouterr().out
+    assert bundle.check(repo).state == "ok"

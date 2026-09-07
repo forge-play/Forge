@@ -38,6 +38,12 @@ dependencies = []
 Homepage = "https://github.com/forge-play/Forge"
 Changelog = "https://github.com/forge-play/Forge/blob/master/CHANGELOG.md"
 
+[project.scripts]
+# The cut and the check, reachable from a pip install. `tools/` is not in the
+# wheel (the build packages `forge` alone), so before this a workshop had the
+# library and no command; step 6 of the-forge-workshop.md was unreachable.
+forge-export = "forge.bundle:main"
+
 [project.optional-dependencies]
 # pyyaml is for tests/test_release_wiring.py, which reads the release
 # workflows; nestor-meaning is the decision memory the checkpoint tests

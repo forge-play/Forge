@@ -321,6 +321,38 @@ def nestor_available() -> bool:
     return True
 
 
+def seal_signatures_verified() -> bool:
+    """True iff a sealed row's SIGNATURE is actually checked before it is
+    trusted — i.e. Nestor has a keyring or a shared seal key configured.
+
+    This is not a detail. `nestor.memory.is_verified_seal` is the single
+    definition of "a sealed row we may serve", and every serve path goes
+    through it — `best_sealed`, and therefore `check()`, and therefore the
+    checkpoint's **auto band**. But with nothing configured, signing is OFF and
+    `seal_is_valid` returns True for anything, so `is_verified_seal` degrades to
+    a bare `status == 'sealed'` test. Nestor says so itself: *"seal signatures
+    are NOT verified; any 'sealed' row is trusted."*
+
+    That degrade is the legacy default and is not this module's to change. What
+    IS this module's job is refusing to let it pass unsaid: a build that cannot
+    tell a signed seal from an unsigned one must report which it had, exactly
+    as `measure_panel` names a class nothing measured *unseen* rather than
+    *sound*. Callers surface this beside any "the box says yes"
+    (docs/design/the-positional-default.md, gap 3).
+
+    Never raises. False when Nestor is absent (nothing is verified because
+    nothing is consulted) and when Nestor is present but unconfigured. Set
+    `NESTOR_REQUIRE_SEAL_KEY=1` to turn the degrade into a hard refusal
+    upstream, which is the fix this function only reports the absence of."""
+    if not nestor_available():
+        return False
+    try:
+        from nestor import signing
+        return bool(signing.signing_enabled())
+    except Exception:  # noqa: BLE001 — a probe that cannot answer says "not verified"
+        return False
+
+
 # ── validation ───────────────────────────────────────────────────────────────
 
 def _check_builder_id(builder_id: Any) -> str:
@@ -701,7 +733,12 @@ def _cmd_has_sealed(args: argparse.Namespace) -> int:
     except CheckpointMemoryError as e:
         print(f"refused: {e}", file=sys.stderr)
         return 1
-    print(json.dumps({"has_sealed": sealed}))
+    # `signatures_verified` rides along on every answer, not just a True one:
+    # "no, nothing sealed" and "yes, but nobody checked the signature" are
+    # different facts and a reader needs both. The exit code still tracks
+    # has_sealed alone, so existing hooks keep their meaning.
+    print(json.dumps({"has_sealed": sealed,
+                      "signatures_verified": seal_signatures_verified()}))
     return 0 if sealed else 1
 
 

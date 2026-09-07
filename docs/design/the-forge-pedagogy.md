@@ -396,3 +396,27 @@ only scoreboard such a loop may serve" is load-bearing, not decorative.
 
 It also reorders the work. No mode in this paper should ship on top of this
 signal until §5 of the defect paper is answered.
+
+**Resolved, 2026-09-07.** It is answered, and the answer went the way §9.2
+implies it must. `checkpoint_calibration.resurface` no longer passes
+`engagement` to the scheduler: the score is still asked for, scored and
+recorded, but it no longer moves a review date.
+
+Two of the four candidate remedies turned out to be decidable by measurement and
+both are dead — the corpus is not linearly separable in `friction_score`'s four
+features, and worse, `"yes"` and a thirty-word argued rationale are *the same
+point* in that space (`python -m forge.engagement_probe --separability`). So no
+reweighting and no lexicon edit recovers the distinction.
+
+This does not weaken §9.2's line; it is the first case decided under it. The
+line says a maker-derived loop may change **when** they are asked. It does not
+say any signal is good enough to do it. A signal that cannot separate an
+argument from assent fails a prior test — not "is this the permitted kind of
+influence" but "does this measure anything at all" — and the rules in §9.3 are
+about what a *real* signal is allowed to do, not a licence for a noisy one.
+
+The permitted-and-noisy case is now the interesting one, and §9.4's answer
+holds: the backstop is `calibration_ledger`, which scores what the maker
+actually chose rather than how their rationale reads. That is also where §5.3 of
+the defect paper points — replace the subject, score the decision, not the
+prose. Which is this paper's §5 substitution arriving from the other direction.

@@ -48,7 +48,16 @@ forge-export = "forge.bundle:main"
 # pyyaml is for tests/test_release_wiring.py, which reads the release
 # workflows; nestor-meaning is the decision memory the checkpoint tests
 # exercise (they skip honestly without it).
-test = ["pytest>=8.0", "pyyaml", "nestor-meaning>=0.19.0,<1.0.0"]
+#
+# fsrs added 2026-09-07. It is a SOFT runtime dependency by design
+# (checkpoint_schedule degrades to fixed intervals without it), but leaving it
+# out of the test extra meant every `@_needs_fsrs` test skipped in every
+# environment including CI — and those are the only tests that assert the
+# scheduler's actual behaviour, since the fixed-interval fallback computes a
+# grade and then ignores it. A behaviour that no leg exercises is not covered,
+# and one such test was silently passing-by-skipping while the behaviour under
+# it changed. The no-extras leg still proves the fallback path.
+test = ["pytest>=8.0", "pyyaml", "nestor-meaning>=0.19.0,<1.0.0", "fsrs"]
 # The optional promotion-trust seam (forge/trust.py): turns §0.2's verified_by
 # from a string into a two-tier mechanism — the author provisionally seals the
 # promotion through willow-gate, a different verifier confers canonical via a

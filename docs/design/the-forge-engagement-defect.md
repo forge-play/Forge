@@ -136,20 +136,92 @@ alone."* A lexicon tuned for the Forge's subject would silently change
 willow-mcp's sycophancy detection, which is a different product with a different
 correct answer.
 
-The options, none of them taken in this paper:
+Four options were listed here on 2026-09-07, none taken. Two of them are now
+**measurably dead**, one has shipped, and one remains the real answer.
 
-- **Retune the lexicon upstream.** Correct home, wrong blast radius — `line` is
-  right for willow-gate.
-- **Wrap rather than re-vendor.** `checkpoint_engagement` already wraps; it
-  could drop or reweight terms for its own subject (e.g. score grounding and
-  novelty, discard pushback) without touching the vendored file. Cheapest honest
-  fix.
-- **Stop feeding it to the scheduler.** Keep the annotation, cut the
-  `Hard`/`Easy` wire, so a noisy signal stops moving dates. `grade()` already
-  has the `engagement=None` path and calls it "the deliberate degraded path."
-- **Replace the subject.** Score the *decision*, not the prose — whether the
-  maker chose against the recommendation, whether they later revised. That is
-  §5's "mastery is calibration, not correctness" and needs the join keys.
+### 5.1 Two of the four are dead — measured, not argued
+
+Run `python -m forge.engagement_probe --separability`. It reports the corpus in
+`friction_score`'s four features, *before* weighting:
+
+```
+id                       label           pushback grounding   novelty  question
+argparse-default         not_a_decision      0.00      0.50      1.00      0.00
+real-short               real                0.00      0.50      1.00      0.00
+                                             ^ identical, opposite labels
+
+assent-bare  ("yes")     rubber_stamp        0.00      0.00      1.00      0.00
+assent-polite            rubber_stamp        0.00      0.00      1.00      0.00
+non-sequitur             not_a_decision      0.00      0.00      1.00      0.00
+real-plain  (30 words)   real                0.00      0.00      1.00      0.00
+                                             ^ identical, opposite labels
+
+linearly separable : False (perceptron, 20000 epochs)
+```
+
+**`~~Wrap rather than re-vendor / reweight.~~` Dead.** Reweighting *is* a choice
+of linear coefficients, so this is decidable rather than arguable. The classes
+are not linearly separable in these features, and the collisions are stronger
+still: rows with **identical feature vectors and opposite labels** cannot be
+told apart by any function of these features, linear or otherwise. A thirty-word
+rationale naming a tradeoff and the bare word `"yes"` are *the same point*. The
+weights were never the problem — the distinction was never encoded.
+
+**`~~Retune the lexicon upstream.~~` Dead, and for a second reason.** The
+blast-radius objection stands (`line` is right for willow-gate), but it is also
+insufficient: dropping `line`/`file` from `_GROUNDING` would fix the first
+collision and leave the second untouched, since those four rows are all
+`grounding = 0` already. No word list separates `"yes"` from an argument.
+
+**The mechanism, so nobody re-proposes these.** `novelty` is a *ratio* —
+unechoed content words over total content words. `"yes"` has one content word,
+absent from the prompt, so it scores **maximum novelty**. A one-word non-answer
+looks exactly as "other" as a paragraph. And the 0.34 floor sits about 0.15
+above the "wrote literally anything" baseline, which is why one accidental
+lexicon hit is the entire difference between pass and flag.
+
+### 5.2 What shipped: stop feeding it to the scheduler
+
+**Done, 2026-09-07.** `checkpoint_calibration.resurface` no longer passes
+`engagement` to `checkpoint_schedule.record_review` on either path.
+`engagement=None` is the route `grade()` already documents as "the deliberate
+degraded path", and it grades `Good` — the pre-wire behaviour, restored.
+
+The rationale is still **asked for, still scored, still returned** on
+`ResurfaceOutcome.engagement`. Deleting it would destroy the record of the
+defect, and the annotation is how a human sees it at all. What it no longer does
+is move a date by itself.
+
+Two things this turned up that are worth keeping:
+
+- **The wire really did move dates.** With `fsrs` installed, a re-argued hold was
+  due nine days out while a thin one and a declined one were due same-day.
+- **Its only behavioural test never ran anywhere.** That test was
+  `@_needs_fsrs`-gated, and `fsrs` was in no extra — not the `test` extra, not
+  CI. Worse, the fixed-interval fallback computes a grade and then ignores it,
+  so without `fsrs` the wire was inert and no leg exercised it. `fsrs` is now in
+  the `test` extra; the `no-extras` leg still proves the fallback. A behaviour
+  that no leg exercises is not covered, and this one changed underneath a test
+  that was passing by skipping.
+
+### 5.3 The real answer, not yet built: replace the subject
+
+Score the **decision**, not the prose. Since the join keys landed, the
+behavioural facts are recorded and immune to vocabulary: whether the maker chose
+against the recommendation (already computed in `build_loop` as the calibration
+outcome, `hit = label == recommended`), whether memory's proposal was rejected
+(`matched_band != band`), whether they took the deferral, whether they later
+regressed.
+
+**But not as "dissent = thought."** That has the mirror-image flaw of the current
+scorer: it punishes a maker who agrees for excellent reasons, which is the same
+error reversed. It is only sound as the pedagogy paper's §5 substitution —
+*mastery is calibration, not correctness* — where the question stops being "did
+this maker engage" and becomes "does this maker's judgment hold up", which is
+measurable rather than inferred from prose.
+
+That needs data. The calibration ledger holds five rows. Nothing should be built
+on this until it holds enough to check.
 
 ## Decisions taken
 
@@ -159,11 +231,22 @@ The options, none of them taken in this paper:
 - The corpus lives in `forge/engagement_probe.py` and the probe exits 1 while
   any `not_a_decision` row scores at or above the floor, so the condition is
   gateable rather than remembered.
+- **(2026-09-07)** A remedy that can be decided by measurement is decided by
+  measurement. "Reweight the terms" sounds reasonable and is refutable in one
+  run; `--separability` is that run, and it stays in the repo so the refutation
+  is re-checkable rather than a sentence in a paper nobody can re-execute.
+- **(2026-09-07)** The engagement score no longer bends the review schedule. A
+  signal that cannot tell `"yes"` from an argument may be recorded, but it may
+  not decide when a maker is asked again (`the-forge-pedagogy.md` §9).
+- **(2026-09-07)** The score is kept on the outcome even though it drives
+  nothing. It is the evidence for this paper; a defect with its instrument
+  removed is a story.
 
 ## Open
 
 | gap | state | waiting on |
 |---|---|---|
-| Which of §5's four options. | open | Operator. "Wrap rather than re-vendor" is the cheapest that keeps the drift guard intact. |
+| Which of §5's four options. | **decided 2026-09-07** | Two are dead on measurement (§5.1: not linearly separable, with collisions). "Stop feeding it to the scheduler" shipped (§5.2). "Replace the subject" is the real answer and waits on data (§5.3). |
+| Whether `engagement` should be scored at all once §5.3 lands. | open | If the subject becomes the decision rather than the prose, the prose score becomes evidence of a retired defect rather than a live signal. Keep it while the paper is load-bearing; retiring it is a later decision, and deleting it while it is the only record of the defect would be wrong. |
 | `_EASY_MIN_ENGAGEMENT` is private to `checkpoint_schedule` and restated in the probe. | open | If it moves, the probe's `grade` column goes wrong silently. Either export it or have the probe import the private name deliberately. |
 | Does the flag correlate with anything real? | blocked | Needs the calibration join keys — `band` and engagement are never persisted together. See the pedagogy paper §5. |

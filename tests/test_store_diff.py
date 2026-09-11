@@ -57,6 +57,30 @@ def stores(tmp_path):
 
 
 @_needs_nestor
+def test_a_question_retired_by_revision_is_retired_not_a_conflict(tmp_path):
+    """The other way a project retires a question: not a `supersedes` edge
+    to a newer row, but Nestor's own revision, which sets `superseded_by` on
+    the old row. nestor-meaning 0.19.1 stopped listing such rows by default,
+    and under that default this case read as a CONFLICT (the live revision's
+    answer against main's seal) with the retirement gone. `_history` asks for
+    them back; this pins that it does."""
+    from nestor import cascade, memory
+    from nestor.decision import DecisionMemory
+    cascade.set_ledger_path(tmp_path / "ledger.jsonl")
+    proj = _store(tmp_path / "proj.db")
+    main = _store(tmp_path / "main.db")
+    q = "Where is the project Nestor?"
+    DecisionMemory(proj).propose(q, "~/.forge/nestor", origin="t")
+    memory.revise_draft(q, "~/.forge/projects/<id>/nestor", "decision", "decision",
+                        reason="moved", store=proj)
+    _seal(main, q, "~/.forge/nestor")
+    d = store_diff.diff(proj, main)
+    assert [x["question"] for x in d.retired_here_sealed_there] == [q]
+    assert d.conflicts == [] and d.behind == 0
+    assert d.project_live == 1, "the revision is the one live row"
+
+
+@_needs_nestor
 def test_the_four_sets(stores):
     proj, main = stores
     d = store_diff.diff(proj, main)
@@ -103,7 +127,7 @@ def test_diff_writes_nothing(stores, tmp_path):
 def test_bundle_shaped_diff_needs_no_store_on_the_main_side():
     class FakeStore:
         def memory_init(self): pass
-        def memory_list(self, limit=50):
+        def memory_list(self, limit=50, include_superseded=False):
             return [{"id": "p1", "source_text": "Q one?", "source_norm": "q one", "source_lang": "decision",
                      "target_lang": "decision", "target_text": "A", "status": "draft", "superseded_by": ""},
                     {"id": "p2", "source_text": "Q two?", "source_norm": "q two", "source_lang": "decision",

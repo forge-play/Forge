@@ -57,7 +57,9 @@ forge-export = "forge.bundle:main"
 # grade and then ignores it. A behaviour that no leg exercises is not covered,
 # and one such test was silently passing-by-skipping while the behaviour under
 # it changed. The no-extras leg still proves the fallback path.
-test = ["pytest>=8.0", "pyyaml", "nestor-meaning>=0.19.0,<1.0.0", "fsrs"]
+# Floor 0.19.1: that release lists live rows only from `memory_list` and adds
+# `include_superseded`; store_diff._history and tests/test_deposit.py assume it.
+test = ["pytest>=8.0", "pyyaml", "nestor-meaning>=0.19.1,<1.0.0", "fsrs"]
 # The optional promotion-trust seam (forge/trust.py): turns §0.2's verified_by
 # from a string into a two-tier mechanism — the author provisionally seals the
 # promotion through willow-gate, a different verifier confers canonical via a

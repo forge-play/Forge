@@ -146,13 +146,14 @@ def test_a_rerun_supersedes_and_the_question_is_stable(store):
     assert old["target_text"] == first.row["target_text"]
     assert [r["id"] for r in store.memory_lineage(second.row["id"])] == [first.row["id"]]
     assert store.memory_edges_from(second.row["id"]) == [], "a revision is lineage, not an edge"
-    live = [r for r in store.memory_list(limit=100) if not r["superseded_by"]]
+    live = store.memory_list(limit=100)            # 0.19.1: live rows only, by default
     assert [r["id"] for r in live] == [second.row["id"]]
     assert deposit.newest_deposit(store, REPO)["id"] == second.row["id"]
     # the same outcome again is one fact, not a third row
     third = deposit.deposit_ci(store, repo=REPO, sha=SHA, runs=rerun, actor_type="Bot", via="gh")
     assert third.unchanged and third.row["id"] == second.row["id"]
-    assert len(store.memory_list(limit=100)) == 2
+    assert len(store.memory_list(limit=100)) == 1, "one live fact"
+    assert len(store.memory_list(limit=100, include_superseded=True)) == 2, "…with its history kept"
 
 
 @_needs_nestor

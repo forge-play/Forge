@@ -91,6 +91,43 @@ def test_ambiguity_asks_once_then_confirms_without_asking(home):
 
 
 @_needs_nestor
+def test_the_checkpoint_ledger_keeps_the_shape_corpus_lens_reads(home):
+    """willow-memory/corpus-lens reads `<root>/ledger.jsonl` (`--adapter forge`)
+    and keys on exactly these lines and fields: an `entity_resolve` with
+    `sealed=false` is the engine asking, an `entity_seal` carrying `surface`
+    and `canonical` is the maker answering (and lends the ask its question
+    text by `surface_sha`), and an `entity_resolve` with `sealed=true` is the
+    engine confirming from memory. `ts` is the clock, `domain` the thread.
+    Renaming any of these is a corpus-lens change too — this is the contract."""
+    import json
+
+    root = home / "cp"
+    entry.open_bite(SENTENCE, project_id=PROJECT, builder_id=BUILDER,
+                    responder=ScriptedResponder(choose="web"), root=root)
+    entry.open_bite(SENTENCE, project_id=PROJECT, builder_id=BUILDER,
+                    responder=ScriptedResponder(choose=None), root=root)
+    rows = [json.loads(line) for line in (root / "ledger.jsonl").read_text().splitlines() if line.strip()]
+    by_kind = {}
+    for r in rows:
+        by_kind.setdefault(r["kind"], []).append(r)
+    asks = [r for r in by_kind["entity_resolve"] if not r["sealed"]]
+    confirms = [r for r in by_kind["entity_resolve"] if r["sealed"]]
+    answers = by_kind["entity_seal"]
+    assert asks and confirms and answers
+    for r in rows:
+        assert r["ts"]
+        if r["kind"] != "seal":
+            assert r["domain"]
+    for a in answers:
+        assert a["surface"].strip() and a["canonical"].strip() and a["surface_sha"]
+        assert a["domain"].startswith(f"builder:{BUILDER}:decision:")
+    assert {a["surface_sha"] for a in asks} <= {a["surface_sha"] for a in answers}, \
+        "every ask can be joined to the answer that lends it its question text"
+    for c in confirms:
+        assert c["canonical"].strip(), "a confirm carries the answer it served verbatim"
+
+
+@_needs_nestor
 def test_one_major_needs_no_decision(home):
     r = ScriptedResponder()
     e = entry.open_bite("a tiny cli that renames files", project_id=PROJECT, builder_id=BUILDER,

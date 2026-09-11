@@ -148,10 +148,16 @@ def _decision_memory(store: Any, domain: str) -> ProposeOnly:
 
 
 def _rows(store: Any) -> list[dict]:
-    """Every pair in the store. `memory_list` caps at 50 by default (handoff
+    """Every LIVE pair in the store. `memory_list` caps at 50 by default (handoff
     gap 6); always pass the limit. `memory_init` first: a fresh store has no
     pair table until something creates it, and a list before that is an
-    error, not an empty."""
+    error, not an empty.
+
+    Live only, and on purpose: nestor-meaning 0.19.1 made that the default
+    (§6.127), and every caller here wants the working set — `deposit_ci`
+    and `newest_deposit` filter `superseded_by` themselves, and
+    `link_decisions` should not link a CI row to a decision the project has
+    revised away. `store_diff._history` is the read that wants the past."""
     store.memory_init()
     return list(store.memory_list(limit=1_000_000))
 

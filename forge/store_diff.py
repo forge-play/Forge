@@ -84,9 +84,21 @@ def _live(rows: Iterable[dict], domain: str) -> dict[str, dict]:
     return out
 
 
-def _project_rows(store: Any) -> list[dict]:
+def _history(store: Any) -> list[dict]:
+    """Every row, superseded ones included. nestor-meaning 0.19.1 made
+    `memory_list` return live rows only unless asked (§6.127: a superseded row
+    is outside the live key space); this diff needs the revised-away rows
+    too, because a question the project retired by revision is exactly what
+    `_retired_norms` reads off the `superseded_by` column. Under the old
+    default that retirement silently vanished and the live revision read as
+    a conflict instead. `memory_init` first: a fresh store has no pair table
+    until something creates it."""
     store.memory_init()
-    return list(store.memory_list(limit=1_000_000))
+    return list(store.memory_list(limit=1_000_000, include_superseded=True))
+
+
+def _project_rows(store: Any) -> list[dict]:
+    return _history(store)
 
 
 def _retired_norms(store: Any, live: dict[str, dict], all_rows: list[dict]) -> dict[str, dict]:
@@ -150,12 +162,9 @@ def load_main(main: Any, *, forbid_under: str | Path | None = None) -> tuple[lis
             from nestor.sqlite_store import SqliteStore  # type: ignore[import-not-found]
         except ImportError as e:
             raise RuntimeError("Nestor is unavailable; pass the main store as a bundle instead") from e
-        s = SqliteStore(str(p))
-        s.memory_init()
-        return list(s.memory_list(limit=1_000_000)), f"store {p.name}"
+        return _history(SqliteStore(str(p))), f"store {p.name}"
     # a store object
-    main.memory_init()
-    return list(main.memory_list(limit=1_000_000)), "store"
+    return _history(main), "store"
 
 
 def _ref(r: dict) -> dict:

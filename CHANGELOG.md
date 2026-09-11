@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.2](https://github.com/forge-play/Forge/compare/v0.7.1...v0.7.2) (2026-09-11)
+
+
+### Fixed
+
+* **store:** read history explicitly now that nestor 0.19.1 lists live rows only ([9741cbf](https://github.com/forge-play/Forge/commit/9741cbf7f08d3364a99ec5f9a6387dc8ac995ff4))
+
 ## [0.7.1](https://github.com/forge-play/Forge/compare/v0.7.0...v0.7.1) (2026-09-07)
 
 

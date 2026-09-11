@@ -62,6 +62,20 @@ memory and calibration ledger (`checkpoints/`), and the per-project Nestor
 store (`projects/<project>/nestor/`) — a store whose whole content is one
 build's world, disposable, portable, and the first thing the entry asks.
 
+### Reading the home back
+
+The checkpoint ledger under `~/.forge/checkpoints/ledger.jsonl` is also a
+process corpus, and [corpus-lens](https://github.com/willow-memory/corpus-lens)
+reads it as one (`corpuslens run ~/.forge --adapter forge`): how long a maker
+takes to answer a checkpoint, how decision types resume over days, whether
+the answers read as one human — and, refused by name rather than reported,
+the three rates a corpus of checkpoints cannot mean. It keys on the ledger
+lines the engine already writes (`entity_resolve` asked/confirmed,
+`entity_seal` answered, `ts`, `domain`, `surface`, `canonical`,
+`surface_sha`); `tests/test_entry.py` pins that shape as a contract, so a
+rename here is a corpus-lens change too. The Forge does not import
+corpus-lens and corpus-lens does not import the Forge: the file is the seam.
+
 ## Dependencies
 
 Zero at runtime, on purpose — the same promise `kartikeya` and `jeles` make,

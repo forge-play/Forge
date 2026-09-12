@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.3](https://github.com/forge-play/Forge/compare/v0.7.2...v0.7.3) (2026-09-12)
+
+
+### Fixed
+
+* **engagement:** `__all__` no longer names a `Row` the module never defines ([fdfce54](https://github.com/forge-play/Forge/commit/fdfce540820f01fdcec2dc2a88dc0454a74e4c08))
+
+
+### Build
+
+* bump nestor-meaning floor to 0.20.2 to unblock Windows CI ([6150334](https://github.com/forge-play/Forge/commit/6150334a4717ec6bc52be618d0f668676d738e37))
+
 ## [0.7.2](https://github.com/forge-play/Forge/compare/v0.7.1...v0.7.2) (2026-09-11)
 
 

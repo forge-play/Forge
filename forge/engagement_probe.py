@@ -49,7 +49,7 @@ import re
 
 from . import checkpoint_engagement, friction_floor
 
-__all__ = ["Row", "CORPUS", "decompose", "probe", "summary", "main"]
+__all__ = ["CORPUS", "decompose", "probe", "summary", "main"]
 
 # The floor a rationale must clear to escape the rubber-stamp flag, and the
 # ceiling above which checkpoint_schedule.grade pushes the review interval OUT.

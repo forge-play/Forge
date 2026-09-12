@@ -36,3 +36,11 @@ convention set (willow-reconciler's `reconciler conventions --json`, saved
 verbatim as `tests/fleet_conventions.json` and pinned by hash). If it fails,
 read the document's `sources` — each rule names the release it was learned
 from — before changing either the tree or the test.
+
+## Vendored and canonical bodies
+
+`tools/vendor_manifest.json` pins the modules this repo copies from elsewhere
+(the friction scorer, the fleet conventions document) and the ones it is the
+canonical home of; `tools/vendor_sync_check.py` runs in CI and names every
+drift. A deliberate change is `--print`, paste, and a note in the manifest
+saying why.

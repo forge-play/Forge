@@ -22,9 +22,10 @@ document saved verbatim (willow-reconciler 0.6.0, `reconciler conventions
 --json`, byte for byte, trailing newline included), pinned below by SHA-256
 naming that version, and compared to the live package whenever `reconciler`
 happens to be importable — which it is on a developer's machine that has it
-and is not in CI. The entry in tools/vendor_manifest.json (#26) follows the
-day that manifest is on master; until then this file's pin is the only one,
-and it is the same number.
+and is not in CI. tools/vendor_manifest.json (#26) carries the same pin
+under origin `willow-memory/willow-reconciler:reconciler conventions --json`,
+so tools/vendor_sync_check.py names this document beside every other
+vendored body; a test below holds the two pins to the same number.
 
 **Read against this tree, three things are true today and each test says
 which:** release-please.yml arms auto-merge, so pr-title.yml is required
@@ -102,6 +103,24 @@ def test_the_pin_catches_a_planted_one_byte_edit(tmp_path):
     edited.write_text(edited_text, encoding="utf-8")
     assert _sha256(edited) != DOCUMENT_SHA256
     assert _sha256(DOCUMENT) == DOCUMENT_SHA256, "and the real one still does"
+
+
+def test_the_manifest_pins_the_same_document_to_the_same_hash():
+    """tools/vendor_manifest.json is where every vendored body's pin lives
+    (tools/vendor_sync_check.py runs it in CI); this file's pin must be the
+    same number, or one of the two is stale. Held here, not only by the
+    checker, so a re-save that updates one and forgets the other fails on
+    the test that names both."""
+    manifest = json.loads((REPO_ROOT / "tools" / "vendor_manifest.json").read_text(encoding="utf-8"))
+    entries = [p for p in manifest["pins"] if p["path"] == "tests/fleet_conventions.json"]
+    assert len(entries) == 1, "the conventions document must be pinned exactly once"
+    (entry,) = entries
+    assert entry["sha256"] == DOCUMENT_SHA256, (
+        "the manifest and DOCUMENT_SHA256 disagree; update both together "
+        f"(manifest {entry['sha256'][:12]}…, test {DOCUMENT_SHA256[:12]}…)"
+    )
+    assert entry["origin"] == "willow-memory/willow-reconciler:reconciler conventions --json"
+    assert entry["body_from"] is None, "the whole file is the document; nothing above it to skip"
 
 
 def test_the_saved_document_matches_the_live_package_when_it_is_installed():

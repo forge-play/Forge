@@ -28,6 +28,13 @@
       "body_from": null,
       "sha256": "3421b6d5c0c157181a09b8be890dde349a85d293f9f0d751cd6e987cb3ba7bc6",
       "note": "Canonical here since 2026-09-03; willow-mcp imports model_host/_addresses/is_local_host from this module and identity-checks them in tests/test_forge_take.py. Security-relevant (fail-closed egress detection), so a drift that nobody decided is exactly what this pin is for."
+    },
+    {
+      "path": "tests/fleet_conventions.json",
+      "origin": "willow-memory/willow-reconciler:reconciler conventions --json",
+      "body_from": null,
+      "sha256": "8c2ba122a7100141200d8c76ad086339f984446ab7e90dd9c27a092dbf7f5335",
+      "note": "The fleet's published convention set, saved verbatim from willow-reconciler 0.6.0's CLI (trailing newline included) under G2-conventions-forge, 2026-09-12. tests/test_fleet_conventions.py reads its rules and pins the same hash naming the same version; this entry is the manifest's copy of that pin so one checker names every vendored body. A re-save from a newer reconciler is a deliberate update: run `reconciler conventions --json > tests/fleet_conventions.json`, then `--print` here, then update both this hash and DOCUMENT_SHA256/DOCUMENT_SOURCE in the test together. The document's own `sources` say what each rule was learned from; read them before changing the tree to satisfy a rule."
     }
   ]
 }

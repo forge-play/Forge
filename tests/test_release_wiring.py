@@ -593,6 +593,50 @@ def _codeql_languages(workflow: dict) -> set[str]:
     return {str(lang) for lang in workflow["jobs"]["analyze"]["strategy"]["matrix"]["language"]}
 
 
+def _codeql_problems(workflow: dict) -> list[str]:
+    """Every way codeql.yml could stop being the floor's static-analysis gate.
+
+    The shape (codeql.yml's header says why): python and actions; `analyze`
+    with `upload: never` and an `output` directory, because this repository
+    has CodeQL default setup enabled and GitHub refuses a workflow's upload
+    while it is; and a later step that runs tools/codeql_gate.py on the SARIF,
+    because an analysis nobody reads is not a gate — with `upload: never` the
+    analyze step alone goes green on any tree."""
+    job = (workflow.get("jobs") or {}).get("analyze")
+    if job is None:
+        return ["no `analyze` job"]
+    problems: list[str] = []
+    languages = _codeql_languages(workflow)
+    if languages != {"python", "actions"}:
+        problems.append(f"languages are {sorted(languages)}, not python and actions")
+    steps = job.get("steps") or []
+    analyze = [
+        s for s in steps if str(s.get("uses", "")).startswith("github/codeql-action/analyze@")
+    ]
+    if not analyze:
+        problems.append("no `github/codeql-action/analyze` step")
+    else:
+        with_ = analyze[0].get("with") or {}
+        if str(with_.get("upload", "")) != "never":
+            problems.append(
+                "`analyze` must run with `upload: never` — default setup refuses a workflow's "
+                "upload, and the gate reads the file instead"
+            )
+        if not with_.get("output"):
+            problems.append("`analyze` names no `output` directory for the gate to read")
+    gate = [s for s in steps if "tools/codeql_gate.py" in str(s.get("run", ""))]
+    if not gate:
+        problems.append(
+            "no step runs tools/codeql_gate.py — an analysis nobody reads is not a gate"
+        )
+    else:
+        if ".sarif" not in str(gate[0].get("run", "")):
+            problems.append("the gate step does not name a .sarif file")
+        if analyze and steps.index(gate[0]) < steps.index(analyze[0]):
+            problems.append("the gate runs before the analysis it reads")
+    return problems
+
+
 def test_the_linux_matrix_is_the_classifiers():
     classifiers = _classifier_minors(_PYPROJECT.read_text(encoding="utf-8"))
     assert classifiers, (
@@ -622,9 +666,9 @@ def test_the_aggregate_gate_needs_every_leg_and_rejects_a_skipped_one():
     assert _gate_problems(_yaml(_TESTS_WF)) == []
 
 
-def test_codeql_analyzes_python_and_actions():
+def test_codeql_analyzes_python_and_actions_and_gates_on_the_sarif():
     assert _CODEQL_WF.exists(), "the floor's static-analysis half is missing"
-    assert _codeql_languages(_yaml(_CODEQL_WF)) == {"python", "actions"}
+    assert _codeql_problems(_yaml(_CODEQL_WF)) == []
 
 
 def test_the_classifier_reader_catches_a_planted_mismatch():
@@ -725,3 +769,39 @@ def test_the_gate_check_fires_on_a_planted_gate_that_tolerates_a_skipped_leg():
         }
     )
     assert _gate_problems(triple) == [], "the contains-triple is the other accepted spelling"
+
+
+def test_the_codeql_check_fires_on_a_planted_job_that_uploads_or_never_reads():
+    """Planted four ways: the shape this workflow first shipped with (upload
+    on, no gate — red under default setup with a clean tree, and green on
+    any tree the day the upload is turned off); a gate step that runs before
+    the analysis; python only; and no `analyze` job. Then the shape this repo
+    carries, which must clear."""
+
+    def job(steps: list[dict], languages=("python", "actions")) -> dict:
+        return {
+            "jobs": {
+                "analyze": {"strategy": {"matrix": {"language": list(languages)}}, "steps": steps}
+            }
+        }
+
+    analyze = {
+        "uses": "github/codeql-action/analyze@v4",
+        "with": {"upload": "never", "output": "${{ runner.temp }}/codeql-results"},
+    }
+    gate = {"run": 'python tools/codeql_gate.py "$RUNNER_TEMP/codeql-results/$LANGUAGE.sarif"'}
+
+    first_shipped = job([{"uses": "github/codeql-action/analyze@v3", "with": {"category": "x"}}])
+    got = _codeql_problems(first_shipped)
+    assert any("upload: never" in p for p in got) and any("output" in p for p in got), got
+    assert any("codeql_gate.py" in p for p in got), got
+
+    backwards = job([gate, analyze])
+    assert any("before the analysis" in p for p in _codeql_problems(backwards))
+
+    python_only = job([analyze, gate], languages=("python",))
+    assert any("not python and actions" in p for p in _codeql_problems(python_only))
+
+    assert _codeql_problems({"jobs": {}}) == ["no `analyze` job"]
+
+    assert _codeql_problems(job([analyze, gate])) == []

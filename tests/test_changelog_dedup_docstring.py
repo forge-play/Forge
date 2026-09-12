@@ -61,12 +61,15 @@ def test_the_docstrings_changelog_claim_matches_the_tree():
     )
 
 
-def test_the_scan_catches_a_stale_claim_beside_a_real_changelog():
+def test_the_scan_catches_a_stale_claim_beside_a_real_changelog(tmp_path):
     """The plant. Without this, `check_changelog_claim` passing on the real
     file above would not prove it can ever fail — it could be a function that
     always returns None. Reconstruct the exact violation this repo shipped
-    (the docstring sentence, verbatim) and check it against this
-    repository's own real CHANGELOG.md, which does exist."""
+    (the docstring sentence, verbatim), write it as a module's docstring, read
+    it back through the same `_module_docstring` the real test uses (so the
+    reader is planted too, not only the matcher — the meta-scan in
+    tests/test_scans_fire.py found it unplanted on 2026-09-12), and check it
+    against this repository's own real CHANGELOG.md, which does exist."""
     assert _CHANGELOG.exists(), (
         "this plant needs a real CHANGELOG.md in the tree to be meaningful; "
         "if this repo ever loses its CHANGELOG.md, the docstring claim would "
@@ -79,7 +82,11 @@ def test_the_scan_catches_a_stale_claim_beside_a_real_changelog():
         "CHANGELOG.md. It carries tags v0.0.3 through v0.0.9, but no "
         "`chore(master): release` commit exists anywhere in its history."
     )
-    problem = check_changelog_claim(stale_docstring, _CHANGELOG.exists())
+    stale_module = tmp_path / "changelog_dedup.py"
+    stale_module.write_text('"""' + stale_docstring + '\n"""\n\nimport sys\n',
+                            encoding="utf-8")
+    assert _module_docstring(stale_module) == stale_docstring
+    problem = check_changelog_claim(_module_docstring(stale_module), _CHANGELOG.exists())
     assert problem is not None, (
         "the scan did not catch a docstring claiming 'no CHANGELOG.md' next "
         "to a real one — it has never been shown to check anything"

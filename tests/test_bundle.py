@@ -25,6 +25,25 @@ def home(tmp_path, monkeypatch):
     return tmp_path
 
 
+def _box_path_leaks(path) -> bool:
+    """True if the file at `path` names the operator's box — `paths.home()`,
+    the one string a cut must never carry into a repository."""
+    return str(paths.home()) in path.read_text(encoding="utf-8")
+
+
+def test_the_box_path_scan_catches_a_planted_leak(home):
+    """Planted: a file that names the box, beside one that names only the
+    project. Factored out of the cut test on 2026-09-12 when the meta-scan
+    (tests/test_scans_fire.py) reported its inline read-and-`not in` as a
+    scan with nothing to plant."""
+    leaky = home / "leaky.json"
+    leaky.write_text(f'{{"store": "{paths.home()}/x.sqlite"}}', encoding="utf-8")
+    clean = home / "clean.json"
+    clean.write_text('{"store": "paths.project_nestor(\'demo\')"}', encoding="utf-8")
+    assert _box_path_leaks(leaky)
+    assert not _box_path_leaks(clean)
+
+
 def _make_store(project_id: str):
     from nestor import cascade
     from nestor.decision import DecisionMemory
@@ -124,7 +143,7 @@ def test_cut_writes_the_bundle_and_the_head_and_check_holds(home):
     assert head["digest"] == b["digest"] == c.digest
     assert head["project_id"] == PROJECT and head["cut_by"] == "forge.bundle"
     assert head["store"] == "paths.project_nestor('demo-workshop')"
-    assert str(paths.home()) not in c.head_path.read_text(), "no box path in the repo"
+    assert not _box_path_leaks(c.head_path), "no box path in the repo"
     assert b["counts"]["sealed"] == 0 and "ledger" in b, "shape travels; the chain rides along for audit"
     assert bundle.find_databases(repo) == []
 

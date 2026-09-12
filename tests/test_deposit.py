@@ -267,10 +267,45 @@ def test_the_only_nestor_surface_is_propose_only(store):
 
 # ── the covenant, on the source ────────────────────────────────────────────
 
+#: What forge/deposit.py must never name below its docstring: the sealing
+#: vocabulary (a deposit proposes, it never seals) and the means of opening a
+#: network or running a command. The docstring may discuss all of them.
+_COVENANT_WORDS = ("seal(", "seal_edge(", "keyring", "sign_seal", "NESTOR_SEAL_KEY",
+                   "import requests", "urllib", "subprocess")
+
+
+def _covenant_breaches(module_path: Path) -> list[str]:
+    """Every covenant word that appears in `module_path` BELOW its module
+    docstring, in `_COVENANT_WORDS` order. The docstring is carved off first
+    because it is where the covenant is *explained*, and explaining it names
+    the words."""
+    src = module_path.read_text(encoding="utf-8")
+    body = src.split('"""', 2)[2]
+    return [word for word in _COVENANT_WORDS if word in body]
+
+
 def test_the_module_never_names_seal_or_a_keyring():
-    src = Path(deposit.__file__).read_text(encoding="utf-8")
-    body = src.split('"""', 2)[2]  # below the module docstring
-    for word in ("seal(", "seal_edge(", "keyring", "sign_seal", "NESTOR_SEAL_KEY"):
-        assert word not in body, f"{word!r} appears in forge/deposit.py"
-    assert "import requests" not in body and "urllib" not in body and "subprocess" not in body, \
-        "the module opens no network and runs no command"
+    assert _covenant_breaches(Path(deposit.__file__)) == [], (
+        "forge/deposit.py names a sealing primitive, opens a network or runs "
+        "a command below its docstring"
+    )
+
+
+def test_the_covenant_scan_catches_a_planted_word_below_the_docstring(tmp_path):
+    """Planted: a module whose docstring uses the covenant words freely (as
+    the real one does) and whose body then breaks two of them. Exactly those
+    two must be reported, in list order; a module that names them only in
+    its docstring must report nothing. Factored out of the test above on
+    2026-09-12 when the meta-scan (tests/test_scans_fire.py) reported the
+    inline read-and-`in` as a scan with nothing to plant."""
+    probe = tmp_path / "deposit_probe.py"
+    probe.write_text(
+        '"""A docstring may say keyring, seal( and subprocess freely."""\n'
+        "import subprocess\n"
+        "TOKEN = sign_seal\n",
+        encoding="utf-8",
+    )
+    assert _covenant_breaches(probe) == ["sign_seal", "subprocess"]
+
+    probe.write_text('"""keyring seal( subprocess urllib"""\nx = 1\n', encoding="utf-8")
+    assert _covenant_breaches(probe) == [], "words in the docstring are the explanation, not a breach"

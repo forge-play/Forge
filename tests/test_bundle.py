@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -80,7 +81,11 @@ def test_find_databases_sees_every_shape_and_skips_git(tmp_path):
     (tmp_path / "b.sqlite3").write_text("no")
     (tmp_path / "c.SQLITE").write_text("no")
     (tmp_path / "fine.json").write_text("{}")
-    assert bundle.find_databases(tmp_path) == ["a/nestor.db", "b.sqlite3", "c.SQLITE"]
+    # Relative to `root` in the box's own spelling — `a\nestor.db` on Windows,
+    # where the CI floor's first Windows run (2026-09-12) caught this
+    # expectation hard-coding the separator. The list is a per-checkout
+    # report read on that box, not a shape that travels.
+    assert bundle.find_databases(tmp_path) == [str(Path("a/nestor.db")), "b.sqlite3", "c.SQLITE"]
     assert bundle.find_databases(tmp_path / "nope") == []
 
 

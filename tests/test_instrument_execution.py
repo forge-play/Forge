@@ -53,7 +53,11 @@ def _proj(tmp_path, files):
     for name, body in files.items():
         p = d / name
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(body)
+        # The instrument ships a file's bytes as they are on disk, so the
+        # fixture must write the bytes the assertions expect: `newline="\n"`
+        # keeps a `\n` in `body` from becoming `\r\n` on Windows, where the CI
+        # floor's first Windows run (2026-09-12) decoded `x=1\r\n` back out.
+        p.write_text(body, encoding="utf-8", newline="\n")
     return d
 
 

@@ -50,6 +50,10 @@ jobs:
           cache-dependency-path: pyproject.toml
       - name: Install package with the test extra
         run: pip install -e ".[test]"
+      - name: Vendored bodies still hash to what tools/vendor_manifest.json pins
+        # stdlib only; names every drift and how to resolve it (re-sync from
+        # the origin, or `--print` and record the decision in the manifest).
+        run: python tools/vendor_sync_check.py
       - name: Run tests
         run: python -m pytest tests/ -q
 

@@ -1,0 +1,33 @@
+{
+  "$comment": "Read by tools/vendor_sync_check.py (run by tests/test_vendor_sync_check.py and a step in .github/workflows/tests.yml). Each pin hashes a file's BODY — the whole file when body_from is null, else from the first line reading exactly body_from through EOF — so a header comment above a vendored docstring can be corrected without moving the bytes a consumer pins. A deliberate change is `python tools/vendor_sync_check.py --print`, paste the new hash, and say why in `note`. Written 2026-09-12 under G2-vendor-pins-forge.",
+  "pins": [
+    {
+      "path": "forge/friction_floor.py",
+      "origin": "willow-memory/willow-gate:src/willow_gate/friction_floor.py",
+      "body_from": "\"\"\"friction_floor.py — a smoke detector for the mirror, not a wall.",
+      "sha256": "f0d4a48bf27ca92ce19ef9ec2f8fcf9bf614ad977e0ee106cb1e672ac74ba841",
+      "note": "LOCAL OVERRIDE, decided 2026-09-12: this pins THIS copy's own body, not willow-gate's. Measured that day, the two are not byte-identical — this copy spells `re.I` where willow-gate spells `re.IGNORECASE` (six sites) and `typing.List`/`Optional` where willow-gate uses `list[...]`/`X | None` — a spelling-only divergence with identical behaviour (the file's own header, corrected on #25, says exactly this). willow-gate's whole-file sha256 that day: 31d4df2d9a4e2556a583c055ad6d0c8a42b3cea599920e9d38e675601bc67b99. willow-mcp pins this same body hash as EXPECTED_BODY_SHA256 in its tests/test_stance_friction.py, so editing the body here breaks willow-mcp at Forge's next release; re-syncing to willow-gate's spelling is deferred to a bite that lands both sides in the same hour. Until then a drift here means someone edited the scorer in Forge alone, which is the thing this pin exists to catch."
+    },
+    {
+      "path": "tools/changelog_dedup.py",
+      "origin": "self",
+      "body_from": "from __future__ import annotations",
+      "sha256": "e3f31ef11105ae37c495c1745a94c6992ceb587c549cd016f24e83c778fd1320",
+      "note": "Canonical home. The body (284 lines from the __future__ import to EOF; the docstring above it is per-repo prose and is not pinned) is what kartikeya, corpus-lens, Jeles and willow-mcp carry identical copies of and pin by this constant. Any body change here must update this hash AND is a fleet event: every consumer re-syncs, or their pin breaks at their next run."
+    },
+    {
+      "path": "forge/human_loop.py",
+      "origin": "self",
+      "body_from": null,
+      "sha256": "539546f9221e870828040e5d2a81da22e396959689b9f164111ee76faa28eb6c",
+      "note": "Canonical here since 2026-09-03; willow-mcp's src/willow_mcp/human_loop.py re-exports this module and its tests/test_forge_take.py identity-checks it, so a change here is willow-mcp's behaviour changing. Whole file pinned: there is no upstream body to keep separate from a local header."
+    },
+    {
+      "path": "forge/model_egress.py",
+      "origin": "self",
+      "body_from": null,
+      "sha256": "3421b6d5c0c157181a09b8be890dde349a85d293f9f0d751cd6e987cb3ba7bc6",
+      "note": "Canonical here since 2026-09-03; willow-mcp imports model_host/_addresses/is_local_host from this module and identity-checks them in tests/test_forge_take.py. Security-relevant (fail-closed egress detection), so a drift that nobody decided is exactly what this pin is for."
+    }
+  ]
+}

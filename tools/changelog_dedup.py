@@ -21,11 +21,18 @@ make the duplication immediate.
 
 **AS OF 2026-09-12, IT ISN'T.** `CHANGELOG.md` exists, this repository carries
 tags v0.1.0 through v0.7.2, and nine `chore(master): release` commits are in
-its history. The predicted duplication happened on schedule: v0.5.0's
-release-please-generated section listed its one change twice, from both the
-merge commit and the commit it merged, and was corrected by hand in #29 —
-which is what got this tool wired into `release-please.yml`'s "Rebuild the
-changelog section from the commits" step, run on every release since.
+its history. The predicted duplication happened on schedule, and this tool
+caught it unassisted: the "Rebuild the changelog section from the commits"
+step in `release-please.yml` has been wired since this repo's first commit
+(f611d90, the same commit that added this file), and `git log -- CHANGELOG.md`
+shows its `chore: rebuild the changelog section from the commits` commit on
+seven of the nine release PRs (v0.2.0 through v0.7.1), each dropping the
+merge-commit duplicate — v0.5.0's, for one, listed "record which project a
+decision was taken in" twice until it ran. Nothing was corrected by hand.
+(The 2026-09-12 revision of this paragraph first said v0.5.0 "was corrected by
+hand in #29, which is what got this tool wired in"; that was wrong — this
+repo has no #29 and the wiring predates every release — and was corrected the
+same day under G2-vendor-pins-forge.)
 
 One gap in that coverage, found downstream rather than here: `rebuild()`'s
 section matcher expects the `## [x.y.z](…/compare/…)` heading release-please

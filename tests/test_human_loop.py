@@ -7,10 +7,13 @@ layer up (through `checkpoint_governance`'s wrapper).
 
 NOTE on `resolve()` and unknown `item_id`: upstream returns
 `{"error": "unknown_item", "item_id": item_id}` rather than raising — the
-Forge keeps this byte-for-byte. There is no tools/vendor_sync_check.py in this
-repo to enforce that today; the shared guard arrives with the fleet plan's
-Wave 2 G2-vendor-pins bite. Callers must check for the error dict; only
-invalid *status* values raise HumanLoopError.
+Forge keeps this byte-for-byte, and tools/vendor_sync_check.py enforces it
+again since 2026-09-12 (the earlier checker was retired on 2026-09-02,
+a9ee4c2, while this note went on citing it): the whole file
+is pinned by SHA-256 in tools/vendor_manifest.json as canonical here, so a
+change to this contract is a recorded decision the consumers hear about, not
+a drift. Callers must check for the error dict; only invalid *status* values
+raise HumanLoopError.
 """
 from __future__ import annotations
 

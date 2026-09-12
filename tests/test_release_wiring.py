@@ -18,6 +18,7 @@ trusted. Like kartikeya, this repo has no second version file to keep in step.
 """
 from __future__ import annotations
 
+import ast
 import fnmatch
 import json
 import re
@@ -99,6 +100,18 @@ def _names_a_non_suppressed_credential(value: object) -> bool:
     return any(c in text for c in NON_SUPPRESSED_CREDENTIALS)
 
 
+def test_the_credential_scan_catches_github_token_and_clears_the_app_token():
+    """Planted both ways. A step whose only credential is GITHUB_TOKEN — the
+    exact shape that lost jeles three releases — must read as suppressed;
+    either accepted form must clear. Until 2026-09-12 this helper cleared
+    real steps and had never been shown to refuse one (the meta-scan in
+    tests/test_scans_fire.py found it unplanted)."""
+    assert not _names_a_non_suppressed_credential({"token": "${{ secrets.GITHUB_TOKEN }}"})
+    assert not _names_a_non_suppressed_credential(None)
+    assert _names_a_non_suppressed_credential({"GH_TOKEN": "${{ steps.app-token.outputs.token }}"})
+    assert _names_a_non_suppressed_credential("${{ secrets.RELEASE_PLEASE_TOKEN }}")
+
+
 def test_release_automation_uses_a_non_suppressed_credential_everywhere():
     """A bot token silently produces no workflow runs: the release PR merges, no
     tag workflow fires, nothing publishes. jeles lost three releases to it."""
@@ -133,10 +146,15 @@ def test_the_changelog_is_rebuilt_before_auto_merge_is_armed():
     """Order is the point: the correction must land on the release PR *before*
     auto-merge can take it, or the release ships wrong and is fixed afterwards.
 
-    **Not yet exercised here.** This repo has no CHANGELOG.md and no
-    `chore(master): release` commit in its history, so release-please has never
-    cut a release and the tool no-ops. The wiring is asserted; the correction is
-    not, because there is nothing here to correct yet."""
+    **Exercised for real since v0.2.0.** As written (2026-08-11) this repo had
+    no CHANGELOG.md and no `chore(master): release` commit, so the tool
+    no-opped and only the wiring could be asserted. The predicted duplication
+    then happened on schedule and this step caught it unassisted: `git log --
+    CHANGELOG.md` shows a `chore: rebuild the changelog section from the
+    commits` commit on seven of the nine release PRs (v0.2.0 through v0.7.1),
+    each dropping the merge-commit duplicate. This test still asserts the
+    wiring only; the corrections themselves are that history (corrected
+    2026-09-12, G2-vendor-pins-forge)."""
     steps = _yaml(_RP_WF)["jobs"]["release-please"]["steps"]
     names = [s.get("name") or str(s.get("uses", "")) for s in steps]
 
@@ -169,6 +187,32 @@ def test_a_changelog_bail_does_not_block_the_release():
         "the workflow calls a script this repo does not ship"
 
 
+def _assigned_literal(source: str, name: str):
+    """The literal bound to module-level `name` in `source`, read out of the
+    AST rather than the text, so a comment that spells the same assignment
+    for another repo is not what gets returned. StopIteration if unbound."""
+    tree = ast.parse(source)
+    return next(ast.literal_eval(n.value) for n in ast.walk(tree)
+                if isinstance(n, ast.Assign)
+                and getattr(n.targets[0], "id", "") == name)
+
+
+def test_the_assignment_reader_catches_the_value_and_not_the_comment():
+    """Planted: a body whose comment spells willow-mcp's PACKAGED and whose
+    assignment spells this repo's. The reader must return the assignment and
+    nothing the comment says; and an unbound name must not read as some
+    other name's value. Factored out of the test below on 2026-09-12 when
+    the meta-scan (tests/test_scans_fire.py) reported the inline AST walk as
+    a scan with nothing to plant."""
+    body = ("# willow-mcp: PACKAGED = ('src/willow_mcp/', 'pyproject.toml')\n"
+            "OTHER = 1\n"
+            "PACKAGED = ('forge/', 'pyproject.toml')\n")
+    assert _assigned_literal(body, "PACKAGED") == ("forge/", "pyproject.toml")
+    assert _assigned_literal(body, "OTHER") == 1
+    with pytest.raises(StopIteration):
+        _assigned_literal(body, "MISSING")
+
+
 def test_the_pr_title_check_guards_both_directions():
     """One direction stops a title inventing a release; the other stops a commit
     releasing something nobody installs. willow-mcp shipped 2.1.5 that way and
@@ -179,14 +223,9 @@ def test_the_pr_title_check_guards_both_directions():
     `jeles/`. Read the *assigned value* out of the AST rather than searching the
     text: the comments there name the other repos' paths deliberately, and a
     substring check would flag its own explanation."""
-    import ast
-
     wf = _REPO / ".github" / "workflows" / "pr-title.yml"
     body = _yaml(wf)["jobs"]["title"]["steps"][-1]["run"].split("<<'PY'")[1].rsplit("PY", 1)[0]
-    tree = ast.parse(body)
-    packaged = next(ast.literal_eval(n.value) for n in ast.walk(tree)
-                    if isinstance(n, ast.Assign)
-                    and getattr(n.targets[0], "id", "") == "PACKAGED")
+    packaged = _assigned_literal(body, "PACKAGED")
 
     assert packaged == ("forge/", "pyproject.toml"), packaged
     pyproject = tomllib.loads((_REPO / "pyproject.toml").read_text())
@@ -201,8 +240,10 @@ def test_the_release_body_is_synced_after_the_release_is_created():
     willow-mcp's v2.1.4 page and jeles' v0.5.0 page both kept their duplicate
     after the file had been corrected.
 
-    Like the changelog step, this has never run here — there is no CHANGELOG.md
-    to publish from. The wiring is what is asserted."""
+    As written (2026-08-11) this had never run here — there was no CHANGELOG.md
+    to publish from. It has run on every release since v0.5.0 (CHANGELOG.md
+    exists, tags through v0.7.2). The wiring is still what is asserted here
+    (corrected 2026-09-12, G2-vendor-pins-forge)."""
     steps = _yaml(_RP_WF)["jobs"]["release-please"]["steps"]
     names = [s.get("name") or str(s.get("uses", "")) for s in steps]
 

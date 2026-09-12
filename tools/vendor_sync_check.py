@@ -41,6 +41,7 @@ USAGE
     python tools/vendor_sync_check.py --print    # current hashes, to paste
     python tools/vendor_sync_check.py --manifest M --root DIR   # for the tests
 """
+
 from __future__ import annotations
 
 import argparse
@@ -74,8 +75,10 @@ def body_hash(root: Path, entry: dict) -> str:
 
 def _advice(entry: dict) -> str:
     if entry["origin"] == "self":
-        return ("this repo is the canonical home: update the manifest with the "
-                "decision (`--print`), and tell the consumers — it is a fleet event")
+        return (
+            "this repo is the canonical home: update the manifest with the "
+            "decision (`--print`), and tell the consumers — it is a fleet event"
+        )
     return f"re-sync from {entry['origin']}, or update the manifest with the decision"
 
 
@@ -94,8 +97,7 @@ def drifts(manifest: Path = MANIFEST, root: Path = REPO) -> list[str]:
             problems.append(f"{path}: {exc} — {_advice(entry)}")
             continue
         if actual != entry["sha256"]:
-            problems.append(f"{path}: pinned {entry['sha256']}, found {actual} "
-                            f"— {_advice(entry)}")
+            problems.append(f"{path}: pinned {entry['sha256']}, found {actual} — {_advice(entry)}")
     return problems
 
 
@@ -103,8 +105,12 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--manifest", type=Path, default=MANIFEST)
     ap.add_argument("--root", type=Path, default=REPO)
-    ap.add_argument("--print", action="store_true", dest="show",
-                    help="print each pin's current hash instead of checking")
+    ap.add_argument(
+        "--print",
+        action="store_true",
+        dest="show",
+        help="print each pin's current hash instead of checking",
+    )
     args = ap.parse_args(argv)
     if args.show:
         for entry in json.loads(args.manifest.read_text(encoding="utf-8"))["pins"]:

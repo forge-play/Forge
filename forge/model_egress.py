@@ -20,6 +20,7 @@ EGRESS (off the machine), and only egress needs a declared permission. This
 module answers only that question, deterministically and with no policy of its
 own — the policy is `forge/model_route.py`.
 """
+
 from __future__ import annotations
 
 import ipaddress
@@ -44,6 +45,7 @@ def _addresses(hostname: str) -> list[str]:
     not read as "it goes nowhere".
     """
     import socket
+
     try:
         infos = socket.getaddrinfo(hostname, None)
     except (socket.gaierror, UnicodeError, ValueError):
@@ -59,6 +61,7 @@ def is_local_host(host_url: str) -> bool:
     loopback and non-loopback all require consent.
     """
     from urllib.parse import urlparse
+
     try:
         hostname = urlparse(host_url).hostname
     except ValueError:

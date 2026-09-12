@@ -6,6 +6,7 @@ finding stops being an assertion and starts being a regression test — if a
 future change makes band selection calibration-aware, `test_the_two_makers_take
 _the_same_bands` fails, which is the correct way for this to break.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -13,7 +14,8 @@ import pytest
 from forge import band_probe, checkpoint_memory
 
 _needs_nestor = pytest.mark.skipif(
-    not checkpoint_memory.nestor_available(), reason="nestor not installed")
+    not checkpoint_memory.nestor_available(), reason="nestor not installed"
+)
 
 
 @pytest.fixture
@@ -55,8 +57,9 @@ def test_a_maker_who_is_always_wrong_still_gets_auto_applied(root):
     contrary = band_probe.run("contrary", rounds=5, root=root / "c")
     assert contrary["hit_rate"] == 0.0
     assert contrary["auto_rate_pct"] > 50.0
-    assert contrary["by_band"]["auto"]["hit_rate"] == 0.0, \
+    assert contrary["by_band"]["auto"]["hit_rate"] == 0.0, (
         "every auto-applied decision belonged to a maker who was wrong about it"
+    )
 
 
 @_needs_nestor

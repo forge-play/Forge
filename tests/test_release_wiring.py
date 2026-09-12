@@ -16,6 +16,7 @@ would have tagged `willow-mcp-v2.2.0` while the publish workflow listened for
 package name swapped; these tests are what make that copy checkable rather than
 trusted. Like kartikeya, this repo has no second version file to keep in step.
 """
+
 from __future__ import annotations
 
 import ast
@@ -54,8 +55,11 @@ def test_the_tag_release_please_creates_matches_what_release_yml_listens_for():
     and nothing publishes, with no error anywhere. Observed on willow-mcp#256."""
     cfg = _package_config()
     version = _json(_MANIFEST)["."]
-    tag = (f"{cfg['package-name']}-v{version}"
-           if cfg.get("include-component-in-tag", True) else f"v{version}")
+    tag = (
+        f"{cfg['package-name']}-v{version}"
+        if cfg.get("include-component-in-tag", True)
+        else f"v{version}"
+    )
 
     # `on:` parses as the boolean True — PyYAML applies the YAML 1.1 rule.
     patterns = list(_yaml(_RELEASE_WF)[True]["push"]["tags"])
@@ -72,11 +76,13 @@ def test_the_version_has_exactly_one_source():
     here is a second copy, and a second copy is what drifts."""
     pyproject = tomllib.loads((_REPO / "pyproject.toml").read_text())
     assert "version" in (pyproject["project"].get("dynamic") or [])
-    assert "version" not in pyproject["project"], \
+    assert "version" not in pyproject["project"], (
         "a literal project.version is exactly what broke v0.0.8"
+    )
     assert pyproject["tool"]["hatch"]["version"]["source"] == "vcs"
-    assert not _package_config().get("extra-files"), \
+    assert not _package_config().get("extra-files"), (
         "nothing in this repo stores a version, so nothing needs bumping"
+    )
 
 
 # A credential whose events actually trigger workflows. Either form is
@@ -90,8 +96,8 @@ def test_the_version_has_exactly_one_source():
 # unchanged. Widening this to accept GITHUB_TOKEN would give back the three
 # releases jeles lost.
 NON_SUPPRESSED_CREDENTIALS = (
-    "RELEASE_PLEASE_TOKEN",              # fine-grained PAT (being retired)
-    "steps.app-token.outputs.token",     # willow-ci App installation token
+    "RELEASE_PLEASE_TOKEN",  # fine-grained PAT (being retired)
+    "steps.app-token.outputs.token",  # willow-ci App installation token
 )
 
 
@@ -119,14 +125,17 @@ def test_release_automation_uses_a_non_suppressed_credential_everywhere():
     used: set[str] = set()
     values: list[str] = []
     for step in steps:
-        for value in list((step.get("env") or {}).values()) + \
-                     list((step.get("with") or {}).values()):
+        for value in list((step.get("env") or {}).values()) + list(
+            (step.get("with") or {}).values()
+        ):
             values.append(str(value))
             used.update(re.findall(r"secrets\.([A-Z_]+)", str(value)))
-    assert any(_names_a_non_suppressed_credential(v) for v in values), \
+    assert any(_names_a_non_suppressed_credential(v) for v in values), (
         f"no non-suppressed credential anywhere in the job; secrets seen: {used}"
-    assert "GITHUB_TOKEN" not in used, \
+    )
+    assert "GITHUB_TOKEN" not in used, (
         f"GITHUB_TOKEN's events do not trigger workflows; found {used}"
+    )
 
 
 def test_auto_merge_waits_for_ci_rather_than_merging_directly():
@@ -163,11 +172,14 @@ def test_the_changelog_is_rebuilt_before_auto_merge_is_armed():
         assert hits, f"no step matching {needle!r} in {names}"
         return hits[0]
 
-    assert (index_of("actions/checkout") < index_of("release-please-action")
-            < index_of("Rebuild the changelog") < index_of("Arm auto-merge")), names
+    assert (
+        index_of("actions/checkout")
+        < index_of("release-please-action")
+        < index_of("Rebuild the changelog")
+        < index_of("Arm auto-merge")
+    ), names
 
-    checkout = next(s for s in steps
-                    if str(s.get("uses", "")).startswith("actions/checkout"))
+    checkout = next(s for s in steps if str(s.get("uses", "")).startswith("actions/checkout"))
     assert checkout["with"]["fetch-depth"] == 0, "needs full history for the range"
     assert checkout["with"]["fetch-tags"] is True, "needs tags to find the previous release"
 
@@ -183,8 +195,9 @@ def test_a_changelog_bail_does_not_block_the_release():
     assert 'status" = "2"' in step["run"], "exit 2 must be handled, not left to set -e"
     assert _names_a_non_suppressed_credential(step.get("env"))
     assert "GITHUB_TOKEN" not in str(step.get("env"))
-    assert (_REPO / "tools" / "changelog_dedup.py").exists(), \
+    assert (_REPO / "tools" / "changelog_dedup.py").exists(), (
         "the workflow calls a script this repo does not ship"
+    )
 
 
 def _assigned_literal(source: str, name: str):
@@ -192,9 +205,11 @@ def _assigned_literal(source: str, name: str):
     AST rather than the text, so a comment that spells the same assignment
     for another repo is not what gets returned. StopIteration if unbound."""
     tree = ast.parse(source)
-    return next(ast.literal_eval(n.value) for n in ast.walk(tree)
-                if isinstance(n, ast.Assign)
-                and getattr(n.targets[0], "id", "") == name)
+    return next(
+        ast.literal_eval(n.value)
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == name
+    )
 
 
 def test_the_assignment_reader_catches_the_value_and_not_the_comment():
@@ -204,9 +219,11 @@ def test_the_assignment_reader_catches_the_value_and_not_the_comment():
     other name's value. Factored out of the test below on 2026-09-12 when
     the meta-scan (tests/test_scans_fire.py) reported the inline AST walk as
     a scan with nothing to plant."""
-    body = ("# willow-mcp: PACKAGED = ('src/willow_mcp/', 'pyproject.toml')\n"
-            "OTHER = 1\n"
-            "PACKAGED = ('forge/', 'pyproject.toml')\n")
+    body = (
+        "# willow-mcp: PACKAGED = ('src/willow_mcp/', 'pyproject.toml')\n"
+        "OTHER = 1\n"
+        "PACKAGED = ('forge/', 'pyproject.toml')\n"
+    )
     assert _assigned_literal(body, "PACKAGED") == ("forge/", "pyproject.toml")
     assert _assigned_literal(body, "OTHER") == 1
     with pytest.raises(StopIteration):
@@ -230,8 +247,7 @@ def test_the_pr_title_check_guards_both_directions():
     assert packaged == ("forge/", "pyproject.toml"), packaged
     pyproject = tomllib.loads((_REPO / "pyproject.toml").read_text())
     wheel = pyproject["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"]
-    assert wheel == ["forge"], \
-        f"packaged path disagrees with what the wheel ships: {wheel}"
+    assert wheel == ["forge"], f"packaged path disagrees with what the wheel ships: {wheel}"
 
 
 def test_the_release_body_is_synced_after_the_release_is_created():
@@ -252,8 +268,11 @@ def test_the_release_body_is_synced_after_the_release_is_created():
         assert hits, f"no step matching {needle!r} in {names}"
         return hits[0]
 
-    assert (index_of("release-please-action") < index_of("Make the GitHub Release body")
-            < index_of("Arm auto-merge")), names
+    assert (
+        index_of("release-please-action")
+        < index_of("Make the GitHub Release body")
+        < index_of("Arm auto-merge")
+    ), names
 
     step = steps[index_of("Make the GitHub Release body")]
     run = step["run"]
@@ -277,8 +296,12 @@ def test_print_section_refuses_when_there_is_no_changelog():
     tool = _REPO / "tools" / "changelog_dedup.py"
     if (_REPO / "CHANGELOG.md").exists():
         pytest.skip("a changelog exists now — this guards the no-changelog state")
-    r = subprocess.run([sys.executable, str(tool), "--print-section", "0.0.9"],
-                       capture_output=True, text=True, cwd=str(_REPO))
+    r = subprocess.run(
+        [sys.executable, str(tool), "--print-section", "0.0.9"],
+        capture_output=True,
+        text=True,
+        cwd=str(_REPO),
+    )
     assert r.returncode == 2, (r.returncode, r.stdout, r.stderr)
     assert r.stdout.strip() == "", f"printed something usable as a body: {r.stdout!r}"
 
@@ -300,14 +323,16 @@ def test_print_section_refuses_while_only_hand_written_history_exists():
     changelog = _REPO / "CHANGELOG.md"
     if not changelog.exists():
         pytest.skip("no changelog — the earlier guard covers that state")
-    generated = [ln for ln in changelog.read_text().splitlines()
-                 if ln.startswith("## [")]
+    generated = [ln for ln in changelog.read_text().splitlines() if ln.startswith("## [")]
     if generated:
         pytest.skip("release-please has written a section — this guard is spent")
 
-    r = subprocess.run([sys.executable, str(_REPO / "tools" / "changelog_dedup.py"),
-                        "--print-section", "0.0.9"],
-                       capture_output=True, text=True, cwd=str(_REPO))
+    r = subprocess.run(
+        [sys.executable, str(_REPO / "tools" / "changelog_dedup.py"), "--print-section", "0.0.9"],
+        capture_output=True,
+        text=True,
+        cwd=str(_REPO),
+    )
     assert r.returncode == 2, (r.returncode, r.stdout, r.stderr)
     assert r.stdout.strip() == "", f"printed something publishable: {r.stdout!r}"
 
@@ -320,13 +345,18 @@ def test_a_rebuild_leaves_the_hand_written_history_alone():
     import sys
 
     changelog = _REPO / "CHANGELOG.md"
-    if not changelog.exists() or [ln for ln in changelog.read_text().splitlines()
-                                  if ln.startswith("## [")]:
+    if not changelog.exists() or [
+        ln for ln in changelog.read_text().splitlines() if ln.startswith("## [")
+    ]:
         pytest.skip("only meaningful while the file is hand-written history alone")
 
     before = changelog.read_text()
-    r = subprocess.run([sys.executable, str(_REPO / "tools" / "changelog_dedup.py")],
-                       capture_output=True, text=True, cwd=str(_REPO))
+    r = subprocess.run(
+        [sys.executable, str(_REPO / "tools" / "changelog_dedup.py")],
+        capture_output=True,
+        text=True,
+        cwd=str(_REPO),
+    )
     assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
     assert changelog.read_text() == before, "the hand-written history was modified"
 
@@ -337,8 +367,7 @@ def test_only_types_that_change_the_installed_package_cut_a_release():
     the release PR, not once auto-merge does."""
     sections = _package_config()["changelog-sections"]
     visible = {s["type"] for s in sections if not s.get("hidden")}
-    assert visible == {"feat", "fix", "security", "perf", "refactor",
-                       "build", "deps"}, visible
+    assert visible == {"feat", "fix", "security", "perf", "refactor", "build", "deps"}, visible
     for t in ("docs", "test", "ci", "chore"):
         assert next(s for s in sections if s["type"] == t).get("hidden") is True
 
@@ -361,11 +390,14 @@ def test_a_breaking_change_below_1_0_cuts_1_0_0_rather_than_a_minor():
     cfg = _package_config()
     assert cfg.get("bump-minor-pre-major") is False, (
         "true caps a breaking change at a minor, which makes a downstream "
-        "`<1.0.0` cap meaningless. See willow-mcp docs/design/fleet-versioning.md")
-    assert cfg.get("bump-patch-for-minor-pre-major") is False, \
+        "`<1.0.0` cap meaningless. See willow-mcp docs/design/fleet-versioning.md"
+    )
+    assert cfg.get("bump-patch-for-minor-pre-major") is False, (
         "with this true, a feat would bump the patch instead of the minor"
-    assert _json(_MANIFEST)["."].startswith("0."), \
+    )
+    assert _json(_MANIFEST)["."].startswith("0."), (
         "past 1.0 both flags are dead weight — `isPreMajor` gates them. Remove."
+    )
 
 
 def test_the_publish_job_uses_oidc_with_attestations():
@@ -375,15 +407,17 @@ def test_the_publish_job_uses_oidc_with_attestations():
     job = _yaml(_RELEASE_WF)["jobs"]["publish"]
     perms = job.get("permissions") or {}
     assert perms.get("id-token") == "write", (
-        "the publish job must request id-token: write for Trusted Publishing")
+        "the publish job must request id-token: write for Trusted Publishing"
+    )
     publish = job["steps"]
     step = next(s for s in publish if "pypi-publish" in str(s.get("uses", "")))
     with_ = step.get("with") or {}
     assert "password" not in with_, (
-        "a stored token is not needed with Trusted Publishing — drop the "
-        "password line")
+        "a stored token is not needed with Trusted Publishing — drop the password line"
+    )
     assert with_.get("attestations") is not False, (
-        "attestations are available with OIDC — do not disable them")
+        "attestations are available with OIDC — do not disable them"
+    )
 
 
 def test_the_checkout_uses_a_non_suppressed_credential_so_pushes_are_not_gated():
@@ -400,13 +434,13 @@ def test_the_checkout_uses_a_non_suppressed_credential_so_pushes_are_not_gated()
     This is the fourth way this fleet has been bitten by token attribution, so
     it gets a test rather than a comment."""
     steps = _yaml(_RP_WF)["jobs"]["release-please"]["steps"]
-    checkout = next(s for s in steps
-                    if str(s.get("uses", "")).startswith("actions/checkout"))
+    checkout = next(s for s in steps if str(s.get("uses", "")).startswith("actions/checkout"))
     token = str((checkout.get("with") or {}).get("token", ""))
     assert _names_a_non_suppressed_credential(token), (
         "checkout must carry a credential whose events trigger workflows — its "
         "credential is what the changelog step pushes with. "
-        f"Got: {token!r}")
+        f"Got: {token!r}"
+    )
     assert "GITHUB_TOKEN" not in token
 
 
@@ -444,12 +478,13 @@ def test_trailers_yml_exists_wherever_the_pile_does():
     run = "\n".join(str(s.get("run", "")) for s in steps)
     assert "reconciler verify" in run and "docs/ideas.md" in run, run
     # `on:` parses as the boolean True — PyYAML applies the YAML 1.1 rule.
-    assert wf[True]["pull_request"]["branches"] == ["master"], \
+    assert wf[True]["pull_request"]["branches"] == ["master"], (
         "the gate must run on every PR to the default branch, which is master here"
-    checkout = next(s for s in steps
-                    if str(s.get("uses", "")).startswith("actions/checkout"))
-    assert checkout["with"]["fetch-depth"] == 0, \
+    )
+    checkout = next(s for s in steps if str(s.get("uses", "")).startswith("actions/checkout"))
+    assert checkout["with"]["fetch-depth"] == 0, (
         "verify walks the whole history; a shallow clone verifies only what it fetched"
+    )
 
 
 def test_the_pile_gate_check_fires_on_a_planted_pile_with_no_workflow(tmp_path):
@@ -466,9 +501,307 @@ def test_the_pile_gate_check_fires_on_a_planted_pile_with_no_workflow(tmp_path):
     (gated / "docs").mkdir(parents=True)
     (gated / "docs" / "ideas.md").write_text("1. an idea\n", encoding="utf-8")
     (gated / ".github" / "workflows").mkdir(parents=True)
-    (gated / ".github" / "workflows" / "trailers.yml").write_text("name: Trailers\n", encoding="utf-8")
+    (gated / ".github" / "workflows" / "trailers.yml").write_text(
+        "name: Trailers\n", encoding="utf-8"
+    )
     assert not _pile_without_its_gate(gated)
 
     no_pile = tmp_path / "no_pile"
     no_pile.mkdir()
     assert not _pile_without_its_gate(no_pile), "no pile, nothing to gate"
+
+
+# ── the fleet CI floor (decision 5: C4-tests-yml, C4-codeql, 2026-09-12) ─────
+#
+# tests.yml is held to the floor's shape by reading the file, never by
+# restating it: the Linux matrix equals the Python classifiers pyproject.toml
+# declares (a classifier CI never runs is a promise nobody checked; a matrix
+# entry with no classifier is a version the package does not claim); the
+# Windows job runs the floor and the ceiling of that list; the lint job pins
+# ruff to one exact version and runs both `check` and `format --check`; the
+# aggregate `test` job needs every other job, runs `if: always()`, and rejects
+# any result that is not `success` — skipped and cancelled included, because a
+# required check that goes green on a skipped leg protects nothing. codeql.yml
+# analyzes python and actions. Each helper below is planted.
+
+_TESTS_WF = _REPO / ".github" / "workflows" / "tests.yml"
+_CODEQL_WF = _REPO / ".github" / "workflows" / "codeql.yml"
+_PYPROJECT = _REPO / "pyproject.toml"
+_CLASSIFIER_RE = re.compile(r"Programming Language :: Python :: (3\.\d+)\b")
+_RUFF_PIN_RE = re.compile(r"\bruff==(\d+\.\d+\.\d+)\b")
+_GATE = "test"
+
+
+def _classifier_minors(pyproject_text: str) -> list[str]:
+    """Every `Programming Language :: Python :: 3.X` classifier, in file order."""
+    return _CLASSIFIER_RE.findall(pyproject_text)
+
+
+def _matrix_versions(workflow: dict, job: str) -> list[str]:
+    return [str(v) for v in workflow["jobs"][job]["strategy"]["matrix"]["python-version"]]
+
+
+def _ruff_pin(workflow: dict) -> str | None:
+    """The exact `ruff==X.Y.Z` the lint job installs, or None when it is
+    unpinned (`pip install ruff`, `ruff>=…`) — an unpinned ruff is a ruff
+    release reddening every open PR at once."""
+    runs = "\n".join(str(s.get("run", "")) for s in workflow["jobs"]["lint"]["steps"])
+    m = _RUFF_PIN_RE.search(runs)
+    return m.group(1) if m else None
+
+
+def _gate_problems(workflow: dict, gate: str = _GATE) -> list[str]:
+    """Everything wrong with the aggregate job `gate`: absent, not
+    `if: always()`, not needing every other job in the workflow, or not
+    rejecting a non-success result. "Rejects" means the gate's own step text
+    either reads `toJSON(needs)` and compares to `success`, or names all
+    three of failure/cancelled/skipped in `contains(needs.*.result, …)`; a
+    gate that only checks for `failure` passes on a skipped leg."""
+    jobs = workflow["jobs"]
+    if gate not in jobs:
+        return [f"no `{gate}` job"]
+    job = jobs[gate]
+    problems: list[str] = []
+    if str(job.get("if", "")).strip() != "always()":
+        problems.append(
+            f"`{gate}` is not `if: always()`, so a failed leg skips it "
+            "and a skipped required check reads as passing"
+        )
+    needs = job.get("needs") or []
+    needs = [needs] if isinstance(needs, str) else list(needs)
+    missing = sorted(set(jobs) - {gate} - set(needs))
+    if missing:
+        problems.append(f"`{gate}` does not need {missing}")
+    text = "\n".join(
+        str(part)
+        for step in job.get("steps", [])
+        for part in (step.get("run", ""), step.get("if", ""), *(step.get("env") or {}).values())
+    )
+    explicit = "toJSON(needs)" in text and "success" in text
+    triple = all(
+        f"'{r}'" in text and "needs.*.result" in text for r in ("failure", "cancelled", "skipped")
+    )
+    if not (explicit or triple):
+        problems.append(
+            f"`{gate}` does not reject a skipped or cancelled leg — "
+            "it must fail on any needed result that is not `success`"
+        )
+    return problems
+
+
+def _codeql_languages(workflow: dict) -> set[str]:
+    return {str(lang) for lang in workflow["jobs"]["analyze"]["strategy"]["matrix"]["language"]}
+
+
+def _codeql_problems(workflow: dict) -> list[str]:
+    """Every way codeql.yml could stop being the floor's static-analysis gate.
+
+    The shape (codeql.yml's header says why): python and actions; `analyze`
+    with `upload: never` and an `output` directory, because this repository
+    has CodeQL default setup enabled and GitHub refuses a workflow's upload
+    while it is; and a later step that runs tools/codeql_gate.py on the SARIF,
+    because an analysis nobody reads is not a gate — with `upload: never` the
+    analyze step alone goes green on any tree."""
+    job = (workflow.get("jobs") or {}).get("analyze")
+    if job is None:
+        return ["no `analyze` job"]
+    problems: list[str] = []
+    languages = _codeql_languages(workflow)
+    if languages != {"python", "actions"}:
+        problems.append(f"languages are {sorted(languages)}, not python and actions")
+    steps = job.get("steps") or []
+    analyze = [
+        s for s in steps if str(s.get("uses", "")).startswith("github/codeql-action/analyze@")
+    ]
+    if not analyze:
+        problems.append("no `github/codeql-action/analyze` step")
+    else:
+        with_ = analyze[0].get("with") or {}
+        if str(with_.get("upload", "")) != "never":
+            problems.append(
+                "`analyze` must run with `upload: never` — default setup refuses a workflow's "
+                "upload, and the gate reads the file instead"
+            )
+        if not with_.get("output"):
+            problems.append("`analyze` names no `output` directory for the gate to read")
+    gate = [s for s in steps if "tools/codeql_gate.py" in str(s.get("run", ""))]
+    if not gate:
+        problems.append(
+            "no step runs tools/codeql_gate.py — an analysis nobody reads is not a gate"
+        )
+    else:
+        if ".sarif" not in str(gate[0].get("run", "")):
+            problems.append("the gate step does not name a .sarif file")
+        if analyze and steps.index(gate[0]) < steps.index(analyze[0]):
+            problems.append("the gate runs before the analysis it reads")
+    return problems
+
+
+def test_the_linux_matrix_is_the_classifiers():
+    classifiers = _classifier_minors(_PYPROJECT.read_text(encoding="utf-8"))
+    assert classifiers, (
+        "pyproject.toml declares no `Programming Language :: Python :: 3.X` classifier"
+    )
+    assert _matrix_versions(_yaml(_TESTS_WF), "test-matrix") == classifiers, (
+        "tests.yml's Linux matrix must be exactly the Python classifiers pyproject.toml "
+        "declares, in order — change both together"
+    )
+
+
+def test_the_windows_job_runs_the_floor_and_the_ceiling():
+    classifiers = _classifier_minors(_PYPROJECT.read_text(encoding="utf-8"))
+    by_minor = sorted(classifiers, key=lambda v: int(v.split(".")[1]))
+    assert _matrix_versions(_yaml(_TESTS_WF), "windows") == [by_minor[0], by_minor[-1]]
+    assert _yaml(_TESTS_WF)["jobs"]["windows"]["runs-on"].startswith("windows")
+
+
+def test_ruff_is_pinned_to_an_exact_version():
+    wf = _yaml(_TESTS_WF)
+    assert _ruff_pin(wf) is not None, "the lint job must `pip install ruff==X.Y.Z`"
+    runs = "\n".join(str(s.get("run", "")) for s in wf["jobs"]["lint"]["steps"])
+    assert "ruff check" in runs and "ruff format --check" in runs
+
+
+def test_the_aggregate_gate_needs_every_leg_and_rejects_a_skipped_one():
+    assert _gate_problems(_yaml(_TESTS_WF)) == []
+
+
+def test_codeql_analyzes_python_and_actions_and_gates_on_the_sarif():
+    assert _CODEQL_WF.exists(), "the floor's static-analysis half is missing"
+    assert _codeql_problems(_yaml(_CODEQL_WF)) == []
+
+
+def test_the_classifier_reader_catches_a_planted_mismatch():
+    """Planted: a pyproject declaring 3.11 and 3.13, and a workflow whose
+    matrix also runs 3.12 — the reader must return exactly the two declared
+    minors so the equality above can fail on the third."""
+    planted = (
+        "classifiers = [\n"
+        '    "Programming Language :: Python :: 3",\n'
+        '    "Programming Language :: Python :: 3.11",\n'
+        '    "Programming Language :: Python :: 3.13",\n'
+        "]\n"
+    )
+    assert _classifier_minors(planted) == ["3.11", "3.13"], "the bare `3` is not a minor"
+    workflow = {
+        "jobs": {
+            "test-matrix": {"strategy": {"matrix": {"python-version": ["3.11", "3.12", "3.13"]}}}
+        }
+    }
+    assert _matrix_versions(workflow, "test-matrix") != _classifier_minors(planted)
+    assert _classifier_minors("requires-python = '>=3.11'\n") == [], (
+        "requires-python is not a classifier"
+    )
+
+
+def test_the_ruff_pin_check_catches_an_unpinned_install():
+    """Planted: the three spellings of not pinning, and the one that is."""
+
+    def lint(run: str) -> dict:
+        return {"jobs": {"lint": {"steps": [{"run": run}]}}}
+
+    assert _ruff_pin(lint("pip install ruff")) is None
+    assert _ruff_pin(lint("pip install 'ruff>=0.5'")) is None
+    assert _ruff_pin(lint("pip install ruff~=0.16")) is None
+    assert _ruff_pin(lint("pip install ruff==0.16.7\nruff check .")) == "0.16.7"
+
+
+def test_the_gate_check_fires_on_a_planted_gate_that_tolerates_a_skipped_leg():
+    """Planted three ways, each the mistake a real workflow has shipped:
+    a gate that checks only `failure` (so a skipped leg passes), a gate
+    without `if: always()` (so a failed leg skips the gate itself), and a
+    gate whose `needs` forgot a job. Then the shape this repo carries, which
+    must clear."""
+
+    def workflow(gate: dict) -> dict:
+        return {"jobs": {"a": {}, "b": {}, "test": gate}}
+
+    failure_only = workflow(
+        {
+            "needs": ["a", "b"],
+            "if": "always()",
+            "steps": [{"if": "${{ contains(needs.*.result, 'failure') }}", "run": "exit 1"}],
+        }
+    )
+    assert any("skipped" in p for p in _gate_problems(failure_only)), _gate_problems(failure_only)
+
+    not_always = workflow(
+        {
+            "needs": ["a", "b"],
+            "steps": [{"env": {"NEEDS": "${{ toJSON(needs) }}"}, "run": 'assert r == "success"'}],
+        }
+    )
+    assert any("always()" in p for p in _gate_problems(not_always)), _gate_problems(not_always)
+
+    forgot_b = workflow(
+        {
+            "needs": ["a"],
+            "if": "always()",
+            "steps": [{"env": {"NEEDS": "${{ toJSON(needs) }}"}, "run": 'assert r == "success"'}],
+        }
+    )
+    assert any("['b']" in p for p in _gate_problems(forgot_b)), _gate_problems(forgot_b)
+
+    assert _gate_problems({"jobs": {"a": {}}}) == ["no `test` job"]
+
+    explicit = workflow(
+        {
+            "needs": ["a", "b"],
+            "if": "always()",
+            "steps": [
+                {"env": {"NEEDS": "${{ toJSON(needs) }}"}, "run": 'if r != "success": exit(1)'}
+            ],
+        }
+    )
+    assert _gate_problems(explicit) == []
+    triple = workflow(
+        {
+            "needs": ["a", "b"],
+            "if": "always()",
+            "steps": [
+                {
+                    "if": "${{ contains(needs.*.result, 'failure') || "
+                    "contains(needs.*.result, 'cancelled') || "
+                    "contains(needs.*.result, 'skipped') }}",
+                    "run": "exit 1",
+                }
+            ],
+        }
+    )
+    assert _gate_problems(triple) == [], "the contains-triple is the other accepted spelling"
+
+
+def test_the_codeql_check_fires_on_a_planted_job_that_uploads_or_never_reads():
+    """Planted four ways: the shape this workflow first shipped with (upload
+    on, no gate — red under default setup with a clean tree, and green on
+    any tree the day the upload is turned off); a gate step that runs before
+    the analysis; python only; and no `analyze` job. Then the shape this repo
+    carries, which must clear."""
+
+    def job(steps: list[dict], languages=("python", "actions")) -> dict:
+        return {
+            "jobs": {
+                "analyze": {"strategy": {"matrix": {"language": list(languages)}}, "steps": steps}
+            }
+        }
+
+    analyze = {
+        "uses": "github/codeql-action/analyze@v4",
+        "with": {"upload": "never", "output": "${{ runner.temp }}/codeql-results"},
+    }
+    gate = {"run": 'python tools/codeql_gate.py "$RUNNER_TEMP/codeql-results/$LANGUAGE.sarif"'}
+
+    first_shipped = job([{"uses": "github/codeql-action/analyze@v3", "with": {"category": "x"}}])
+    got = _codeql_problems(first_shipped)
+    assert any("upload: never" in p for p in got) and any("output" in p for p in got), got
+    assert any("codeql_gate.py" in p for p in got), got
+
+    backwards = job([gate, analyze])
+    assert any("before the analysis" in p for p in _codeql_problems(backwards))
+
+    python_only = job([analyze, gate], languages=("python",))
+    assert any("not python and actions" in p for p in _codeql_problems(python_only))
+
+    assert _codeql_problems({"jobs": {}}) == ["no `analyze` job"]
+
+    assert _codeql_problems(job([analyze, gate])) == []

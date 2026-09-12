@@ -6,14 +6,10 @@ willow-mcp's `#66` sycophancy scorer (vendored `stores/friction_floor.py`).
 Written test-first, before stores/checkpoint_engagement.py existed. Pure and
 model-free — no Nestor, no fsrs, no network; these run anywhere.
 """
+
 from __future__ import annotations
 
-import importlib.util
-import sys
-from pathlib import Path
-
 import pytest
-
 
 from forge import checkpoint_engagement
 
@@ -27,6 +23,7 @@ RUBBER_STAMP = "yes, sounds good"
 
 
 # ── the score ────────────────────────────────────────────────────────────────
+
 
 def test_score_is_bounded_zero_to_one():
     for text in ("", RUBBER_STAMP, SUBSTANTIVE, "?!?!", "no but actually wrong"):
@@ -45,7 +42,9 @@ def test_an_empty_rationale_scores_zero():
 
 def test_a_rationale_that_only_echoes_the_prompt_scores_low():
     # pure echo of the surface -> no novelty, no grounding, no pushback
-    assert checkpoint_engagement.engagement_score("the login form should authenticate", SURFACE) < 0.34
+    assert (
+        checkpoint_engagement.engagement_score("the login form should authenticate", SURFACE) < 0.34
+    )
 
 
 def test_score_is_deterministic_and_model_free():
@@ -63,6 +62,7 @@ def test_non_string_rationale_is_refused():
 
 
 # ── the rubber-stamp flag ────────────────────────────────────────────────────
+
 
 def test_is_rubber_stamp_flags_the_thin_one_and_not_the_substantive_one():
     assert checkpoint_engagement.is_rubber_stamp(RUBBER_STAMP, SURFACE) is True
@@ -97,5 +97,8 @@ def test_rubber_stamp_flag_and_fsrs_hard_grade_agree_across_the_boundary():
     # and the Hard cutoff really IS engagement's constant, not a coincidental
     # copy — proven within schedule's own module graph (its own engagement copy
     # and its Hard cutoff are the same object), plus value-equal to ours
-    assert checkpoint_schedule._HARD_MAX_ENGAGEMENT is checkpoint_schedule.checkpoint_engagement.RUBBER_STAMP_FLOOR
+    assert (
+        checkpoint_schedule._HARD_MAX_ENGAGEMENT
+        is checkpoint_schedule.checkpoint_engagement.RUBBER_STAMP_FLOOR
+    )
     assert checkpoint_schedule._HARD_MAX_ENGAGEMENT == floor

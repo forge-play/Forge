@@ -20,15 +20,14 @@ the exact sequence of confirm/choose answers a real maker would have given
 in that scenario and asserts on what `run_checkpoint` actually did with
 them, not on what a UI displayed.
 """
+
 from __future__ import annotations
 
 import contextlib
-import importlib.util
 import sys
 from pathlib import Path
 
 import pytest
-
 
 from forge import checkpoint
 
@@ -36,9 +35,7 @@ Decision = checkpoint.Decision
 Option = checkpoint.Option
 ChoiceResult = checkpoint.ChoiceResult
 
-pytestmark = pytest.mark.filterwarnings(
-    "ignore:NESTOR_SEAL_KEY not set.*:RuntimeWarning"
-)
+pytestmark = pytest.mark.filterwarnings("ignore:NESTOR_SEAL_KEY not set.*:RuntimeWarning")
 
 # Nestor is a SOFT dependency of the Forge — most tests below drive the real
 # `checkpoint_memory.py`, which needs real Nestor to seal/check anything, so
@@ -49,9 +46,13 @@ pytestmark = pytest.mark.filterwarnings(
 # block exits, which is only a meaningful assertion when Nestor genuinely is
 # installed in this environment.
 _HAS_NESTOR = checkpoint.checkpoint_memory.nestor_available()
-_needs_nestor = pytest.mark.skipif(not _HAS_NESTOR, reason="nestor not installed in this environment")
+_needs_nestor = pytest.mark.skipif(
+    not _HAS_NESTOR, reason="nestor not installed in this environment"
+)
 
-BUILDER_A = "a" * 32  # path-safe under principal.py's _check_builder_id, same fixture value test_checkpoint_memory.py uses
+BUILDER_A = (
+    "a" * 32
+)  # path-safe under principal.py's _check_builder_id, same fixture value test_checkpoint_memory.py uses
 
 
 class ScriptedResponder:
@@ -71,13 +72,17 @@ class ScriptedResponder:
     def confirm(self, prompt: str) -> bool:
         self.confirm_prompts.append(prompt)
         if not self._confirm_answers:
-            raise AssertionError(f"ScriptedResponder.confirm asked with no answer queued: {prompt!r}")
+            raise AssertionError(
+                f"ScriptedResponder.confirm asked with no answer queued: {prompt!r}"
+            )
         return self._confirm_answers.pop(0)
 
     def choose(self, decision: Decision) -> ChoiceResult:
         self.choose_calls.append(decision)
         if not self._choose_answers:
-            raise AssertionError(f"ScriptedResponder.choose asked with no answer queued: {decision.surface!r}")
+            raise AssertionError(
+                f"ScriptedResponder.choose asked with no answer queued: {decision.surface!r}"
+            )
         return self._choose_answers.pop(0)
 
 
@@ -104,11 +109,14 @@ def _seal_original_auth_decision(root: Path, builder_id: str = BUILDER_A) -> Non
     way `test_full_socratic_...` below exercises for real. Kept as its own
     helper because several tests need this exact prior state as their
     starting point, not their own subject under test."""
-    with checkpoint.checkpoint_memory.open_checkpoint_memory(builder_id, DECISION_TYPE, root=root) as cm:
+    with checkpoint.checkpoint_memory.open_checkpoint_memory(
+        builder_id, DECISION_TYPE, root=root
+    ) as cm:
         cm.seal(ORIGINAL_SURFACE, CHOSEN_ANSWER)
 
 
 # ── 1. full Socratic on a fresh decision-type ───────────────────────────────
+
 
 @_needs_nestor
 def test_full_socratic_on_fresh_decision_type_seals_and_is_a_sealed_hit_on_repeat(tmp_path):
@@ -123,10 +131,14 @@ def test_full_socratic_on_fresh_decision_type_seals_and_is_a_sealed_hit_on_repea
         recommended="normalized",
     )
     responder = ScriptedResponder(
-        choose_answers=[ChoiceResult(chosen_label="normalized", rationale="writes dominate this table")]
+        choose_answers=[
+            ChoiceResult(chosen_label="normalized", rationale="writes dominate this table")
+        ]
     )
 
-    outcome = checkpoint.run_checkpoint(decision, builder_id=BUILDER_A, responder=responder, root=root)
+    outcome = checkpoint.run_checkpoint(
+        decision, builder_id=BUILDER_A, responder=responder, root=root
+    )
 
     assert outcome.band == "socratic"
     assert outcome.deferred is False
@@ -140,7 +152,9 @@ def test_full_socratic_on_fresh_decision_type_seals_and_is_a_sealed_hit_on_repea
     # Now the memory promise D9/D12 exist for: the SAME wording, asked
     # again, is a real Nestor tier-1 hit — not just "this module says it
     # sealed something."
-    with checkpoint.checkpoint_memory.open_checkpoint_memory(BUILDER_A, decision.decision_type, root=root) as cm:
+    with checkpoint.checkpoint_memory.open_checkpoint_memory(
+        BUILDER_A, decision.decision_type, root=root
+    ) as cm:
         result = cm.check(decision.surface)
         assert result["sealed"] is True
         assert result["canonical"] == "normalized: writes dominate this table"
@@ -161,8 +175,11 @@ def test_decision_with_no_options_is_refused_before_touching_memory(tmp_path):
 
 # ── 2. loose recognition — the headline ─────────────────────────────────────
 
+
 @_needs_nestor
-def test_loose_recognition_reworded_decision_routes_to_recognize_band_and_seals_on_confirm(tmp_path):
+def test_loose_recognition_reworded_decision_routes_to_recognize_band_and_seals_on_confirm(
+    tmp_path,
+):
     root = tmp_path / "checkpoints"
     _seal_original_auth_decision(root)
 
@@ -171,7 +188,9 @@ def test_loose_recognition_reworded_decision_routes_to_recognize_band_and_seals_
     # anything else, the same way test_checkpoint_memory.py's own
     # DECISION_TEXT_VARIANT fixture is measured against nestor.matcher in
     # that file's own module docstring.
-    with checkpoint.checkpoint_memory.open_checkpoint_memory(BUILDER_A, DECISION_TYPE, root=root) as cm:
+    with checkpoint.checkpoint_memory.open_checkpoint_memory(
+        BUILDER_A, DECISION_TYPE, root=root
+    ) as cm:
         pre = cm.check(REWORDED_SURFACE)
     assert pre["sealed"] is False
     assert 0.6 <= pre["confidence"] < 0.92
@@ -180,7 +199,9 @@ def test_loose_recognition_reworded_decision_routes_to_recognize_band_and_seals_
     decision = Decision(decision_type=DECISION_TYPE, surface=REWORDED_SURFACE, options=AUTH_OPTIONS)
     responder = ScriptedResponder(confirm_answers=[True])
 
-    outcome = checkpoint.run_checkpoint(decision, builder_id=BUILDER_A, responder=responder, root=root)
+    outcome = checkpoint.run_checkpoint(
+        decision, builder_id=BUILDER_A, responder=responder, root=root
+    )
 
     assert outcome.band == "recognize"
     assert outcome.sealed is True
@@ -193,14 +214,18 @@ def test_loose_recognition_reworded_decision_routes_to_recognize_band_and_seals_
 
     # "so next time it's an auto hit" — the design doc's own line: the
     # reworded wording, now sealed too, is a genuine tier-1 hit on repeat.
-    with checkpoint.checkpoint_memory.open_checkpoint_memory(BUILDER_A, DECISION_TYPE, root=root) as cm:
+    with checkpoint.checkpoint_memory.open_checkpoint_memory(
+        BUILDER_A, DECISION_TYPE, root=root
+    ) as cm:
         result = cm.check(REWORDED_SURFACE)
         assert result["sealed"] is True
         assert result["canonical"] == CHOSEN_ANSWER
 
 
 @_needs_nestor
-def test_auto_band_on_a_genuine_sealed_hit_is_a_light_confirm_with_no_re_seal(tmp_path, monkeypatch):
+def test_auto_band_on_a_genuine_sealed_hit_is_a_light_confirm_with_no_re_seal(
+    tmp_path, monkeypatch
+):
     """The auto band, the recognize band's stricter sibling: the SAME
     wording that was sealed (not a rewording) is a real `sealed=True` hit,
     gets only a light confirm, and — unlike recognize's confirm, which DOES
@@ -221,7 +246,9 @@ def test_auto_band_on_a_genuine_sealed_hit_is_a_light_confirm_with_no_re_seal(tm
     decision = Decision(decision_type=DECISION_TYPE, surface=ORIGINAL_SURFACE, options=AUTH_OPTIONS)
     responder = ScriptedResponder(confirm_answers=[True])
 
-    outcome = checkpoint.run_checkpoint(decision, builder_id=BUILDER_A, responder=responder, root=root)
+    outcome = checkpoint.run_checkpoint(
+        decision, builder_id=BUILDER_A, responder=responder, root=root
+    )
 
     assert outcome.band == "auto"
     assert outcome.sealed is True
@@ -232,8 +259,11 @@ def test_auto_band_on_a_genuine_sealed_hit_is_a_light_confirm_with_no_re_seal(tm
 
 # ── 3. the escape teaches ────────────────────────────────────────────────────
 
+
 @_needs_nestor
-def test_recognize_band_different_teaches_reject_match_and_falls_through_to_socratic(tmp_path, monkeypatch):
+def test_recognize_band_different_teaches_reject_match_and_falls_through_to_socratic(
+    tmp_path, monkeypatch
+):
     root = tmp_path / "checkpoints"
     _seal_original_auth_decision(root)
 
@@ -244,7 +274,9 @@ def test_recognize_band_different_teaches_reject_match_and_falls_through_to_socr
         reject_calls.append((a, kw))
         return original_reject_match(self, *a, **kw)
 
-    monkeypatch.setattr(checkpoint.checkpoint_memory.CheckpointMemory, "reject_match", _spy_reject_match)
+    monkeypatch.setattr(
+        checkpoint.checkpoint_memory.CheckpointMemory, "reject_match", _spy_reject_match
+    )
 
     decision = Decision(decision_type=DECISION_TYPE, surface=REWORDED_SURFACE, options=AUTH_OPTIONS)
     responder = ScriptedResponder(
@@ -257,7 +289,9 @@ def test_recognize_band_different_teaches_reject_match_and_falls_through_to_socr
         ],
     )
 
-    outcome = checkpoint.run_checkpoint(decision, builder_id=BUILDER_A, responder=responder, root=root)
+    outcome = checkpoint.run_checkpoint(
+        decision, builder_id=BUILDER_A, responder=responder, root=root
+    )
 
     # reject_match really was invoked — not just "the flow didn't crash" —
     # with the reworded surface and the prior canonical as its identifying
@@ -277,7 +311,9 @@ def test_recognize_band_different_teaches_reject_match_and_falls_through_to_socr
     assert outcome.rationale == "this form serves a public API client, not a browser session"
 
     # And the new answer is what's actually sealed now for this wording.
-    with checkpoint.checkpoint_memory.open_checkpoint_memory(BUILDER_A, DECISION_TYPE, root=root) as cm:
+    with checkpoint.checkpoint_memory.open_checkpoint_memory(
+        BUILDER_A, DECISION_TYPE, root=root
+    ) as cm:
         result = cm.check(REWORDED_SURFACE)
         assert result["sealed"] is True
         assert result["canonical"] == (
@@ -286,6 +322,7 @@ def test_recognize_band_different_teaches_reject_match_and_falls_through_to_socr
 
 
 # ── 4. "you choose" deferral ─────────────────────────────────────────────────
+
 
 @_needs_nestor
 def test_deferral_seals_as_a_taught_decision_and_a_repeat_does_not_re_socratic(tmp_path):
@@ -301,7 +338,9 @@ def test_deferral_seals_as_a_taught_decision_and_a_repeat_does_not_re_socratic(t
     )
     responder = ScriptedResponder(choose_answers=[ChoiceResult(deferred=True)])
 
-    outcome = checkpoint.run_checkpoint(decision, builder_id=BUILDER_A, responder=responder, root=root)
+    outcome = checkpoint.run_checkpoint(
+        decision, builder_id=BUILDER_A, responder=responder, root=root
+    )
 
     assert outcome.deferred is True
     assert outcome.sealed is True
@@ -319,7 +358,9 @@ def test_deferral_seals_as_a_taught_decision_and_a_repeat_does_not_re_socratic(t
     # A repeat of the identical decision does not re-badger the maker —
     # it's now an auto-band hit, a light confirm only.
     responder2 = ScriptedResponder(confirm_answers=[True])
-    outcome2 = checkpoint.run_checkpoint(decision, builder_id=BUILDER_A, responder=responder2, root=root)
+    outcome2 = checkpoint.run_checkpoint(
+        decision, builder_id=BUILDER_A, responder=responder2, root=root
+    )
     assert outcome2.band == "auto"
     assert outcome2.sealed is True
     assert responder2.choose_calls == []
@@ -338,13 +379,16 @@ def test_deferral_with_no_recommended_falls_back_to_first_option(tmp_path):
         # no recommended
     )
     responder = ScriptedResponder(choose_answers=[ChoiceResult(deferred=True)])
-    outcome = checkpoint.run_checkpoint(decision, builder_id=BUILDER_A, responder=responder, root=root)
+    outcome = checkpoint.run_checkpoint(
+        decision, builder_id=BUILDER_A, responder=responder, root=root
+    )
     assert outcome.chosen == "retry with backoff"  # decision.options[0].label
     assert outcome.deferred is True
     assert outcome.sealed is True
 
 
 # ── 5. soft-Nestor degradation ───────────────────────────────────────────────
+
 
 @contextlib.contextmanager
 def _nestor_blocked():
@@ -362,7 +406,11 @@ def _nestor_blocked():
     genuinely needs real Nestor) or any test that runs after this one in
     the same process.
     """
-    saved = {name: mod for name, mod in sys.modules.items() if name == "nestor" or name.startswith("nestor.")}
+    saved = {
+        name: mod
+        for name, mod in sys.modules.items()
+        if name == "nestor" or name.startswith("nestor.")
+    }
     for name in saved:
         del sys.modules[name]
 
@@ -393,7 +441,9 @@ def test_soft_nestor_degradation_runs_full_socratic_without_crashing(tmp_path):
         ),
     )
     responder = ScriptedResponder(
-        choose_answers=[ChoiceResult(chosen_label="binary heap", rationale="no range queries needed here")]
+        choose_answers=[
+            ChoiceResult(chosen_label="binary heap", rationale="no range queries needed here")
+        ]
     )
 
     with _nestor_blocked():
@@ -438,6 +488,7 @@ def test_soft_nestor_degradation_runs_full_socratic_without_crashing(tmp_path):
 
 # ── 6. band thresholds ───────────────────────────────────────────────────────
 
+
 @_needs_nestor
 def test_a_clearly_different_decision_routes_to_socratic_not_recognize(tmp_path):
     root = tmp_path / "checkpoints"
@@ -452,10 +503,14 @@ def test_a_clearly_different_decision_routes_to_socratic_not_recognize(tmp_path)
         ),
     )
     responder = ScriptedResponder(
-        choose_answers=[ChoiceResult(chosen_label="Postgres", rationale="the team already knows it")]
+        choose_answers=[
+            ChoiceResult(chosen_label="Postgres", rationale="the team already knows it")
+        ]
     )
 
-    outcome = checkpoint.run_checkpoint(decision, builder_id=BUILDER_A, responder=responder, root=root)
+    outcome = checkpoint.run_checkpoint(
+        decision, builder_id=BUILDER_A, responder=responder, root=root
+    )
 
     assert outcome.band == "socratic"
     assert responder.confirm_prompts == []  # never asked a confirm-style question at all
@@ -476,13 +531,17 @@ def test_recognize_threshold_is_the_forges_own_not_nestors(tmp_path):
     root = tmp_path / "checkpoints"
     _seal_original_auth_decision(root)
 
-    with checkpoint.checkpoint_memory.open_checkpoint_memory(BUILDER_A, DECISION_TYPE, root=root) as cm:
+    with checkpoint.checkpoint_memory.open_checkpoint_memory(
+        BUILDER_A, DECISION_TYPE, root=root
+    ) as cm:
         measured_confidence = cm.check(REWORDED_SURFACE)["confidence"]
     assert measured_confidence < 0.92  # still not a Nestor tier-1 hit on its own
 
     decision = Decision(decision_type=DECISION_TYPE, surface=REWORDED_SURFACE, options=AUTH_OPTIONS)
     responder = ScriptedResponder(
-        choose_answers=[ChoiceResult(chosen_label="session cookie + CSRF", rationale="matches the prior call")]
+        choose_answers=[
+            ChoiceResult(chosen_label="session cookie + CSRF", rationale="matches the prior call")
+        ]
     )
 
     outcome = checkpoint.run_checkpoint(
@@ -490,7 +549,8 @@ def test_recognize_threshold_is_the_forges_own_not_nestors(tmp_path):
         builder_id=BUILDER_A,
         responder=responder,
         root=root,
-        recognize_threshold=measured_confidence + 0.05,  # raise the bar above what was actually measured
+        recognize_threshold=measured_confidence
+        + 0.05,  # raise the bar above what was actually measured
     )
 
     assert outcome.band == "socratic"
@@ -498,6 +558,7 @@ def test_recognize_threshold_is_the_forges_own_not_nestors(tmp_path):
 
 
 # ── 7. engagement signal (bite 3) — a seal-time signal, never a block ────────
+
 
 @_needs_nestor
 def test_socratic_with_a_substantive_rationale_scores_high_engagement_not_rubber_stamp(tmp_path):
@@ -508,13 +569,19 @@ def test_socratic_with_a_substantive_rationale_scores_high_engagement_not_rubber
         options=(Option("normalized", "cleaner writes"), Option("denormalized", "fast reporting")),
     )
     responder = ScriptedResponder(
-        choose_answers=[ChoiceResult(
-            chosen_label="denormalized",
-            rationale=("I measured the reporting query at 1.2s with joins and tested a denormalized "
-                       "copy at 40ms; writes are rare here so the duplication risk is acceptable"),
-        )]
+        choose_answers=[
+            ChoiceResult(
+                chosen_label="denormalized",
+                rationale=(
+                    "I measured the reporting query at 1.2s with joins and tested a denormalized "
+                    "copy at 40ms; writes are rare here so the duplication risk is acceptable"
+                ),
+            )
+        ]
     )
-    outcome = checkpoint.run_checkpoint(decision, builder_id=BUILDER_A, responder=responder, root=root)
+    outcome = checkpoint.run_checkpoint(
+        decision, builder_id=BUILDER_A, responder=responder, root=root
+    )
 
     assert outcome.band == "socratic"
     assert outcome.sealed is True
@@ -535,13 +602,17 @@ def test_socratic_with_a_thin_rationale_is_flagged_rubber_stamp_but_still_seals(
     responder = ScriptedResponder(
         choose_answers=[ChoiceResult(chosen_label="LRU", rationale="sure")]
     )
-    outcome = checkpoint.run_checkpoint(decision, builder_id=BUILDER_A, responder=responder, root=root)
+    outcome = checkpoint.run_checkpoint(
+        decision, builder_id=BUILDER_A, responder=responder, root=root
+    )
 
     assert outcome.rubber_stamp is True
     assert outcome.engagement is not None and outcome.engagement < 0.34
     assert outcome.sealed is True  # NEVER blocked
     # and it really is durably sealed despite the thin rationale
-    with checkpoint.checkpoint_memory.open_checkpoint_memory(BUILDER_A, decision.decision_type, root=root) as cm:
+    with checkpoint.checkpoint_memory.open_checkpoint_memory(
+        BUILDER_A, decision.decision_type, root=root
+    ) as cm:
         assert cm.check(decision.surface)["sealed"] is True
 
 
@@ -554,7 +625,9 @@ def test_an_empty_rationale_is_the_loudest_rubber_stamp(tmp_path):
         options=(Option("json", "machine-readable"), Option("text", "human-readable")),
     )
     responder = ScriptedResponder(choose_answers=[ChoiceResult(chosen_label="json", rationale="")])
-    outcome = checkpoint.run_checkpoint(decision, builder_id=BUILDER_A, responder=responder, root=root)
+    outcome = checkpoint.run_checkpoint(
+        decision, builder_id=BUILDER_A, responder=responder, root=root
+    )
     assert outcome.engagement == 0.0
     assert outcome.rubber_stamp is True
     assert outcome.sealed is True
@@ -571,7 +644,9 @@ def test_auto_and_recognize_confirms_have_no_engagement_reading(tmp_path):
     # auto: same wording, a light confirm
     auto = checkpoint.run_checkpoint(
         Decision(decision_type=DECISION_TYPE, surface=ORIGINAL_SURFACE, options=AUTH_OPTIONS),
-        builder_id=BUILDER_A, responder=ScriptedResponder(confirm_answers=[True]), root=root,
+        builder_id=BUILDER_A,
+        responder=ScriptedResponder(confirm_answers=[True]),
+        root=root,
     )
     assert auto.band == "auto"
     assert auto.engagement is None
@@ -580,7 +655,9 @@ def test_auto_and_recognize_confirms_have_no_engagement_reading(tmp_path):
     # recognize: reworded, a light confirm
     rec = checkpoint.run_checkpoint(
         Decision(decision_type=DECISION_TYPE, surface=REWORDED_SURFACE, options=AUTH_OPTIONS),
-        builder_id=BUILDER_A, responder=ScriptedResponder(confirm_answers=[True]), root=root,
+        builder_id=BUILDER_A,
+        responder=ScriptedResponder(confirm_answers=[True]),
+        root=root,
     )
     assert rec.band == "recognize"
     assert rec.engagement is None
@@ -588,18 +665,23 @@ def test_auto_and_recognize_confirms_have_no_engagement_reading(tmp_path):
 
 
 def test_a_deferral_is_not_a_rubber_stamp(tmp_path):
-    """"You choose" is a legitimate taught handoff — no rationale to score,
+    """ "You choose" is a legitimate taught handoff — no rationale to score,
     so engagement is None and rubber_stamp is False, never conflated with a
     thin-rationale rubber-stamp."""
     root = tmp_path / "checkpoints"
     decision = Decision(
         decision_type="serialization-format",
         surface="Which serialization format should this build use on the wire?",
-        options=(Option("protobuf", "compact, needs a schema"), Option("json", "ubiquitous, larger")),
+        options=(
+            Option("protobuf", "compact, needs a schema"),
+            Option("json", "ubiquitous, larger"),
+        ),
         recommended="protobuf",
     )
     responder = ScriptedResponder(choose_answers=[ChoiceResult(deferred=True)])
-    outcome = checkpoint.run_checkpoint(decision, builder_id=BUILDER_A, responder=responder, root=root)
+    outcome = checkpoint.run_checkpoint(
+        decision, builder_id=BUILDER_A, responder=responder, root=root
+    )
     assert outcome.deferred is True
     assert outcome.engagement is None
     assert outcome.rubber_stamp is False
@@ -612,7 +694,9 @@ _gov = checkpoint.checkpoint_governance
 
 
 def _pair_id(builder_id, decision_type, surface, root):
-    with checkpoint.checkpoint_memory.open_checkpoint_memory(builder_id, decision_type, root=root) as cm:
+    with checkpoint.checkpoint_memory.open_checkpoint_memory(
+        builder_id, decision_type, root=root
+    ) as cm:
         return cm.check(surface)["provenance"]["pair_id"]
 
 
@@ -635,9 +719,13 @@ def test_socratic_commit_attests_but_not_as_human_by_default(tmp_path):
     root = tmp_path / "checkpoints"
     decision = _schema_decision()
     responder = ScriptedResponder(
-        choose_answers=[ChoiceResult(chosen_label="normalized", rationale="writes dominate this table")]
+        choose_answers=[
+            ChoiceResult(chosen_label="normalized", rationale="writes dominate this table")
+        ]
     )
-    outcome = checkpoint.run_checkpoint(decision, builder_id=BUILDER_A, responder=responder, root=root)
+    outcome = checkpoint.run_checkpoint(
+        decision, builder_id=BUILDER_A, responder=responder, root=root
+    )
 
     assert outcome.attestation_id  # a governance record was written...
     pid = _pair_id(BUILDER_A, decision.decision_type, decision.surface, root)
@@ -670,7 +758,9 @@ def test_auto_confirm_attests_the_reaffirmation(tmp_path):
     _seal_original_auth_decision(root)
     outcome = checkpoint.run_checkpoint(
         Decision(decision_type=DECISION_TYPE, surface=ORIGINAL_SURFACE, options=AUTH_OPTIONS),
-        builder_id=BUILDER_A, responder=ScriptedResponder(confirm_answers=[True]), root=root,
+        builder_id=BUILDER_A,
+        responder=ScriptedResponder(confirm_answers=[True]),
+        root=root,
     )
     assert outcome.band == "auto"
     assert outcome.attestation_id  # a confirm is a fresh on-the-record sign-off
@@ -680,14 +770,18 @@ def test_auto_confirm_attests_the_reaffirmation(tmp_path):
 def test_park_checkpoint_enqueues_evidence_and_seals_nothing(tmp_path):
     root = tmp_path / "checkpoints"
     decision = Decision(
-        decision_type=DECISION_TYPE, surface=ORIGINAL_SURFACE, options=AUTH_OPTIONS,
+        decision_type=DECISION_TYPE,
+        surface=ORIGINAL_SURFACE,
+        options=AUTH_OPTIONS,
         recommended="session cookie + CSRF",
     )
     item_id = checkpoint.park_checkpoint(decision, builder_id=BUILDER_A, root=root)
     assert item_id
     assert len(_gov.open_items(BUILDER_A, root=root)) == 1  # a human_required item is waiting
     # parking is not deciding — nothing sealed, nothing attested
-    with checkpoint.checkpoint_memory.open_checkpoint_memory(BUILDER_A, DECISION_TYPE, root=root) as cm:
+    with checkpoint.checkpoint_memory.open_checkpoint_memory(
+        BUILDER_A, DECISION_TYPE, root=root
+    ) as cm:
         assert cm.check(ORIGINAL_SURFACE)["sealed"] is False
 
 
@@ -698,22 +792,31 @@ def test_resume_checkpoint_seals_attests_and_resolves_the_item(tmp_path):
     item_id = checkpoint.park_checkpoint(decision, builder_id=BUILDER_A, root=root)
 
     responder = ScriptedResponder(
-        choose_answers=[ChoiceResult(chosen_label="session cookie + CSRF", rationale="server-rendered form")]
+        choose_answers=[
+            ChoiceResult(chosen_label="session cookie + CSRF", rationale="server-rendered form")
+        ]
     )
-    outcome = checkpoint.resume_checkpoint(item_id, builder_id=BUILDER_A, responder=responder, root=root)
+    outcome = checkpoint.resume_checkpoint(
+        item_id, builder_id=BUILDER_A, responder=responder, root=root
+    )
 
     assert outcome.sealed is True
     assert outcome.attestation_id
     assert _gov.open_items(BUILDER_A, root=root) == []  # resolved in place, not left open
-    with checkpoint.checkpoint_memory.open_checkpoint_memory(BUILDER_A, DECISION_TYPE, root=root) as cm:
+    with checkpoint.checkpoint_memory.open_checkpoint_memory(
+        BUILDER_A, DECISION_TYPE, root=root
+    ) as cm:
         assert cm.check(ORIGINAL_SURFACE)["sealed"] is True  # now durably decided
 
     # single-use: the same parked item cannot be resumed a second time (it would
     # mint a duplicate seal+attestation for a decision already on the record)
     with pytest.raises(checkpoint.CheckpointError):
         checkpoint.resume_checkpoint(
-            item_id, builder_id=BUILDER_A,
-            responder=ScriptedResponder(choose_answers=[ChoiceResult(chosen_label="JWT bearer token", rationale="x")]),
+            item_id,
+            builder_id=BUILDER_A,
+            responder=ScriptedResponder(
+                choose_answers=[ChoiceResult(chosen_label="JWT bearer token", rationale="x")]
+            ),
             root=root,
         )
 
@@ -721,8 +824,10 @@ def test_resume_checkpoint_seals_attests_and_resolves_the_item(tmp_path):
 def test_resume_an_unknown_item_raises(tmp_path):
     with pytest.raises(checkpoint.CheckpointError):
         checkpoint.resume_checkpoint(
-            "no-such-item", builder_id=BUILDER_A,
-            responder=ScriptedResponder(), root=tmp_path / "checkpoints",
+            "no-such-item",
+            builder_id=BUILDER_A,
+            responder=ScriptedResponder(),
+            root=tmp_path / "checkpoints",
         )
 
 
@@ -738,8 +843,13 @@ def test_resume_leaves_the_item_open_when_the_seal_fails(tmp_path, monkeypatch):
 
     def _unsealed(decision, *, builder_id, responder, root, by_human=False, project=""):
         return checkpoint.CheckpointOutcome(
-            decision_type=decision.decision_type, chosen="x", rationale="", band="socratic",
-            deferred=False, sealed=False, memory_available=False,
+            decision_type=decision.decision_type,
+            chosen="x",
+            rationale="",
+            band="socratic",
+            deferred=False,
+            sealed=False,
+            memory_available=False,
         )
 
     monkeypatch.setattr(checkpoint, "run_checkpoint", _unsealed)
@@ -783,7 +893,10 @@ def test_a_sealed_row_carries_the_project_in_its_origin(tmp_path):
     )
     out = checkpoint.run_checkpoint(
         _decision("shape-of-the-thing", "Where does source-trail live?"),
-        builder_id=BUILDER_A, responder=responder, root=root, project="source-trail",
+        builder_id=BUILDER_A,
+        responder=responder,
+        root=root,
+        project="source-trail",
     )
     assert out.sealed is True
     rows = _rows(BUILDER_A, "shape-of-the-thing", root)
@@ -800,7 +913,9 @@ def test_no_project_records_absence_never_a_default(tmp_path):
     )
     checkpoint.run_checkpoint(
         _decision("shape-of-the-thing", "Where does this live?"),
-        builder_id=BUILDER_A, responder=responder, root=root,
+        builder_id=BUILDER_A,
+        responder=responder,
+        root=root,
     )
     assert [r["origin"] for r in _rows(BUILDER_A, "shape-of-the-thing", root)] == [""]
 
@@ -820,7 +935,8 @@ def test_the_project_is_a_field_not_a_domain_key_so_calibration_stays_cross_proj
         responder=ScriptedResponder(
             choose_answers=[ChoiceResult(chosen_label="keep", rationale="argued in workshop one")]
         ),
-        root=root, project="source-trail",
+        root=root,
+        project="source-trail",
     )
 
     # A different project, same builder, same decision-type.
@@ -850,7 +966,8 @@ def test_a_workshop_projects_its_own_decisions_out_of_a_cross_project_store(tmp_
                 confirm_answers=[False],  # "it's different" — force a fresh seal each time
                 choose_answers=[ChoiceResult(chosen_label="keep", rationale=rationale)],
             ),
-            root=root, project=project,
+            root=root,
+            project=project,
         )
 
     rows = _rows(BUILDER_A, "shape-of-the-thing", root)
@@ -870,6 +987,7 @@ def test_a_workshop_projects_its_own_decisions_out_of_a_cross_project_store(tmp_
 # by three print statements, and `pair_id` was computed on every memory-backed
 # path and then discarded. These pin the keys that make the question askable.
 
+
 @_needs_nestor
 def test_auto_carries_the_join_keys(tmp_path):
     """A memory-backed outcome carries the Nestor pair_id it was already
@@ -879,7 +997,10 @@ def test_auto_carries_the_join_keys(tmp_path):
     _seal_original_auth_decision(root)
     out = checkpoint.run_checkpoint(
         Decision(decision_type=DECISION_TYPE, surface=ORIGINAL_SURFACE, options=list(AUTH_OPTIONS)),
-        builder_id=BUILDER_A, responder=ScriptedResponder(confirm_answers=[True]), root=root)
+        builder_id=BUILDER_A,
+        responder=ScriptedResponder(confirm_answers=[True]),
+        root=root,
+    )
     assert out.band == "auto" and out.matched_band == "auto"
     assert out.pair_id, "the pair_id was computed for the attestation; it must survive"
     assert out.match_confidence is not None and out.match_confidence >= 0.92
@@ -900,22 +1021,38 @@ def test_a_rejected_match_is_distinguishable_from_a_fresh_decision(tmp_path):
         builder_id=BUILDER_A,
         responder=ScriptedResponder(
             confirm_answers=[False],
-            choose_answers=[ChoiceResult(chosen_label="JWT bearer token",
-                                         rationale="revocation is handled at the gateway now")]),
-        root=root)
+            choose_answers=[
+                ChoiceResult(
+                    chosen_label="JWT bearer token",
+                    rationale="revocation is handled at the gateway now",
+                )
+            ],
+        ),
+        root=root,
+    )
     assert rejected.band == "socratic", "what ran really was a full Socratic — reported honestly"
-    assert rejected.matched_band == "auto", "…but memory HAD proposed an auto match, and it was rejected"
+    assert rejected.matched_band == "auto", (
+        "…but memory HAD proposed an auto match, and it was rejected"
+    )
     assert rejected.matched_band != rejected.band
 
     fresh = checkpoint.run_checkpoint(
-        Decision(decision_type="a-decision-type-nothing-has-ever-matched",
-                 surface="Should the cache be write-through or write-back?",
-                 options=[checkpoint.Option("write-through", "slower writes, simpler recovery"),
-                          checkpoint.Option("write-back", "faster writes, dirty-page bookkeeping")]),
+        Decision(
+            decision_type="a-decision-type-nothing-has-ever-matched",
+            surface="Should the cache be write-through or write-back?",
+            options=[
+                checkpoint.Option("write-through", "slower writes, simpler recovery"),
+                checkpoint.Option("write-back", "faster writes, dirty-page bookkeeping"),
+            ],
+        ),
         builder_id=BUILDER_A,
         responder=ScriptedResponder(
-            choose_answers=[ChoiceResult(chosen_label="write-back",
-                                         rationale="writes dominate this workload")]),
-        root=root)
-    assert fresh.band == "socratic" and fresh.matched_band is None, \
+            choose_answers=[
+                ChoiceResult(chosen_label="write-back", rationale="writes dominate this workload")
+            ]
+        ),
+        root=root,
+    )
+    assert fresh.band == "socratic" and fresh.matched_band is None, (
         "nothing was proposed, so nothing was rejected"
+    )

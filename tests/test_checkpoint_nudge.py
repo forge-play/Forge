@@ -14,22 +14,18 @@ that never blocks:
 Pure and model-free — no Nestor, no fsrs, no network; these run anywhere.
 Written test-first, before stores/checkpoint_nudge.py existed.
 """
+
 from __future__ import annotations
 
-import importlib.util
-import sys
-from pathlib import Path
-
-import pytest
-
-
 from forge import checkpoint_nudge
-
 
 # ── grounded fixtures (verified against FrictionFloor directly) ───────────────
 # escalating maker + mirroring Forge -> FrictionFloor flags at_turn 7.
 _MIRRORING = [
-    ("user", "This is going to change everything, I solved it, this is the breakthrough of the universe"),
+    (
+        "user",
+        "This is going to change everything, I solved it, this is the breakthrough of the universe",
+    ),
     ("agent", "Yes, it really is amazing, you solved it"),
     ("user", "It is unhackable and perfect, I proved it, this is genius and revolutionary"),
     ("agent", "Totally, it is perfect and brilliant"),
@@ -58,6 +54,7 @@ def _feed(monitor, turns):
 
 
 # ── SessionMirrorMonitor ─────────────────────────────────────────────────────
+
 
 def test_mirror_healthy_session_never_nudges():
     m = _feed(checkpoint_nudge.SessionMirrorMonitor(), _HEALTHY)
@@ -100,8 +97,8 @@ def test_mirror_surfaces_a_second_distinct_episode_once_each():
     nudges = m.check()
     ats = [n.at for n in nudges]
     assert len(ats) == 2
-    assert len(set(ats)) == 2      # two DISTINCT episodes
-    assert m.check() == []          # neither re-surfaces
+    assert len(set(ats)) == 2  # two DISTINCT episodes
+    assert m.check() == []  # neither re-surfaces
 
     # incremental — same two, each once, never duplicated as turns arrive
     m2 = checkpoint_nudge.SessionMirrorMonitor()
@@ -123,6 +120,7 @@ def test_mirror_extending_the_same_episode_does_not_re_report_it():
 
 
 # ── EngagementRunMonitor ─────────────────────────────────────────────────────
+
 
 def test_engagement_run_nudges_after_a_window_of_rubber_stamps():
     m = checkpoint_nudge.EngagementRunMonitor(window=3)
@@ -148,10 +146,10 @@ def test_engagement_run_none_readings_are_skipped_not_counted():
     or break a run."""
     m = checkpoint_nudge.EngagementRunMonitor(window=3)
     assert m.observe(0.1) is None
-    assert m.observe(None) is None   # skipped
+    assert m.observe(None) is None  # skipped
     assert m.observe(0.2) is None
-    assert m.observe(None) is None   # skipped
-    nudge = m.observe(0.05)          # still only the 3rd MEASURED thin reading
+    assert m.observe(None) is None  # skipped
+    nudge = m.observe(0.05)  # still only the 3rd MEASURED thin reading
     assert nudge is not None
 
 
@@ -159,11 +157,12 @@ def test_engagement_run_rearms_after_a_recovery():
     m = checkpoint_nudge.EngagementRunMonitor(window=3)
     for s in (0.1, 0.1, 0.1):
         last = m.observe(s)
-    assert last is not None            # first episode nudged
-    assert m.observe(0.9) is None      # recovery re-arms (window mean climbs)
+    assert last is not None  # first episode nudged
+    assert m.observe(0.9) is None  # recovery re-arms (window mean climbs)
     assert m.observe(0.95) is None
     # a fresh run of thin ones nudges again (a new episode)
-    m.observe(0.1); m.observe(0.1)
+    m.observe(0.1)
+    m.observe(0.1)
     assert m.observe(0.1) is not None
 
 
@@ -202,10 +201,14 @@ def test_engagement_run_fewer_than_window_never_nudges():
 
 def test_engagement_run_floor_is_the_shared_rubber_stamp_floor():
     # reuses checkpoint_engagement.RUBBER_STAMP_FLOOR, not a private literal
-    assert checkpoint_nudge.EngagementRunMonitor().floor == checkpoint_nudge.checkpoint_engagement.RUBBER_STAMP_FLOOR
+    assert (
+        checkpoint_nudge.EngagementRunMonitor().floor
+        == checkpoint_nudge.checkpoint_engagement.RUBBER_STAMP_FLOOR
+    )
 
 
 # ── both never block ─────────────────────────────────────────────────────────
+
 
 def test_monitors_only_signal_never_gate():
     """Neither monitor exposes a boolean 'should I block' — they return

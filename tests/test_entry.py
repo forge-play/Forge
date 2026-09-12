@@ -5,6 +5,7 @@ Needs Nestor for everything but the refusal test (`checkpoint_memory
 .nestor_available()` is the gate). `FORGE_HOME` is pointed at tmp_path so the
 project store lands there, and the checkpoint root is a tmp too.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -34,7 +35,9 @@ class ScriptedResponder:
     def choose(self, decision: Decision) -> ChoiceResult:
         self.choose_calls.append(decision)
         assert self._choose is not None, "asked to choose with nothing scripted"
-        return ChoiceResult(chosen_label=self._choose, rationale="because the rally has a website already")
+        return ChoiceResult(
+            chosen_label=self._choose, rationale="because the rally has a website already"
+        )
 
 
 @pytest.fixture
@@ -46,15 +49,25 @@ def home(tmp_path, monkeypatch):
 def test_nestor_absent_is_a_refusal_not_a_degrade(home, monkeypatch):
     monkeypatch.setattr(entry.checkpoint_memory, "nestor_available", lambda: False)
     with pytest.raises(entry.EntryError) as e:
-        entry.open_bite(SENTENCE, project_id=PROJECT, builder_id=BUILDER,
-                        responder=ScriptedResponder(), root=home / "cp")
+        entry.open_bite(
+            SENTENCE,
+            project_id=PROJECT,
+            builder_id=BUILDER,
+            responder=ScriptedResponder(),
+            root=home / "cp",
+        )
     assert "never asked" in str(e.value)
 
 
 def test_an_empty_sentence_is_not_a_bite(home):
     with pytest.raises(entry.EntryError):
-        entry.open_bite("   ", project_id=PROJECT, builder_id=BUILDER,
-                        responder=ScriptedResponder(), root=home / "cp")
+        entry.open_bite(
+            "   ",
+            project_id=PROJECT,
+            builder_id=BUILDER,
+            responder=ScriptedResponder(),
+            root=home / "cp",
+        )
 
 
 def test_project_nestor_path_hangs_off_the_forge_home_and_checks_the_charset(home):
@@ -102,11 +115,25 @@ def test_the_checkpoint_ledger_keeps_the_shape_corpus_lens_reads(home):
     import json
 
     root = home / "cp"
-    entry.open_bite(SENTENCE, project_id=PROJECT, builder_id=BUILDER,
-                    responder=ScriptedResponder(choose="web"), root=root)
-    entry.open_bite(SENTENCE, project_id=PROJECT, builder_id=BUILDER,
-                    responder=ScriptedResponder(choose=None), root=root)
-    rows = [json.loads(line) for line in (root / "ledger.jsonl").read_text().splitlines() if line.strip()]
+    entry.open_bite(
+        SENTENCE,
+        project_id=PROJECT,
+        builder_id=BUILDER,
+        responder=ScriptedResponder(choose="web"),
+        root=root,
+    )
+    entry.open_bite(
+        SENTENCE,
+        project_id=PROJECT,
+        builder_id=BUILDER,
+        responder=ScriptedResponder(choose=None),
+        root=root,
+    )
+    rows = [
+        json.loads(line)
+        for line in (root / "ledger.jsonl").read_text().splitlines()
+        if line.strip()
+    ]
     by_kind = {}
     for r in rows:
         by_kind.setdefault(r["kind"], []).append(r)
@@ -121,8 +148,9 @@ def test_the_checkpoint_ledger_keeps_the_shape_corpus_lens_reads(home):
     for a in answers:
         assert a["surface"].strip() and a["canonical"].strip() and a["surface_sha"]
         assert a["domain"].startswith(f"builder:{BUILDER}:decision:")
-    assert {a["surface_sha"] for a in asks} <= {a["surface_sha"] for a in answers}, \
+    assert {a["surface_sha"] for a in asks} <= {a["surface_sha"] for a in answers}, (
         "every ask can be joined to the answer that lends it its question text"
+    )
     for c in confirms:
         assert c["canonical"].strip(), "a confirm carries the answer it served verbatim"
 
@@ -130,8 +158,13 @@ def test_the_checkpoint_ledger_keeps_the_shape_corpus_lens_reads(home):
 @_needs_nestor
 def test_one_major_needs_no_decision(home):
     r = ScriptedResponder()
-    e = entry.open_bite("a tiny cli that renames files", project_id=PROJECT, builder_id=BUILDER,
-                        responder=r, root=home / "cp")
+    e = entry.open_bite(
+        "a tiny cli that renames files",
+        project_id=PROJECT,
+        builder_id=BUILDER,
+        responder=r,
+        root=home / "cp",
+    )
     assert e.major == "cli" and e.decision_outcome is None
     assert r.choose_calls == [] and r.confirm_prompts == []
     assert "unambiguous" in e.tiers["scan"]
@@ -139,8 +172,13 @@ def test_one_major_needs_no_decision(home):
 
 @_needs_nestor
 def test_no_keyword_is_an_honest_empty(home):
-    e = entry.open_bite("hello there", project_id=PROJECT, builder_id=BUILDER,
-                        responder=ScriptedResponder(), root=home / "cp")
+    e = entry.open_bite(
+        "hello there",
+        project_id=PROJECT,
+        builder_id=BUILDER,
+        responder=ScriptedResponder(),
+        root=home / "cp",
+    )
     assert e.major is None and e.hits == [] and "no keyword" in e.tiers["scan"]
 
 
@@ -152,11 +190,20 @@ def test_a_sealed_project_answer_short_circuits_the_scan(home):
     db = paths.project_nestor(PROJECT)
     db.parent.mkdir(parents=True)
     store = SqliteStore(str(db))
-    memory.add_pair(SENTENCE, "web: the rally already has a site", "decision", "decision",
-                    status="sealed", verifier="rosalind", store=store)
+    memory.add_pair(
+        SENTENCE,
+        "web: the rally already has a site",
+        "decision",
+        "decision",
+        status="sealed",
+        verifier="rosalind",
+        store=store,
+    )
 
     r = ScriptedResponder()
-    e = entry.open_bite(SENTENCE, project_id=PROJECT, builder_id=BUILDER, responder=r, root=home / "cp")
+    e = entry.open_bite(
+        SENTENCE, project_id=PROJECT, builder_id=BUILDER, responder=r, root=home / "cp"
+    )
     assert e.tiers["nestor"].startswith("sealed")
     assert e.answer.startswith("web")
     assert e.major == "web" and e.decision_outcome is None
@@ -170,20 +217,39 @@ def test_the_entry_reports_the_deposit_age_with_the_answer(home):
     the state with the answer, never silently. An empty store says `none`;
     after a deposit the tier names the sha, the states and an age."""
     from nestor.sqlite_store import SqliteStore
+
     from forge import deposit
     from forge.deposit import Run
 
-    e = entry.open_bite("a tiny cli that renames files", project_id=PROJECT, builder_id=BUILDER,
-                        responder=ScriptedResponder(), root=home / "cp")
+    e = entry.open_bite(
+        "a tiny cli that renames files",
+        project_id=PROJECT,
+        builder_id=BUILDER,
+        responder=ScriptedResponder(),
+        root=home / "cp",
+    )
     assert e.tiers["deposit"].startswith("none")
     assert list(e.tiers)[:2] == ["nestor", "deposit"], "asked, then how current the answer is"
 
     store = SqliteStore(str(paths.project_nestor(PROJECT)))
-    deposit.deposit_ci(store, repo="forge-play/Forge", sha="cc9aab19ba2502e14e331e20e699f634fb4cb1a2",
-                       runs=[Run("Tests", "completed", "success", "1"), Run("CodeQL", "completed", "cancelled", "2")],
-                       actor_type="Bot", via="webhook_inbox")
-    e2 = entry.open_bite("a tiny cli that renames files", project_id=PROJECT, builder_id=BUILDER,
-                         responder=ScriptedResponder(), root=home / "cp")
+    deposit.deposit_ci(
+        store,
+        repo="forge-play/Forge",
+        sha="cc9aab19ba2502e14e331e20e699f634fb4cb1a2",
+        runs=[
+            Run("Tests", "completed", "success", "1"),
+            Run("CodeQL", "completed", "cancelled", "2"),
+        ],
+        actor_type="Bot",
+        via="webhook_inbox",
+    )
+    e2 = entry.open_bite(
+        "a tiny cli that renames files",
+        project_id=PROJECT,
+        builder_id=BUILDER,
+        responder=ScriptedResponder(),
+        root=home / "cp",
+    )
     t = e2.tiers["deposit"]
     assert "forge-play/Forge@cc9aab19ba25" in t and "could_not_run 1" in t and "pass 1" in t
     assert t.endswith(")") and " old: " in t
@@ -196,10 +262,20 @@ def test_the_box_seam_is_consulted_and_named(home):
         name = "fake catalog"
 
         def lookup(self, hits):
-            return [entry.Candidate(name="rally-site", where="apps/rally-site", why="a site with the same keywords")]
+            return [
+                entry.Candidate(
+                    name="rally-site", where="apps/rally-site", why="a site with the same keywords"
+                )
+            ]
 
-    e = entry.open_bite("a site", project_id=PROJECT, builder_id=BUILDER,
-                        responder=ScriptedResponder(), root=home / "cp", box=FakeBox())
+    e = entry.open_bite(
+        "a site",
+        project_id=PROJECT,
+        builder_id=BUILDER,
+        responder=ScriptedResponder(),
+        root=home / "cp",
+        box=FakeBox(),
+    )
     assert e.candidates and e.candidates[0].name == "rally-site"
     assert e.tiers["box"] == "fake catalog: 1 candidate(s)"
 
@@ -207,13 +283,28 @@ def test_the_box_seam_is_consulted_and_named(home):
 @_needs_nestor
 def test_cli_asks_then_confirms(home, capsys):
     root = str(home / "cp")
-    rc = entry.main([SENTENCE, "--project", PROJECT, "--builder", BUILDER, "--root", root,
-                     "--choose", "mobile", "--json"])
+    rc = entry.main(
+        [
+            SENTENCE,
+            "--project",
+            PROJECT,
+            "--builder",
+            BUILDER,
+            "--root",
+            root,
+            "--choose",
+            "mobile",
+            "--json",
+        ]
+    )
     assert rc == 0
     import json
+
     d = json.loads(capsys.readouterr().out)
     assert d["major"] == "mobile" and d["decision_outcome"]["band"] == "socratic"
-    rc = entry.main([SENTENCE, "--project", PROJECT, "--builder", BUILDER, "--root", root, "--json"])
+    rc = entry.main(
+        [SENTENCE, "--project", PROJECT, "--builder", BUILDER, "--root", root, "--json"]
+    )
     assert rc == 0
     d = json.loads(capsys.readouterr().out)
     assert d["major"] == "mobile" and d["decision_outcome"]["band"] in ("auto", "recognize")
@@ -223,6 +314,7 @@ def test_the_demo_finds_its_table():
     """demo/the_first_bite.py's beat 1 looks for forge/keywords.toml and logs
     friction if it is missing. It exists now."""
     from forge import majors
+
     assert majors.DEFAULT_TABLE.name == "keywords.toml" and majors.DEFAULT_TABLE.exists()
 
 
@@ -234,6 +326,7 @@ def test_the_demo_finds_its_table():
 #
 # A test asserting the *right* major was chosen would be testing the keyword
 # table, not this.
+
 
 def test_why_has_no_default():
     """`--why` must not fabricate a rationale. Until 2026-09-07 it defaulted to
@@ -249,10 +342,11 @@ def test_pick_responder_does_not_invent_a_rationale():
     """With no --why, the CLI responder seals an EMPTY rationale rather than
     argparse's help text."""
     r = entry._PickResponder(choose="web", why=None)
-    d = Decision(decision_type=entry.DECISION_TYPE_MAJOR,
-                 surface="could be web, mobile, desktop — which major?",
-                 options=[checkpoint.Option("web", "a site"),
-                          checkpoint.Option("mobile", "an app")])
+    d = Decision(
+        decision_type=entry.DECISION_TYPE_MAJOR,
+        surface="could be web, mobile, desktop — which major?",
+        options=[checkpoint.Option("web", "a site"), checkpoint.Option("mobile", "an app")],
+    )
     assert r.choose(d).rationale == ""
 
 
@@ -269,9 +363,13 @@ def test_no_rationale_is_the_loudest_rubber_stamp(home):
     (This used to run with `choose=None`; that path now refuses outright — see
     `test_an_ambiguous_major_with_no_choice_refuses` — so the rubber-stamp
     property is asserted where it still applies: a real pick, no reason.)"""
-    out = entry.open_bite(SENTENCE, project_id=PROJECT, builder_id=BUILDER,
-                          responder=entry._PickResponder(choose="web", why=None),
-                          root=home / "cp").decision_outcome
+    out = entry.open_bite(
+        SENTENCE,
+        project_id=PROJECT,
+        builder_id=BUILDER,
+        responder=entry._PickResponder(choose="web", why=None),
+        root=home / "cp",
+    ).decision_outcome
     assert out.band == "socratic" and out.rationale == ""
     assert out.engagement == 0.0
     assert out.rubber_stamp is True, "an unexplained choice must read as a rubber-stamp"
@@ -284,17 +382,23 @@ def test_no_rationale_is_the_loudest_rubber_stamp(home):
 # `checkpoint_memory` — not an unsealed row, not an attestation. A test that
 # asserts the *right* major was chosen is testing the table, not this."
 
+
 @_needs_nestor
 def test_an_ambiguous_major_with_no_choice_refuses(home):
     with pytest.raises(entry.EntryError) as e:
-        entry.open_bite(SENTENCE, project_id=PROJECT, builder_id=BUILDER,
-                        responder=entry._PickResponder(choose=None, why=None),
-                        root=home / "cp")
+        entry.open_bite(
+            SENTENCE,
+            project_id=PROJECT,
+            builder_id=BUILDER,
+            responder=entry._PickResponder(choose=None, why=None),
+            root=home / "cp",
+        )
     msg = str(e.value)
     assert "list position is not a decision" in msg
     assert "--choose" in msg, "a refusal must say how to proceed"
-    assert not msg.startswith("REFUSED"), \
+    assert not msg.startswith("REFUSED"), (
         "main() already prefixes REFUSED: — carrying it here too printed it twice"
+    )
 
 
 @_needs_nestor
@@ -303,18 +407,25 @@ def test_the_refusal_writes_nothing_to_memory(home):
     the same failure wearing an error message."""
     root = home / "cp"
     with pytest.raises(entry.EntryError):
-        entry.open_bite(SENTENCE, project_id=PROJECT, builder_id=BUILDER,
-                        responder=entry._PickResponder(choose=None, why=None),
-                        root=root)
+        entry.open_bite(
+            SENTENCE,
+            project_id=PROJECT,
+            builder_id=BUILDER,
+            responder=entry._PickResponder(choose=None, why=None),
+            root=root,
+        )
     with checkpoint_memory.open_checkpoint_memory(
-            BUILDER, entry.DECISION_TYPE_MAJOR, root=root) as cm:
+        BUILDER, entry.DECISION_TYPE_MAJOR, root=root
+    ) as cm:
         assert cm.has_sealed() is False, "nothing may be sealed from a non-decision"
-        assert cm.check(
-            f"'{SENTENCE}' could be web, mobile, desktop — which major?"
-        )["canonical"] is None, "not even an unsealed row"
+        assert (
+            cm.check(f"'{SENTENCE}' could be web, mobile, desktop — which major?")["canonical"]
+            is None
+        ), "not even an unsealed row"
 
     # ...and no attestation, which is the other thing @prompt names.
     from forge import human_loop, soil_store
+
     store = soil_store.FilesystemSoilStore(BUILDER, root=root)
     assert human_loop.list_attestations(store) == []
 
@@ -323,10 +434,13 @@ def test_the_refusal_writes_nothing_to_memory(home):
 def test_one_unambiguous_major_still_needs_no_choice(home):
     """The refusal is about ambiguity, not about --choose being mandatory. One
     option is not a decision the maker has to make."""
-    e = entry.open_bite("a tiny cli that renames files", project_id=PROJECT,
-                        builder_id=BUILDER,
-                        responder=entry._PickResponder(choose=None, why=None),
-                        root=home / "cp")
+    e = entry.open_bite(
+        "a tiny cli that renames files",
+        project_id=PROJECT,
+        builder_id=BUILDER,
+        responder=entry._PickResponder(choose=None, why=None),
+        root=home / "cp",
+    )
     assert e.major == "cli" and e.decision_outcome is None
 
 
@@ -337,12 +451,16 @@ def test_the_old_default_would_have_escaped_the_flag(home):
     makes this pass as thin, the --why default was not the whole problem — and
     the engagement defect paper's §1 needs revisiting, not deleting."""
     from forge import checkpoint_engagement
+
     surface = "could be web, mobile, desktop — which major?"
-    assert checkpoint_engagement.engagement_score("picked at the command line", surface) >= \
-        checkpoint_engagement.RUBBER_STAMP_FLOOR
+    assert (
+        checkpoint_engagement.engagement_score("picked at the command line", surface)
+        >= checkpoint_engagement.RUBBER_STAMP_FLOOR
+    )
 
 
 # ── gap 3: a sealed row whose signature nobody could check ──────────────────
+
 
 @_needs_nestor
 def test_the_entry_says_when_a_seal_could_not_be_verified(home, monkeypatch):
@@ -353,12 +471,22 @@ def test_the_entry_says_when_a_seal_could_not_be_verified(home, monkeypatch):
     how "nobody verified this" reads as "the box says yes"."""
     monkeypatch.setattr(entry.checkpoint_memory, "seal_signatures_verified", lambda: False)
     root = home / "cp"
-    e1 = entry.open_bite(SENTENCE, project_id=PROJECT, builder_id=BUILDER,
-                         responder=entry._PickResponder(choose="web", why=None), root=root)
+    e1 = entry.open_bite(
+        SENTENCE,
+        project_id=PROJECT,
+        builder_id=BUILDER,
+        responder=entry._PickResponder(choose="web", why=None),
+        root=root,
+    )
     assert e1.decision_outcome.band == "socratic"
 
-    e2 = entry.open_bite(SENTENCE, project_id=PROJECT, builder_id=BUILDER,
-                         responder=ScriptedResponder(choose=None), root=root)
+    e2 = entry.open_bite(
+        SENTENCE,
+        project_id=PROJECT,
+        builder_id=BUILDER,
+        responder=ScriptedResponder(choose=None),
+        root=root,
+    )
     assert e2.decision_outcome.matched_band is not None, "a prior seal answered"
     assert "SIGNATURE NOT VERIFIED" in e2.tiers["scan"]
 
@@ -369,10 +497,20 @@ def test_a_verifiable_seal_carries_no_warning(home, monkeypatch):
     signing configured it disappears."""
     monkeypatch.setattr(entry.checkpoint_memory, "seal_signatures_verified", lambda: True)
     root = home / "cp"
-    entry.open_bite(SENTENCE, project_id=PROJECT, builder_id=BUILDER,
-                    responder=entry._PickResponder(choose="web", why=None), root=root)
-    e2 = entry.open_bite(SENTENCE, project_id=PROJECT, builder_id=BUILDER,
-                         responder=ScriptedResponder(choose=None), root=root)
+    entry.open_bite(
+        SENTENCE,
+        project_id=PROJECT,
+        builder_id=BUILDER,
+        responder=entry._PickResponder(choose="web", why=None),
+        root=root,
+    )
+    e2 = entry.open_bite(
+        SENTENCE,
+        project_id=PROJECT,
+        builder_id=BUILDER,
+        responder=ScriptedResponder(choose=None),
+        root=root,
+    )
     assert "NOT VERIFIED" not in e2.tiers["scan"]
 
 

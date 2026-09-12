@@ -15,16 +15,15 @@ collection time — tests that go through the real library are marked
 
 Written test-first, before `stores/checkpoint_calibration.py` existed.
 """
+
 from __future__ import annotations
 
 import contextlib
-import importlib.util
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
-
 
 from forge import checkpoint_calibration
 
@@ -41,7 +40,9 @@ _needs_fsrs = pytest.mark.skipif(not _HAS_FSRS, reason="fsrs not installed in th
 # Nestor is usable again right after the block exits, which is only a
 # meaningful assertion when Nestor genuinely is installed here.
 _HAS_NESTOR = checkpoint_memory.nestor_available()
-_needs_nestor = pytest.mark.skipif(not _HAS_NESTOR, reason="nestor not installed in this environment")
+_needs_nestor = pytest.mark.skipif(
+    not _HAS_NESTOR, reason="nestor not installed in this environment"
+)
 
 _SUBSTANTIVE_JUSTIFICATION = (
     "I re-measured the reporting query at 1.2s with joins versus 40ms on the "
@@ -49,11 +50,11 @@ _SUBSTANTIVE_JUSTIFICATION = (
 )
 _THIN_JUSTIFICATION = "yeah still fine"
 
-pytestmark = pytest.mark.filterwarnings(
-    "ignore:NESTOR_SEAL_KEY not set.*:RuntimeWarning"
-)
+pytestmark = pytest.mark.filterwarnings("ignore:NESTOR_SEAL_KEY not set.*:RuntimeWarning")
 
-BUILDER_A = "a" * 32  # path-safe under principal.py's _check_builder_id, same fixture value bite 1's tests use
+BUILDER_A = (
+    "a" * 32
+)  # path-safe under principal.py's _check_builder_id, same fixture value bite 1's tests use
 DECISION_TYPE = "auth-flow-for-user-facing-form"
 ORIGINAL_SURFACE = "How should the login form authenticate?"
 CHOSEN_ANSWER = "session cookie + CSRF"
@@ -76,7 +77,9 @@ class ScriptedResponder:
     def confirm(self, prompt: str) -> bool:
         self.confirm_prompts.append(prompt)
         if not self._confirm_answers:
-            raise AssertionError(f"ScriptedResponder.confirm asked with no answer queued: {prompt!r}")
+            raise AssertionError(
+                f"ScriptedResponder.confirm asked with no answer queued: {prompt!r}"
+            )
         return self._confirm_answers.pop(0)
 
     def justify(self, prompt: str) -> str:
@@ -89,7 +92,9 @@ class ScriptedResponder:
     def choose(self, decision) -> "checkpoint.ChoiceResult":
         self.choose_calls.append(decision)
         if not self._choose_answers:
-            raise AssertionError(f"ScriptedResponder.choose asked with no answer queued: {decision.surface!r}")
+            raise AssertionError(
+                f"ScriptedResponder.choose asked with no answer queued: {decision.surface!r}"
+            )
         return self._choose_answers.pop(0)
 
 
@@ -99,6 +104,7 @@ def _seal_original_auth_decision(root: Path, builder_id: str = BUILDER_A) -> Non
 
 
 # ── 1. held ──────────────────────────────────────────────────────────────────
+
 
 @_needs_nestor
 def test_resurface_held_confirms_and_does_not_reseal(tmp_path, monkeypatch):
@@ -141,6 +147,7 @@ def test_resurface_held_confirms_and_does_not_reseal(tmp_path, monkeypatch):
 
 
 # ── 2. regressed — the #12 headline ─────────────────────────────────────────
+
 
 @_needs_nestor
 def test_resurface_regressed_rejects_prior_and_seals_new_answer(tmp_path, monkeypatch):
@@ -187,7 +194,10 @@ def test_resurface_regressed_rejects_prior_and_seals_new_answer(tmp_path, monkey
     assert outcome.regressed is True
     assert outcome.resealed is True
     assert outcome.prior == CHOSEN_ANSWER
-    assert outcome.new == "JWT bearer token: switched to a public API client, no browser session anymore"
+    assert (
+        outcome.new
+        == "JWT bearer token: switched to a public API client, no browser session anymore"
+    )
     assert len(responder.choose_calls) == 1
 
     # reject_match (not reject_pair) was the teaching call, identified by
@@ -231,7 +241,9 @@ def test_resurface_regressed_prompt_shows_the_prior_answer(tmp_path):
     _seal_original_auth_decision(root)
     responder = ScriptedResponder(
         confirm_answers=[False],
-        choose_answers=[checkpoint.ChoiceResult(chosen_label="JWT bearer token", rationale="changed my mind")],
+        choose_answers=[
+            checkpoint.ChoiceResult(chosen_label="JWT bearer token", rationale="changed my mind")
+        ],
     )
     checkpoint_calibration.resurface(
         builder_id=BUILDER_A,
@@ -246,6 +258,7 @@ def test_resurface_regressed_prompt_shows_the_prior_answer(tmp_path):
 
 
 # ── 3. nothing to resurface ──────────────────────────────────────────────────
+
 
 def test_resurface_with_no_prior_seal_at_all_raises(tmp_path):
     root = tmp_path / "checkpoints"
@@ -282,6 +295,7 @@ def test_resurface_a_surface_that_was_never_itself_sealed_raises(tmp_path):
 
 # ── 4. contradiction surfaces (reuse, not rebuild) ──────────────────────────
 
+
 @_needs_nestor
 def test_conflicting_seal_from_a_different_verifier_raises_checkpoint_conflict(tmp_path):
     """Pins that Nestor's own `ConflictingSealError` — surfaced by
@@ -298,9 +312,7 @@ def test_conflicting_seal_from_a_different_verifier_raises_checkpoint_conflict(t
 
     with checkpoint_memory.open_checkpoint_memory(BUILDER_A, DECISION_TYPE, root=root) as cm:
         with pytest.raises(checkpoint_memory.CheckpointConflict):
-            checkpoint_calibration.contradictions(
-                cm, surface, "by IP", verifier="verifier-three"
-            )
+            checkpoint_calibration.contradictions(cm, surface, "by IP", verifier="verifier-three")
 
 
 # ── 5. resurface advances the FSRS schedule (bite 2 fold-in) ─────────────────
@@ -316,8 +328,12 @@ def test_resurface_held_records_a_future_due_date_and_persists_a_card(tmp_path):
     root = tmp_path / "checkpoints"
     _seal_original_auth_decision(root)
     outcome = checkpoint_calibration.resurface(
-        builder_id=BUILDER_A, decision_type=DECISION_TYPE, surface=ORIGINAL_SURFACE,
-        responder=ScriptedResponder(confirm_answers=[True]), root=root, now=_T0,
+        builder_id=BUILDER_A,
+        decision_type=DECISION_TYPE,
+        surface=ORIGINAL_SURFACE,
+        responder=ScriptedResponder(confirm_answers=[True]),
+        root=root,
+        now=_T0,
     )
     assert outcome.next_due
     assert datetime.fromisoformat(outcome.next_due) > _T0
@@ -335,12 +351,17 @@ def test_resurface_regressed_records_a_review_too(tmp_path):
     root = tmp_path / "checkpoints"
     _seal_original_auth_decision(root)
     outcome = checkpoint_calibration.resurface(
-        builder_id=BUILDER_A, decision_type=DECISION_TYPE, surface=ORIGINAL_SURFACE,
+        builder_id=BUILDER_A,
+        decision_type=DECISION_TYPE,
+        surface=ORIGINAL_SURFACE,
         responder=ScriptedResponder(
             confirm_answers=[False],
-            choose_answers=[checkpoint.ChoiceResult(chosen_label="JWT bearer token", rationale="public API now")],
+            choose_answers=[
+                checkpoint.ChoiceResult(chosen_label="JWT bearer token", rationale="public API now")
+            ],
         ),
-        root=root, now=_T0,
+        root=root,
+        now=_T0,
     )
     assert outcome.regressed is True
     assert outcome.next_due
@@ -352,12 +373,20 @@ def test_two_held_resurfaces_advance_the_same_card(tmp_path):
     root = tmp_path / "checkpoints"
     _seal_original_auth_decision(root)
     o1 = checkpoint_calibration.resurface(
-        builder_id=BUILDER_A, decision_type=DECISION_TYPE, surface=ORIGINAL_SURFACE,
-        responder=ScriptedResponder(confirm_answers=[True]), root=root, now=_T0,
+        builder_id=BUILDER_A,
+        decision_type=DECISION_TYPE,
+        surface=ORIGINAL_SURFACE,
+        responder=ScriptedResponder(confirm_answers=[True]),
+        root=root,
+        now=_T0,
     )
     o2 = checkpoint_calibration.resurface(
-        builder_id=BUILDER_A, decision_type=DECISION_TYPE, surface=ORIGINAL_SURFACE,
-        responder=ScriptedResponder(confirm_answers=[True]), root=root, now=_T0 + timedelta(days=3),
+        builder_id=BUILDER_A,
+        decision_type=DECISION_TYPE,
+        surface=ORIGINAL_SURFACE,
+        responder=ScriptedResponder(confirm_answers=[True]),
+        root=root,
+        now=_T0 + timedelta(days=3),
     )
     # the schedule advanced on the same card — second due is later than first
     assert datetime.fromisoformat(o2.next_due) > datetime.fromisoformat(o1.next_due)
@@ -365,10 +394,15 @@ def test_two_held_resurfaces_advance_the_same_card(tmp_path):
 
 # ── 6. the engagement→grade wire (bite 3) ────────────────────────────────────
 
+
 def _resurface_held(root, responder, now=_T0):
     return checkpoint_calibration.resurface(
-        builder_id=BUILDER_A, decision_type=DECISION_TYPE, surface=ORIGINAL_SURFACE,
-        responder=responder, root=root, now=now,
+        builder_id=BUILDER_A,
+        decision_type=DECISION_TYPE,
+        surface=ORIGINAL_SURFACE,
+        responder=responder,
+        root=root,
+        now=now,
     )
 
 
@@ -378,22 +412,32 @@ def test_held_justification_is_scored_and_surfaced_on_the_outcome(tmp_path):
     regardless of whether real FSRS is installed."""
     root = tmp_path / "checkpoints"
     _seal_original_auth_decision(root)
-    strong = _resurface_held(root, ScriptedResponder(confirm_answers=[True], justify_answers=[_SUBSTANTIVE_JUSTIFICATION]))
+    strong = _resurface_held(
+        root,
+        ScriptedResponder(confirm_answers=[True], justify_answers=[_SUBSTANTIVE_JUSTIFICATION]),
+    )
     assert strong.held is True
     assert strong.engagement is not None and strong.engagement > 0.66
 
     _seal_original_auth_decision(root, builder_id="b" * 32)
     thin = checkpoint_calibration.resurface(
-        builder_id="b" * 32, decision_type=DECISION_TYPE, surface=ORIGINAL_SURFACE,
+        builder_id="b" * 32,
+        decision_type=DECISION_TYPE,
+        surface=ORIGINAL_SURFACE,
         responder=ScriptedResponder(confirm_answers=[True], justify_answers=[_THIN_JUSTIFICATION]),
-        root=root, now=_T0,
+        root=root,
+        now=_T0,
     )
     assert thin.engagement is not None and thin.engagement < 0.34
 
     _seal_original_auth_decision(root, builder_id="c" * 32)
     declined = checkpoint_calibration.resurface(
-        builder_id="c" * 32, decision_type=DECISION_TYPE, surface=ORIGINAL_SURFACE,
-        responder=ScriptedResponder(confirm_answers=[True]), root=root, now=_T0,  # no justify_answers -> declines
+        builder_id="c" * 32,
+        decision_type=DECISION_TYPE,
+        surface=ORIGINAL_SURFACE,
+        responder=ScriptedResponder(confirm_answers=[True]),
+        root=root,
+        now=_T0,  # no justify_answers -> declines
     )
     assert declined.engagement is None  # no signal, not a fabricated 0.0
 
@@ -418,27 +462,33 @@ def test_the_rationale_no_longer_moves_the_review_date(tmp_path):
     asked for, still computed, and still surfaced on the outcome — it is
     evidence, and the test above still pins it. It just no longer moves a date.
     """
+
     def _due(builder, justify_answers):
         root = tmp_path / builder
         _seal_original_auth_decision(root, builder_id=builder)
         o = checkpoint_calibration.resurface(
-            builder_id=builder, decision_type=DECISION_TYPE, surface=ORIGINAL_SURFACE,
+            builder_id=builder,
+            decision_type=DECISION_TYPE,
+            surface=ORIGINAL_SURFACE,
             responder=ScriptedResponder(confirm_answers=[True], justify_answers=justify_answers),
-            root=root, now=_T0,
+            root=root,
+            now=_T0,
         )
         return datetime.fromisoformat(o.next_due), o.engagement
 
     due_easy, eng_easy = _due("a" * 32, [_SUBSTANTIVE_JUSTIFICATION])
-    due_good, eng_good = _due("b" * 32, [])                    # declined
+    due_good, eng_good = _due("b" * 32, [])  # declined
     due_hard, eng_hard = _due("c" * 32, [_THIN_JUSTIFICATION])
 
     assert due_easy == due_good == due_hard, (
         "the rationale must not bend the review cadence while the signal that "
-        "would bend it cannot separate an argument from 'yes'")
+        "would bend it cannot separate an argument from 'yes'"
+    )
     # ...and the scores that used to drive it are still recorded, still different.
     assert eng_easy > 0.66 and eng_hard < 0.34 and eng_good is None, (
         "cutting the wire must not delete the evidence — the annotation is how "
-        "a human sees the defect at all")
+        "a human sees the defect at all"
+    )
 
 
 @_needs_nestor
@@ -447,7 +497,9 @@ def test_a_hold_is_never_blocked_by_a_thin_justification(tmp_path):
     held and sealed — only the review cadence tightens."""
     root = tmp_path / "checkpoints"
     _seal_original_auth_decision(root)
-    outcome = _resurface_held(root, ScriptedResponder(confirm_answers=[True], justify_answers=[_THIN_JUSTIFICATION]))
+    outcome = _resurface_held(
+        root, ScriptedResponder(confirm_answers=[True], justify_answers=[_THIN_JUSTIFICATION])
+    )
     assert outcome.held is True
     assert outcome.regressed is False
     with checkpoint_memory.open_checkpoint_memory(BUILDER_A, DECISION_TYPE, root=root) as cm:
@@ -465,7 +517,9 @@ def test_a_responder_without_justify_reverts_to_pre_wire_behavior(tmp_path):
     _seal_original_auth_decision(root)
 
     class _ConfirmOnly:
-        def confirm(self, prompt): return True
+        def confirm(self, prompt):
+            return True
+
         def choose(self, decision):  # pragma: no cover - a held path never reaches choose
             raise AssertionError("held path must not call choose")
 
@@ -477,12 +531,17 @@ def test_a_responder_without_justify_reverts_to_pre_wire_behavior(tmp_path):
 
 # ── 6. soft-Nestor on resurface ──────────────────────────────────────────────
 
+
 @contextlib.contextmanager
 def _nestor_blocked():
     """Same technique `tests/test_checkpoint.py`'s own `_nestor_blocked`
     uses — meta-path finder + `sys.modules` eviction — restated here since
     this file needs its own fresh module chain to observe it (see below)."""
-    saved = {name: mod for name, mod in sys.modules.items() if name == "nestor" or name.startswith("nestor.")}
+    saved = {
+        name: mod
+        for name, mod in sys.modules.items()
+        if name == "nestor" or name.startswith("nestor.")
+    }
     for name in saved:
         del sys.modules[name]
 

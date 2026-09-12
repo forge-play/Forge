@@ -26,6 +26,7 @@ requires willow-gate). No gate at this end → no cloud trust; the host falls ba
 to whatever local check it applies. The forge engine core stays dependency-free;
 this is the opt-in `forge[trust]` extra, and its absence is the off switch.
 """
+
 from __future__ import annotations
 
 import json
@@ -51,16 +52,28 @@ def _canonical(promotion: dict) -> str:
     return json.dumps(promotion, sort_keys=True, separators=(",", ":"))
 
 
-def enroll(gate, author_id: str, secret: bytes, *, custody, promotion: dict,
-           trust_level: int = 1, tools=("read",)):
+def enroll(
+    gate,
+    author_id: str,
+    secret: bytes,
+    *,
+    custody,
+    promotion: dict,
+    trust_level: int = 1,
+    tools=("read",),
+):
     """The author provisionally seals the promotion through the gate. PROVISIONAL,
     never canonical — reuses the cloud seam wholesale (rule 11). Returns its
     `ProvisionalSealResult`. Raises `GateError` on a bad identity/unearned rung."""
     app_id = promotion["app_id"]
     return seal_through_gate(
-        gate, author_id, secret,
+        gate,
+        author_id,
+        secret,
         [(promotion_lineage(app_id), _canonical(promotion))],
-        custody=custody, trust_level=trust_level, tools=tools,
+        custody=custody,
+        trust_level=trust_level,
+        tools=tools,
     )
 
 
@@ -76,22 +89,38 @@ class WitnessResult:
     reason: str
 
 
-def witnessed(custody, checkpoint_event: dict, verifier_signer, *,
-              author_id: str, verifier_id: str, app_id: str) -> WitnessResult:
+def witnessed(
+    custody,
+    checkpoint_event: dict,
+    verifier_signer,
+    *,
+    author_id: str,
+    verifier_id: str,
+    app_id: str,
+) -> WitnessResult:
     """§0.2, verified not asserted. True only when all three hold:
-      1. author_id != verifier_id — proposing and ratifying are different hands;
-      2. the author's PROVISIONAL seal of this promotion is in the custody chain;
-      3. a checkpoint signed by the verifier's KEY verifies and covers that seal.
+    1. author_id != verifier_id — proposing and ratifying are different hands;
+    2. the author's PROVISIONAL seal of this promotion is in the custody chain;
+    3. a checkpoint signed by the verifier's KEY verifies and covers that seal.
     """
     if not verifier_id or author_id == verifier_id:
-        return WitnessResult(False, "proposing and ratifying must be different hands "
-                                    f"(author={author_id!r} verified_by={verifier_id!r})")
+        return WitnessResult(
+            False,
+            "proposing and ratifying must be different hands "
+            f"(author={author_id!r} verified_by={verifier_id!r})",
+        )
 
     lineage = promotion_lineage(app_id)
-    seal = next((e for e in custody.events()
-                 if e.get("kind") == "file.create"
-                 and e.get("lineage_id") == lineage
-                 and e.get("actor") == author_id), None)
+    seal = next(
+        (
+            e
+            for e in custody.events()
+            if e.get("kind") == "file.create"
+            and e.get("lineage_id") == lineage
+            and e.get("actor") == author_id
+        ),
+        None,
+    )
     if seal is None:
         return WitnessResult(False, f"no provisional seal of {lineage!r} by author {author_id!r}")
 
@@ -103,5 +132,8 @@ def witnessed(custody, checkpoint_event: dict, verifier_signer, *,
     if not isinstance(seal.get("seq"), int) or seal["seq"] > covers:
         return WitnessResult(False, "ratification does not cover the provisional seal")
 
-    return WitnessResult(True, f"witnessed: provisional by {author_id}, "
-                               f"canonical by {verifier_id} (key-verified, ≠ author)")
+    return WitnessResult(
+        True,
+        f"witnessed: provisional by {author_id}, "
+        f"canonical by {verifier_id} (key-verified, ≠ author)",
+    )

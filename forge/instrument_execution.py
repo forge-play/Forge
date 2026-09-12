@@ -26,12 +26,12 @@ so the parse->finding and isolation logic is unit-testable without bwrap.
 
 Store-side (D1): `apps/the-forge/` never imports this.
 """
+
 from __future__ import annotations
 
 import base64
 import sys
 from pathlib import Path
-
 
 # Reuse the ONE already-loaded measure_panel if present — a second spec-load
 # would give a DISTINCT InstrumentUnavailable class, so run_panel would catch
@@ -42,7 +42,9 @@ from . import measure_panel
 
 Finding = measure_panel.Finding
 InstrumentUnavailable = measure_panel.InstrumentUnavailable
-_iter_files = measure_panel._iter_files  # real files, no symlinks, no .git — shared with the pure instruments
+_iter_files = (
+    measure_panel._iter_files
+)  # real files, no symlinks, no .git — shared with the pure instruments
 
 # One PARSE (non-executing) command per language, run on a temp file INSIDE the
 # sandbox. The file's CONTENT is shipped in base64 (shell-safe: alnum + / + =),
@@ -162,22 +164,30 @@ class ExecutionInstrument:
             if res.get("returncode", 0) != 0:
                 err = (res.get("stderr") or res.get("stdout") or "").strip().splitlines()
                 first = err[-1] if err else "parse failed"
-                out.append(Finding(
-                    instrument=self.name, artifact=rel, metric="parse", value="fail",
-                    severity="high",
-                    detail=f"does not parse ({p.suffix}) when actually run: {first[:160]}",
-                ))
+                out.append(
+                    Finding(
+                        instrument=self.name,
+                        artifact=rel,
+                        metric="parse",
+                        value="fail",
+                        severity="high",
+                        detail=f"does not parse ({p.suffix}) when actually run: {first[:160]}",
+                    )
+                )
         return out
 
 
 if __name__ == "__main__":
     import argparse
+
     ap = argparse.ArgumentParser(prog="instrument_execution.py")
     ap.add_argument("build_dir")
     ap.add_argument("--no-require-isolation", action="store_true")
     a = ap.parse_args()
     try:
-        found = ExecutionInstrument(require_isolation=not a.no_require_isolation).measure(Path(a.build_dir))
+        found = ExecutionInstrument(require_isolation=not a.no_require_isolation).measure(
+            Path(a.build_dir)
+        )
     except InstrumentUnavailable as e:
         print(f"unavailable: {e}", file=sys.stderr)
         raise SystemExit(2)

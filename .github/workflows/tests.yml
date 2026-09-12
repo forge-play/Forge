@@ -1,19 +1,41 @@
 name: Tests
 
-# Ported from jeles (the fleet's cleanest chain) and trimmed to what this
-# repo has: no ruff/bandit config yet, no coverage floor yet. The three legs
-# that matter are kept — the matrix, the no-extras install, and the aggregate
-# `test` job that branch protection requires (auto-merge on the release PR
-# waits on it; with nothing required, GitHub will not arm auto-merge at all).
+# The fleet CI floor (decision 5, C4-tests-yml), on the shape ported from
+# jeles and trimmed to what this repo has. Five legs and one gate:
+#
+#   test-matrix  Linux, one job per Python this package declares support for.
+#                The list is DERIVED from pyproject.toml's
+#                `Programming Language :: Python :: 3.X` classifiers, every
+#                listed minor, and tests/test_release_wiring.py holds the two
+#                equal — a classifier that CI never runs is a promise nobody
+#                checked, and a matrix entry with no classifier is a version
+#                the package does not claim.
+#   windows      The same suite on the floor and the ceiling Python only. The
+#                point is the path lessons (separators, line endings, what a
+#                byte-hash reads), not a second full matrix.
+#   no-extras    The base install with nothing but pytest and pyyaml, proving
+#                the package is dependency-free and degrades honestly without
+#                Nestor or fsrs.
+#   lint         `ruff check` + `ruff format --check`, ruff pinned to one exact
+#                version so a ruff release cannot redden every PR at once. The
+#                pin is held by tests/test_release_wiring.py; bump it on
+#                purpose, in its own commit.
+#   test         The aggregate branch protection requires. It `needs:` every
+#                leg, runs `if: always()`, and fails unless EVERY needed
+#                result is `success` — a skipped or cancelled leg is a failure,
+#                because "did not run" is not "passed" and a required check
+#                that goes green on a skipped job protects nothing. With
+#                nothing required, GitHub will not arm auto-merge on the
+#                release PR at all.
 #
 # Two things this suite needs to be honest about:
 #   * Nestor. The checkpoint tests seal decisions; with the fleet's per-verifier
 #     keyring in the environment they would correctly be refused (a synthetic
 #     verifier has no key). CI has no keyring, so nothing to unset here — but
 #     never export NESTOR_KEYRING into this job.
-#   * The soft dependencies. fsrs and codebase-memory-mcp are not installed
-#     here; their tests skip or degrade, and the no-extras leg proves the base
-#     install runs with nothing at all.
+#   * The soft dependencies. codebase-memory-mcp is not installed here; its
+#     tests skip or degrade, and the no-extras leg proves the base install
+#     runs with nothing at all.
 
 on:
   push:
@@ -35,9 +57,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ${{ fromJSON(github.event_name == 'pull_request'
-          && '["3.11","3.13"]'
-          || '["3.11","3.12","3.13"]') }}
+        # == the `Programming Language :: Python :: 3.X` classifiers in
+        # pyproject.toml, every listed minor; held equal by
+        # tests/test_release_wiring.py::test_the_linux_matrix_is_the_classifiers.
+        python-version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v7
         with:
@@ -53,6 +76,30 @@ jobs:
       - name: Vendored bodies still hash to what tools/vendor_manifest.json pins
         # stdlib only; names every drift and how to resolve it (re-sync from
         # the origin, or `--print` and record the decision in the manifest).
+        run: python tools/vendor_sync_check.py
+      - name: Run tests
+        run: python -m pytest tests/ -q
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor and the ceiling of the classifier list, nothing between.
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install package with the test extra
+        run: pip install -e ".[test]"
+      - name: Vendored bodies still hash to what tools/vendor_manifest.json pins
         run: python tools/vendor_sync_check.py
       - name: Run tests
         run: python -m pytest tests/ -q
@@ -88,18 +135,44 @@ jobs:
       - name: Run tests without Nestor (soft-dependency path)
         run: python -m pytest tests/ -q
 
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install ruff, pinned
+        # An exact pin, on purpose: a ruff release that adds a rule must not
+        # redden every open PR at once. Bump it in its own commit; the pin is
+        # held by tests/test_release_wiring.py::test_ruff_is_pinned_to_an_exact_version.
+        run: pip install ruff==0.16.7
+      - name: ruff check
+        run: ruff check .
+      - name: ruff format --check
+        run: ruff format --check .
+
   test:
-    needs: [test-matrix, no-extras]
+    needs: [test-matrix, windows, no-extras, lint]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Assert every dependency actually succeeded
-        if: ${{ contains(needs.*.result, 'failure')
-                || contains(needs.*.result, 'cancelled')
-                || contains(needs.*.result, 'skipped') }}
+      - name: Every needed job must have succeeded (skipped and cancelled are failures)
+        env:
+          NEEDS: ${{ toJSON(needs) }}
         run: |
-          echo "test-matrix=${{ needs.test-matrix.result }}"
-          echo "no-extras=${{ needs.no-extras.result }}"
-          echo "::error::a required job did not succeed — see the results above"
-          exit 1
-      - run: echo "all matrix legs and the no-extras install are green"
+          python - <<'PY'
+          import json, os, sys
+          needs = json.loads(os.environ["NEEDS"])
+          bad = {job: info.get("result") for job, info in needs.items()
+                 if info.get("result") != "success"}
+          for job, result in needs.items():
+              print(f"{job}={result.get('result')}")
+          if bad:
+              print(f"::error::a required job did not succeed: {bad} "
+                    "(skipped and cancelled count as failures — a job that did "
+                    "not run did not pass)")
+              sys.exit(1)
+          print("every leg succeeded")
+          PY

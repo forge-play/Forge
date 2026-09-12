@@ -16,6 +16,7 @@ on it; 0 otherwise.
 The logic lives in `forge/engagement_probe.py` (tools/ is not in the wheel —
 the same reason `tools/store_export.py` is a shim over `forge/bundle.py`).
 """
+
 from __future__ import annotations
 
 import sys

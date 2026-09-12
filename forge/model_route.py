@@ -37,13 +37,13 @@ Usage:
     if d.denial: refuse(d.denial)             # declared-not-ambient refusal
     else: run(..., allow_net=d.allow_net)     # Kart gets net ONLY for permitted cloud
 """
+
 from __future__ import annotations
 
 import argparse
 import json
 from dataclasses import dataclass
 from pathlib import Path
-
 
 from . import model_egress
 
@@ -126,20 +126,23 @@ def route(manifest: dict, *, model_host: str | None = None) -> RouteDecision:
     return RouteDecision(
         target=None,
         allow_net=False,
-        denial={"error": (
-            f"cloud_llm_denied: this build would send a model request to {host}, "
-            f"which is not on this machine (loopback). D7 requires that cloud "
-            f"fallback be declared as a {CLOUD_FALLBACK_PERMISSION!r} permission "
-            f"in the build's manifest — where the D4 signature binds it to the "
-            f"maker — before any network-enabled run. To keep inference local "
-            f"instead, point the model host at loopback (a local vLLM) and no "
-            f"permission is needed."
-        )},
+        denial={
+            "error": (
+                f"cloud_llm_denied: this build would send a model request to {host}, "
+                f"which is not on this machine (loopback). D7 requires that cloud "
+                f"fallback be declared as a {CLOUD_FALLBACK_PERMISSION!r} permission "
+                f"in the build's manifest — where the D4 signature binds it to the "
+                f"maker — before any network-enabled run. To keep inference local "
+                f"instead, point the model host at loopback (a local vLLM) and no "
+                f"permission is needed."
+            )
+        },
         host=host,
     )
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
+
 
 def _cmd_route(args: argparse.Namespace) -> int:
     # DEV INSPECTOR ONLY: this reads a manifest file WITHOUT verifying its D4
@@ -149,9 +152,12 @@ def _cmd_route(args: argparse.Namespace) -> int:
     # verified permission, not the signature check (see module docstring).
     manifest = json.loads(Path(args.manifest).read_text()) if args.manifest else {"permissions": []}
     d = route(manifest, model_host=args.host)
-    print(json.dumps(
-        {"target": d.target, "allow_net": d.allow_net, "host": d.host, "denial": d.denial}, indent=2
-    ))
+    print(
+        json.dumps(
+            {"target": d.target, "allow_net": d.allow_net, "host": d.host, "denial": d.denial},
+            indent=2,
+        )
+    )
     return 0 if d.denial is None else 1
 
 
@@ -159,8 +165,12 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="model_route.py")
     sub = p.add_subparsers(dest="command", required=True)
     r = sub.add_parser("route", help="decide local vs cloud for a build manifest + model host")
-    r.add_argument("--manifest", default="", help="path to a (verified) manifest JSON; default: no permissions")
-    r.add_argument("--host", default=None, help="model host URL; default: OLLAMA_HOST or the loopback default")
+    r.add_argument(
+        "--manifest", default="", help="path to a (verified) manifest JSON; default: no permissions"
+    )
+    r.add_argument(
+        "--host", default=None, help="model host URL; default: OLLAMA_HOST or the loopback default"
+    )
     r.set_defaults(func=_cmd_route)
     return p
 

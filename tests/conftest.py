@@ -21,6 +21,7 @@ soft-Nestor (`checkpoint_memory.nestor_available()`) means the Forge's own
 test suite must stay green without it, and this fixture must not be the
 thing that makes it require Nestor.
 """
+
 from __future__ import annotations
 
 import pytest

@@ -5,6 +5,7 @@ present, this proves `verified_by` is no longer a string: enrollment is a
 provisional gate-bound seal, ratification is a checkpoint signed by the
 verifier's key, and `witnessed` refuses a same-hand or wrong-key ratification.
 """
+
 import hashlib
 import hmac
 import os
@@ -23,6 +24,7 @@ from forge.trust import WitnessResult, enroll, promotion_lineage, ratify, witnes
 class _KeySigner:
     """A deterministic key signer for the verifier — the home key stands in for
     a PGP/ed25519 key here. Two different keys are two different hands."""
+
     def __init__(self, key: bytes = b"verifier-key"):
         self.key = key
 
@@ -35,7 +37,9 @@ class _KeySigner:
 
 AUTHOR = "agent:vishwakarma"
 PROMO = {
-    "app_id": "the-forge", "author": AUTHOR, "verified_by": "rudi193",
+    "app_id": "the-forge",
+    "author": AUTHOR,
+    "verified_by": "rudi193",
     "repo_url": "https://github.com/forge-play/Forge",
 }
 

@@ -19,6 +19,7 @@ Two different things are proven here, on purpose:
 The sandbox is a fake repo under `tmp_path` with its own manifest, so nothing
 here touches the real pins; the real pins are read once, by the first test.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -46,8 +47,13 @@ def _sha(text: str) -> str:
 
 
 def _pin(path: str, sha: str, origin: str = _ORIGIN, body_from: str | None = None) -> dict:
-    return {"path": path, "origin": origin, "body_from": body_from,
-            "sha256": sha, "note": "sandbox"}
+    return {
+        "path": path,
+        "origin": origin,
+        "body_from": body_from,
+        "sha256": sha,
+        "note": "sandbox",
+    }
 
 
 def _sandbox(tmp_path: Path, files: dict[str, str], pins: list[dict]) -> tuple[Path, Path]:
@@ -79,15 +85,21 @@ def test_the_real_manifest_pins_what_the_repo_says_it_vendors():
     and a pin must be a real file with a full SHA-256."""
     pins = json.loads(vsc.MANIFEST.read_text(encoding="utf-8"))["pins"]
     paths = {p["path"] for p in pins}
-    assert {"forge/friction_floor.py", "forge/human_loop.py",
-            "forge/model_egress.py", "tools/changelog_dedup.py"} <= paths
+    assert {
+        "forge/friction_floor.py",
+        "forge/human_loop.py",
+        "forge/model_egress.py",
+        "tools/changelog_dedup.py",
+    } <= paths
     for pin in pins:
         assert (_REPO / pin["path"]).is_file(), pin["path"]
         assert len(pin["sha256"]) == 64 and int(pin["sha256"], 16) >= 0, pin["path"]
         assert pin["origin"] == "self" or ":" in pin["origin"], (
             f"{pin['path']}: origin must be `self` or `<org/repo>:<path>`"
         )
-        assert pin["note"].strip(), f"{pin['path']}: a pin without a note is a number nobody decided"
+        assert pin["note"].strip(), (
+            f"{pin['path']}: a pin without a note is a number nobody decided"
+        )
 
 
 # ── the sandbox: a matching pin passes ───────────────────────────────────────
@@ -95,8 +107,9 @@ def test_the_real_manifest_pins_what_the_repo_says_it_vendors():
 
 def test_a_matching_whole_file_pin_passes(tmp_path):
     text = _HEADER + _BODY
-    manifest, root = _sandbox(tmp_path, {"pkg/example.py": text},
-                              [_pin("pkg/example.py", _sha(text))])
+    manifest, root = _sandbox(
+        tmp_path, {"pkg/example.py": text}, [_pin("pkg/example.py", _sha(text))]
+    )
     assert vsc.drifts(manifest, root) == []
 
 
@@ -109,8 +122,8 @@ def test_a_body_pin_lets_the_header_above_it_change(tmp_path):
     assert vsc.drifts(manifest, root) == []
 
     (root / "pkg" / "example.py").write_text(
-        "# a rewritten header, twice as long\n# with a second line\n" + _BODY,
-        encoding="utf-8")
+        "# a rewritten header, twice as long\n# with a second line\n" + _BODY, encoding="utf-8"
+    )
     assert vsc.drifts(manifest, root) == [], "a header edit above the body is not drift"
 
 
@@ -153,8 +166,8 @@ def test_a_vanished_body_from_line_fires(tmp_path):
     pin = _pin("pkg/example.py", _sha(_BODY), body_from=_BODY_FIRST_LINE)
     manifest, root = _sandbox(tmp_path, {"pkg/example.py": _HEADER + _BODY}, [pin])
     (root / "pkg" / "example.py").write_text(
-        _HEADER + _BODY.replace(_BODY_FIRST_LINE, '"""renamed first line."""'),
-        encoding="utf-8")
+        _HEADER + _BODY.replace(_BODY_FIRST_LINE, '"""renamed first line."""'), encoding="utf-8"
+    )
     (line,) = vsc.drifts(manifest, root)
     assert "no line reads" in line and _BODY_FIRST_LINE in line, line
 
@@ -163,8 +176,11 @@ def test_a_self_origin_drift_says_it_is_a_fleet_event(tmp_path):
     """Planted on a `self` pin: this repo is the canonical home, so "re-sync
     from self" would be nonsense. The advice must be the decision, not a
     re-sync, and must say the consumers have to hear about it."""
-    manifest, root = _sandbox(tmp_path, {"tools/canon.py": _BODY},
-                              [_pin("tools/canon.py", _sha(_BODY + "\n"), origin="self")])
+    manifest, root = _sandbox(
+        tmp_path,
+        {"tools/canon.py": _BODY},
+        [_pin("tools/canon.py", _sha(_BODY + "\n"), origin="self")],
+    )
     (line,) = vsc.drifts(manifest, root)
     assert "re-sync" not in line and "fleet event" in line and "--print" in line, line
 
@@ -180,8 +196,7 @@ def test_the_plant_is_the_same_checker_the_real_test_runs():
 
 
 def _run(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, str(_TOOL), *args],
-                          capture_output=True, text=True)
+    return subprocess.run([sys.executable, str(_TOOL), *args], capture_output=True, text=True)
 
 
 def test_the_cli_exits_non_zero_naming_every_drift(tmp_path):
@@ -203,8 +218,11 @@ def test_print_shows_the_current_hash_for_each_pin(tmp_path):
     """`--print` is how a deliberate update becomes one command: the output
     is the hash to paste, beside the path, in manifest order, exit 0 even
     while the pins are stale."""
-    manifest, root = _sandbox(tmp_path, {"a.py": "a\n", "b.py": "b\n"},
-                              [_pin("a.py", "0" * 64), _pin("b.py", _sha("b\n"))])
+    manifest, root = _sandbox(
+        tmp_path,
+        {"a.py": "a\n", "b.py": "b\n"},
+        [_pin("a.py", "0" * 64), _pin("b.py", _sha("b\n"))],
+    )
     r = _run("--print", "--manifest", str(manifest), "--root", str(root))
     assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
     expected = [_sha("a\n") + "  a.py", _sha("b\n") + "  b.py"]
@@ -223,6 +241,7 @@ def test_ci_runs_the_checker_as_its_own_step():
     trim cannot drop it silently."""
     yaml = pytest.importorskip("yaml", reason="PyYAML needed to read the workflow")
     wf = yaml.safe_load((_REPO / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8"))
-    runs = [str(step.get("run", "")) for job in wf["jobs"].values()
-            for step in job.get("steps", [])]
+    runs = [
+        str(step.get("run", "")) for job in wf["jobs"].values() for step in job.get("steps", [])
+    ]
     assert any("tools/vendor_sync_check.py" in run for run in runs), runs

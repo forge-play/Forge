@@ -27,6 +27,7 @@ fork IS; a proposer that hides a choice inside a file_write has not made a
 decision the engine can see, and the panel (not this module) is what catches
 that class.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -34,8 +35,16 @@ from dataclasses import dataclass, field
 from .checkpoint import Decision, Option
 from .plan_shape import FileWrite, Fork, PlanDoc
 
-__all__ = ["Extracted", "Refusal", "Extraction", "extract",
-           "ORIGIN_ENTRY", "ORIGIN_FORK", "ORIGIN_CONFLICT", "DECISION_TYPE_CONFLICT"]
+__all__ = [
+    "Extracted",
+    "Refusal",
+    "Extraction",
+    "extract",
+    "ORIGIN_ENTRY",
+    "ORIGIN_FORK",
+    "ORIGIN_CONFLICT",
+    "DECISION_TYPE_CONFLICT",
+]
 
 ORIGIN_ENTRY = "entry-major"
 ORIGIN_FORK = "fork"
@@ -47,10 +56,11 @@ DECISION_TYPE_CONFLICT = "conflicting-write"
 class Extracted:
     """One decision and where it came from — enough for `build_loop` to put
     the answer back into the plan."""
+
     decision: Decision
-    origin: str                          # ORIGIN_*
-    index: int | None = None             # the plan entry (fork / first conflicting write)
-    indices: tuple[int, ...] = ()        # R3: every entry that conflicts
+    origin: str  # ORIGIN_*
+    index: int | None = None  # the plan entry (fork / first conflicting write)
+    indices: tuple[int, ...] = ()  # R3: every entry that conflicts
     recommended: str | None = None
     confidence: float | None = None
 
@@ -76,10 +86,18 @@ class Extraction:
 
     def to_dict(self) -> dict:
         return {
-            "decisions": [{"decision_type": x.decision.decision_type, "surface": x.decision.surface,
-                           "options": [o.label for o in x.decision.options], "origin": x.origin,
-                           "index": x.index, "recommended": x.recommended, "confidence": x.confidence}
-                          for x in self.items],
+            "decisions": [
+                {
+                    "decision_type": x.decision.decision_type,
+                    "surface": x.decision.surface,
+                    "options": [o.label for o in x.decision.options],
+                    "origin": x.origin,
+                    "index": x.index,
+                    "recommended": x.recommended,
+                    "confidence": x.confidence,
+                }
+                for x in self.items
+            ],
             "refused": [{"index": r.index, "reason": r.reason} for r in self.refused],
             "nothing_to_decide": self.nothing_to_decide,
         }
@@ -102,9 +120,12 @@ def _r1_entry(entry) -> Extracted | None:
     options = tuple(Option(label=m, tradeoff="; ".join(reasons.get(m, []))) for m in majors)
     sentence = getattr(entry, "sentence", "")
     return Extracted(
-        decision=Decision(decision_type="major",
-                          surface=f"'{sentence}' could be {', '.join(majors)} — which major?",
-                          options=options, recommended=None),
+        decision=Decision(
+            decision_type="major",
+            surface=f"'{sentence}' could be {', '.join(majors)} — which major?",
+            options=options,
+            recommended=None,
+        ),
         origin=ORIGIN_ENTRY,
     )
 
@@ -114,10 +135,17 @@ def _r2_fork(i: int, f: Fork) -> Extracted | Refusal:
     if problems:
         return Refusal(index=i, reason="; ".join(problems))
     return Extracted(
-        decision=Decision(decision_type=f.decision_type, surface=f.surface,
-                          options=tuple(Option(label=o.label, tradeoff=o.tradeoff) for o in f.options),
-                          recommended=f.recommended),
-        origin=ORIGIN_FORK, index=i, indices=(i,), recommended=f.recommended, confidence=f.confidence,
+        decision=Decision(
+            decision_type=f.decision_type,
+            surface=f.surface,
+            options=tuple(Option(label=o.label, tradeoff=o.tradeoff) for o in f.options),
+            recommended=f.recommended,
+        ),
+        origin=ORIGIN_FORK,
+        index=i,
+        indices=(i,),
+        recommended=f.recommended,
+        confidence=f.confidence,
     )
 
 
@@ -139,12 +167,19 @@ def _r3_conflicts(plan: PlanDoc) -> list[Extracted]:
             Option(label=f"entry {i}", tradeoff=f"{path}: {_first_line(plan.entries[i].content)}")  # type: ignore[union-attr]
             for i in idxs
         )
-        out.append(Extracted(
-            decision=Decision(decision_type=DECISION_TYPE_CONFLICT,
-                              surface=f"{len(idxs)} entries write {path}; which content stands?",
-                              options=options, recommended=None),
-            origin=ORIGIN_CONFLICT, index=idxs[0], indices=tuple(idxs),
-        ))
+        out.append(
+            Extracted(
+                decision=Decision(
+                    decision_type=DECISION_TYPE_CONFLICT,
+                    surface=f"{len(idxs)} entries write {path}; which content stands?",
+                    options=options,
+                    recommended=None,
+                ),
+                origin=ORIGIN_CONFLICT,
+                index=idxs[0],
+                indices=tuple(idxs),
+            )
+        )
     return out
 
 
@@ -166,8 +201,12 @@ def extract(plan: PlanDoc, *, entry=None) -> Extraction:
 if __name__ == "__main__":
     import argparse
     import json
+
     from . import plan_shape
-    p = argparse.ArgumentParser(prog="decision_extract.py", description="what decisions does this plan hold?")
+
+    p = argparse.ArgumentParser(
+        prog="decision_extract.py", description="what decisions does this plan hold?"
+    )
     p.add_argument("plan")
     a = p.parse_args()
     print(json.dumps(extract(plan_shape.load(a.plan)).to_dict(), indent=2))

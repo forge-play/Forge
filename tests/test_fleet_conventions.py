@@ -43,6 +43,7 @@ Every scan helper below is planted in this file, per tests/test_scans_fire.py
 (#26); the pins are hash comparisons the meta-scan cannot see and are proven
 by their own plant.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -111,7 +112,9 @@ def test_the_manifest_pins_the_same_document_to_the_same_hash():
     same number, or one of the two is stale. Held here, not only by the
     checker, so a re-save that updates one and forgets the other fails on
     the test that names both."""
-    manifest = json.loads((REPO_ROOT / "tools" / "vendor_manifest.json").read_text(encoding="utf-8"))
+    manifest = json.loads(
+        (REPO_ROOT / "tools" / "vendor_manifest.json").read_text(encoding="utf-8")
+    )
     entries = [p for p in manifest["pins"] if p["path"] == "tests/fleet_conventions.json"]
     assert len(entries) == 1, "the conventions document must be pinned exactly once"
     (entry,) = entries
@@ -181,23 +184,23 @@ def test_pr_title_guard_is_present_wherever_automerge_is_armed():
         f"{RELEASE_PLEASE} no longer arms auto-merge; if that is deliberate, the "
         "rule below becomes vacuous and this assertion is the one to revisit"
     )
-    assert _missing_when_armed(
-        REPO_ROOT, RULES["required_when_release_please_arms_automerge"]
-    ) == []
+    assert (
+        _missing_when_armed(REPO_ROOT, RULES["required_when_release_please_arms_automerge"]) == []
+    )
 
 
 def test_the_configs_hidden_set_equals_the_published_set():
     text = (REPO_ROOT / RELEASE_CONFIG).read_text(encoding="utf-8")
-    assert _config_hidden_types(text) == set(RULES["hidden_types"]), (
-        RULES["sources"]["hidden_types"]
-    )
+    assert _config_hidden_types(text) == set(RULES["hidden_types"]), RULES["sources"][
+        "hidden_types"
+    ]
 
 
 def test_the_config_carries_every_required_reasoning_comment():
     text = (REPO_ROOT / RELEASE_CONFIG).read_text(encoding="utf-8")
-    assert _config_missing_comments(text, RULES["required_config_comments"]) == [], (
-        RULES["sources"]["required_config_comments"]
-    )
+    assert _config_missing_comments(text, RULES["required_config_comments"]) == [], RULES[
+        "sources"
+    ]["required_config_comments"]
 
 
 def test_contributing_names_the_test_command():
@@ -220,9 +223,9 @@ def test_trailers_workflow_is_present_because_a_pile_exists():
     assert (REPO_ROOT / PILE).exists(), (
         "docs/ideas.md is gone; " + RULES["sources"]["required_when_pile_exists"]
     )
-    assert _missing_when_pile_exists(REPO_ROOT, RULES["required_when_pile_exists"]) == [], (
-        RULES["sources"]["required_when_pile_exists"]
-    )
+    assert _missing_when_pile_exists(REPO_ROOT, RULES["required_when_pile_exists"]) == [], RULES[
+        "sources"
+    ]["required_when_pile_exists"]
 
 
 # ── the plants ──────────────────────────────────────────────────────────────
@@ -232,7 +235,7 @@ def _tree(tmp_path: Path, label: str, *, arms: bool, files: tuple[str, ...] = ()
     root = tmp_path / label
     (root / ".github" / "workflows").mkdir(parents=True)
     body = "jobs:\n  release-please:\n    steps:\n      - run: |\n"
-    body += f"          {ARMS_AUTOMERGE} \"$pr\"\n" if arms else "          gh pr list\n"
+    body += f'          {ARMS_AUTOMERGE} "$pr"\n' if arms else "          gh pr list\n"
     (root / RELEASE_PLEASE).write_text(body, encoding="utf-8")
     for f in files:
         (root / f).parent.mkdir(parents=True, exist_ok=True)
@@ -243,9 +246,10 @@ def _tree(tmp_path: Path, label: str, *, arms: bool, files: tuple[str, ...] = ()
 def test_the_armed_tree_check_fires_on_a_planted_tree_missing_the_guard(tmp_path):
     required = RULES["required_when_release_please_arms_automerge"]
     assert _missing_when_armed(_tree(tmp_path, "bare", arms=True), required) == required
-    assert _missing_when_armed(
-        _tree(tmp_path, "guarded", arms=True, files=tuple(required)), required
-    ) == []
+    assert (
+        _missing_when_armed(_tree(tmp_path, "guarded", arms=True, files=tuple(required)), required)
+        == []
+    )
     assert _missing_when_armed(_tree(tmp_path, "manual", arms=False), required) == []
 
 
@@ -254,13 +258,22 @@ def test_the_hidden_set_check_catches_a_planted_config_that_unhides_ci():
     mistake — and carries one required comment inside the package and none
     at the top level. The hidden set must read as three, not four, and the
     missing comment must be the one that is missing."""
-    planted = json.dumps({"packages": {".": {"changelog-sections": [
-        {"type": "feat", "section": "Added"},
-        {"type": "docs", "section": "Docs", "hidden": True},
-        {"type": "test", "section": "Tests", "hidden": True},
-        {"type": "ci", "section": "CI"},
-        {"type": "chore", "section": "Chores", "hidden": True},
-    ], "$comment-what-cuts-a-release": "kept"}}})
+    planted = json.dumps(
+        {
+            "packages": {
+                ".": {
+                    "changelog-sections": [
+                        {"type": "feat", "section": "Added"},
+                        {"type": "docs", "section": "Docs", "hidden": True},
+                        {"type": "test", "section": "Tests", "hidden": True},
+                        {"type": "ci", "section": "CI"},
+                        {"type": "chore", "section": "Chores", "hidden": True},
+                    ],
+                    "$comment-what-cuts-a-release": "kept",
+                }
+            }
+        }
+    )
     assert _config_hidden_types(planted) == {"chore", "docs", "test"}
     assert _config_missing_comments(planted, RULES["required_config_comments"]) == [
         "$comment-hidden-rule"
@@ -272,15 +285,19 @@ def test_the_comment_check_catches_a_top_level_comment_and_a_missing_one():
     level, none in the package — must clear; with one of them removed, that
     one must be reported. Both levels count, and absence at both is absence."""
     required = RULES["required_config_comments"]
-    top_level = json.dumps({
-        "packages": {".": {"changelog-sections": []}},
-        **{c: "kept" for c in required},
-    })
+    top_level = json.dumps(
+        {
+            "packages": {".": {"changelog-sections": []}},
+            **{c: "kept" for c in required},
+        }
+    )
     assert _config_missing_comments(top_level, required) == []
-    one_gone = json.dumps({
-        "packages": {".": {"changelog-sections": []}},
-        required[0]: "kept",
-    })
+    one_gone = json.dumps(
+        {
+            "packages": {".": {"changelog-sections": []}},
+            required[0]: "kept",
+        }
+    )
     assert _config_missing_comments(one_gone, required) == required[1:]
 
 

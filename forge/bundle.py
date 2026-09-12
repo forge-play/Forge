@@ -23,19 +23,28 @@ can still run `check` on the two files without it (the digest recomputation
 is Nestor's and is reported as `not_checked` when Nestor is absent, never as
 clean).
 """
+
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 from . import paths
 
-__all__ = ["BUNDLE_DIR", "BUNDLE_NAME", "HEAD_NAME", "BundleError", "Cut", "Check",
-           "main",
-           "cut", "check", "find_databases"]
+__all__ = [
+    "BUNDLE_DIR",
+    "BUNDLE_NAME",
+    "HEAD_NAME",
+    "BundleError",
+    "Cut",
+    "Check",
+    "main",
+    "cut",
+    "check",
+    "find_databases",
+]
 
 #: Where a checkout keeps its bundle. A dot-directory at the repo root, so it
 #: never collides with a package named `forge` and is visibly not code.
@@ -61,9 +70,15 @@ class Cut:
     head_path: Path
 
     def to_dict(self) -> dict:
-        return {"project_id": self.project_id, "head": self.head, "digest": self.digest,
-                "cut_at": self.cut_at, "counts": dict(self.counts),
-                "bundle": str(self.bundle_path), "HEAD": str(self.head_path)}
+        return {
+            "project_id": self.project_id,
+            "head": self.head,
+            "digest": self.digest,
+            "cut_at": self.cut_at,
+            "counts": dict(self.counts),
+            "bundle": str(self.bundle_path),
+            "HEAD": str(self.head_path),
+        }
 
 
 @dataclass
@@ -71,14 +86,19 @@ class Check:
     ok: bool
     problems: list[str] = field(default_factory=list)
     head: dict | None = None
-    digest_recomputed: str = "not_checked"   # "ok" | "mismatch" | "not_checked" (Nestor absent)
+    digest_recomputed: str = "not_checked"  # "ok" | "mismatch" | "not_checked" (Nestor absent)
     databases: list[str] = field(default_factory=list)
-    state: str = "ok"                        # "ok" | "uncut" | "failed"
+    state: str = "ok"  # "ok" | "uncut" | "failed"
 
     def to_dict(self) -> dict:
-        return {"ok": self.ok, "state": self.state, "problems": list(self.problems),
-                "head": self.head, "digest_recomputed": self.digest_recomputed,
-                "databases": list(self.databases)}
+        return {
+            "ok": self.ok,
+            "state": self.state,
+            "problems": list(self.problems),
+            "head": self.head,
+            "digest_recomputed": self.digest_recomputed,
+            "databases": list(self.databases),
+        }
 
 
 def _nestor():
@@ -86,8 +106,10 @@ def _nestor():
         from nestor import cascade, ledger, portable  # type: ignore[import-not-found]
         from nestor.sqlite_store import SqliteStore  # type: ignore[import-not-found]
     except ImportError as e:  # pragma: no cover - the no-extras leg
-        raise BundleError("Nestor is unavailable; there is no store to cut a bundle from. "
-                          "Install it: pip install nestor-meaning.") from e
+        raise BundleError(
+            "Nestor is unavailable; there is no store to cut a bundle from. "
+            "Install it: pip install nestor-meaning."
+        ) from e
     return cascade, ledger, portable, SqliteStore
 
 
@@ -103,7 +125,9 @@ def find_databases(root: str | Path) -> list[str]:
     for p in root.rglob("*"):
         if ".git" in p.parts:
             continue
-        if p.is_file() and (p.name == "nestor.db" or p.suffix.lower() in (".db", ".sqlite", ".sqlite3")):
+        if p.is_file() and (
+            p.name == "nestor.db" or p.suffix.lower() in (".db", ".sqlite", ".sqlite3")
+        ):
             found.append(str(p.relative_to(root)))
     return sorted(found)
 
@@ -118,16 +142,22 @@ def cut(project_id: str, repo_root: str | Path, *, now: datetime | None = None) 
     repo_root = Path(repo_root)
     db = paths.project_nestor(project_id)
     if not db.exists():
-        raise BundleError(f"no project store for {project_id!r} at {db}; the entry creates it on first ask")
+        raise BundleError(
+            f"no project store for {project_id!r} at {db}; the entry creates it on first ask"
+        )
     dbs = find_databases(repo_root)
     if dbs:
-        raise BundleError("a workshop checkout never contains a Nestor database; found: " + ", ".join(dbs))
+        raise BundleError(
+            "a workshop checkout never contains a Nestor database; found: " + ", ".join(dbs)
+        )
 
     ledger_path = paths.project_nestor_ledger(project_id)
     cascade.set_ledger_path(ledger_path)
     ok, detail = ledger.verify(str(ledger_path))
     if not ok:
-        raise BundleError(f"the project ledger does not verify; refusing to cut at a head nothing vouches for: {detail}")
+        raise BundleError(
+            f"the project ledger does not verify; refusing to cut at a head nothing vouches for: {detail}"
+        )
     head = ledger.head(str(ledger_path))
 
     store = SqliteStore(str(db))
@@ -154,8 +184,15 @@ def cut(project_id: str, repo_root: str | Path, *, now: datetime | None = None) 
         "store": f"paths.project_nestor({project_id!r})",
     }
     head_path.write_text(json.dumps(record, indent=1, sort_keys=True) + "\n", encoding="utf-8")
-    return Cut(project_id=project_id, head=head, digest=bundle["digest"], cut_at=cut_at,
-               counts=record["counts"], bundle_path=bundle_path, head_path=head_path)
+    return Cut(
+        project_id=project_id,
+        head=head,
+        digest=bundle["digest"],
+        cut_at=cut_at,
+        counts=record["counts"],
+        bundle_path=bundle_path,
+        head_path=head_path,
+    )
 
 
 def check(repo_root: str | Path) -> Check:
@@ -235,6 +272,7 @@ def check(repo_root: str | Path) -> Check:
 # step 6 of the first-bite sequence (the-forge-workshop.md) unreachable from
 # a real install. `tools/store_export.py` is now a shim over this.
 
+
 def main(argv: list[str] | None = None) -> int:
     """`forge-export` — cut a workshop's bundle into its checkout, or check one.
 
@@ -249,12 +287,18 @@ def main(argv: list[str] | None = None) -> int:
     import argparse
     import sys
 
-    ap = argparse.ArgumentParser(prog="forge-export",
-                                 description=(main.__doc__ or "").strip().split("\n")[0])
+    ap = argparse.ArgumentParser(
+        prog="forge-export", description=(main.__doc__ or "").strip().split("\n")[0]
+    )
     ap.add_argument("--repo-root", required=True, help="the workshop checkout")
-    ap.add_argument("--project-id", help="the per-project Nestor to cut from (required unless --check)")
-    ap.add_argument("--check", action="store_true",
-                    help=f"re-read {BUNDLE_DIR}/{HEAD_NAME} and {BUNDLE_DIR}/{BUNDLE_NAME} and report")
+    ap.add_argument(
+        "--project-id", help="the per-project Nestor to cut from (required unless --check)"
+    )
+    ap.add_argument(
+        "--check",
+        action="store_true",
+        help=f"re-read {BUNDLE_DIR}/{HEAD_NAME} and {BUNDLE_DIR}/{BUNDLE_NAME} and report",
+    )
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
 
@@ -263,15 +307,19 @@ def main(argv: list[str] | None = None) -> int:
         if a.json:
             print(json.dumps(c.to_dict(), indent=2, sort_keys=True))
         elif c.state == "uncut":
-            print(f"uncut — no {BUNDLE_DIR}/{HEAD_NAME} and no {BUNDLE_DIR}/{BUNDLE_NAME} in "
-                  f"{a.repo_root}. Nothing has been cut yet; this is not a failure.")
+            print(
+                f"uncut — no {BUNDLE_DIR}/{HEAD_NAME} and no {BUNDLE_DIR}/{BUNDLE_NAME} in "
+                f"{a.repo_root}. Nothing has been cut yet; this is not a failure."
+            )
         else:
             print("ok" if c.ok else "FAILED")
             for p in c.problems:
                 print(f"  - {p}")
             if c.head:
-                print(f"  head {c.head.get('head', '')[:16]}  digest {c.head.get('digest', '')[:16]}  "
-                      f"cut {c.head.get('cut_at', '')}  recomputed: {c.digest_recomputed}")
+                print(
+                    f"  head {c.head.get('head', '')[:16]}  digest {c.head.get('digest', '')[:16]}  "
+                    f"cut {c.head.get('cut_at', '')}  recomputed: {c.digest_recomputed}"
+                )
         return 0 if c.ok else 1
 
     if not a.project_id:
@@ -284,12 +332,15 @@ def main(argv: list[str] | None = None) -> int:
     if a.json:
         print(json.dumps(c.to_dict(), indent=2, sort_keys=True))
     else:
-        print(f"cut {a.project_id} at head {c.head[:16]}  digest {c.digest[:16]}  "
-              f"pairs {c.counts.get('pairs', 0)} sealed {c.counts.get('sealed', 0)}")
+        print(
+            f"cut {a.project_id} at head {c.head[:16]}  digest {c.digest[:16]}  "
+            f"pairs {c.counts.get('pairs', 0)} sealed {c.counts.get('sealed', 0)}"
+        )
         print(f"  {c.bundle_path}\n  {c.head_path}")
     return 0
 
 
 if __name__ == "__main__":
     import sys
+
     sys.exit(main())

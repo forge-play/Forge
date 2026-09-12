@@ -26,6 +26,7 @@ checked property rather than a comment.
 Walks the AST rather than grepping, so a comment that names willow_mcp (there
 are many — the vendor notes) is not a violation and a real import is.
 """
+
 from __future__ import annotations
 
 import ast
@@ -57,8 +58,11 @@ def _imports_of(path: Path) -> list[str]:
 def _forbidden_imports(path: Path) -> list[str]:
     """The imports in `path` that reach into a forbidden root, dotted
     submodules included; `willow_mcp_tools` would not match `willow_mcp`."""
-    return [n for n in _imports_of(path)
-            if any(n == r or n.startswith(r + ".") for r in _FORBIDDEN_ROOTS)]
+    return [
+        n
+        for n in _imports_of(path)
+        if any(n == r or n.startswith(r + ".") for r in _FORBIDDEN_ROOTS)
+    ]
 
 
 @pytest.mark.parametrize("path", list(_py_files()), ids=lambda p: str(p.relative_to(_REPO)))
@@ -99,6 +103,8 @@ def test_the_scan_catches_a_planted_reach_back(tmp_path):
         encoding="utf-8",
     )
     assert _forbidden_imports(probe) == [
-        "willow_mcp", "willow_mcp.human_loop", "willow_mcp.friction_floor"
+        "willow_mcp",
+        "willow_mcp.human_loop",
+        "willow_mcp.friction_floor",
     ]
     assert "willow_mcp_tools" in _imports_of(probe), "the reader saw it; the filter excluded it"

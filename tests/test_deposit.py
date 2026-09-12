@@ -3,6 +3,7 @@
 The store-backed tests need Nestor and skip without it, like tests/test_entry.py.
 The table, the regex and the inbox reader run on the base install.
 """
+
 from __future__ import annotations
 
 import json
@@ -23,22 +24,26 @@ SHA = "cc9aab19ba2502e14e331e20e699f634fb4cb1a2"
 
 # ── the table ──────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("status,conclusion,state", [
-    ("completed", "success", "pass"),
-    ("completed", "failure", "fail"),
-    ("completed", "startup_failure", "fail"),
-    ("completed", "cancelled", "could_not_run"),
-    ("completed", "timed_out", "could_not_run"),
-    ("completed", "skipped", "could_not_run"),
-    ("completed", "neutral", "could_not_run"),
-    ("completed", "stale", "could_not_run"),
-    ("completed", "", "could_not_run"),
-    ("completed", None, "could_not_run"),
-    ("completed", "something_new", "could_not_run"),
-    ("in_progress", "", "pending"),
-    ("queued", None, "pending"),
-    (None, "success", "pending"),
-])
+
+@pytest.mark.parametrize(
+    "status,conclusion,state",
+    [
+        ("completed", "success", "pass"),
+        ("completed", "failure", "fail"),
+        ("completed", "startup_failure", "fail"),
+        ("completed", "cancelled", "could_not_run"),
+        ("completed", "timed_out", "could_not_run"),
+        ("completed", "skipped", "could_not_run"),
+        ("completed", "neutral", "could_not_run"),
+        ("completed", "stale", "could_not_run"),
+        ("completed", "", "could_not_run"),
+        ("completed", None, "could_not_run"),
+        ("completed", "something_new", "could_not_run"),
+        ("in_progress", "", "pending"),
+        ("queued", None, "pending"),
+        (None, "success", "pending"),
+    ],
+)
 def test_the_state_table(status, conclusion, state):
     assert deposit.outcome_state(status, conclusion) == state
     assert state in deposit.STATES
@@ -51,9 +56,12 @@ def test_four_states_and_could_not_run_is_never_clean():
 
 # ── the trailer ────────────────────────────────────────────────────────────
 
+
 def test_decision_trailer_is_read_by_rule():
-    body = ("feat: the thing\n\nDecision: 2c2b2c3e\nsome prose\n"
-            "decision: ABCDEF0123\nDecision: 2c2b2c3e\nDecision: short\nNot Decision: 12345678\n")
+    body = (
+        "feat: the thing\n\nDecision: 2c2b2c3e\nsome prose\n"
+        "decision: ABCDEF0123\nDecision: 2c2b2c3e\nDecision: short\nNot Decision: 12345678\n"
+    )
     assert deposit.extract_decision_refs(body) == ["2c2b2c3e", "abcdef0123"]
     assert deposit.extract_decision_refs("") == []
     assert deposit.extract_decision_refs("Decision:\n") == []
@@ -61,21 +69,45 @@ def test_decision_trailer_is_read_by_rule():
 
 # ── the inbox (shape C) ────────────────────────────────────────────────────
 
+
 def _item(tmp: Path, fname: str, **fields) -> None:
     (tmp / f"{fname}.json").write_text(json.dumps(fields), encoding="utf-8")
 
 
 def test_inbox_reader_keys_on_head_sha_and_reports_the_rest(tmp_path):
-    _item(tmp_path, "a", kind="check_run", head_sha=SHA, name="Tests", status="completed",
-          conclusion="success", check_id=11, html_url="u1", repo=REPO)
-    _item(tmp_path, "b", kind="check_run", head_sha=SHA, name="CodeQL", conclusion="cancelled", check_id=12)
-    _item(tmp_path, "c", kind="check_run", name="Tests", conclusion="failure")  # the bridge today: no sha
+    _item(
+        tmp_path,
+        "a",
+        kind="check_run",
+        head_sha=SHA,
+        name="Tests",
+        status="completed",
+        conclusion="success",
+        check_id=11,
+        html_url="u1",
+        repo=REPO,
+    )
+    _item(
+        tmp_path,
+        "b",
+        kind="check_run",
+        head_sha=SHA,
+        name="CodeQL",
+        conclusion="cancelled",
+        check_id=12,
+    )
+    _item(
+        tmp_path, "c", kind="check_run", name="Tests", conclusion="failure"
+    )  # the bridge today: no sha
     _item(tmp_path, "d", kind="pull_request", number=4)
     (tmp_path / "e.json").write_text("{not json", encoding="utf-8")
     r = deposit.read_inbox(tmp_path)
     assert set(r.keyed) == {SHA}
     assert sorted(x.name for x in r.keyed[SHA]) == ["CodeQL", "Tests"]
-    assert [x.state for x in sorted(r.keyed[SHA], key=lambda x: x.name)] == ["could_not_run", "pass"]
+    assert [x.state for x in sorted(r.keyed[SHA], key=lambda x: x.name)] == [
+        "could_not_run",
+        "pass",
+    ]
     assert r.repo[SHA] == REPO
     assert [u["why"] for u in r.unkeyed] == ["no head_sha", "unreadable"]
     assert r.skipped == 1
@@ -88,35 +120,47 @@ def test_inbox_reader_on_a_missing_directory_is_empty_not_an_error(tmp_path):
 
 # ── the store ──────────────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def store(tmp_path):
     if not _HAS_NESTOR:
         pytest.skip("nestor not installed")
     from nestor import cascade
     from nestor.sqlite_store import SqliteStore
+
     cascade.set_ledger_path(tmp_path / "ledger.jsonl")
     s = SqliteStore(str(tmp_path / "nestor.db"))
     s.memory_init()  # a project store is created by the entry's first ask; mirror that
     return s
 
 
-RUNS = [Run("Tests", "completed", "success", "1", "u1"),
-        Run("CodeQL", "completed", "success", "2", "u2"),
-        Run("Release Please", "completed", "cancelled", "3", "u3")]
+RUNS = [
+    Run("Tests", "completed", "success", "1", "u1"),
+    Run("CodeQL", "completed", "success", "2", "u2"),
+    Run("Release Please", "completed", "cancelled", "3", "u3"),
+]
 
 
 @_needs_nestor
 def test_deposit_lands_as_a_draft_in_the_ci_domain(store):
-    d = deposit.deposit_ci(store, repo=REPO, sha=SHA, runs=RUNS,
-                           pr={"number": 4, "title": "vendoring goes home", "merged_at": "2026-09-03"},
-                           actor_type="Bot", via="webhook_inbox",
-                           now=datetime(2026, 9, 3, tzinfo=timezone.utc))
+    d = deposit.deposit_ci(
+        store,
+        repo=REPO,
+        sha=SHA,
+        runs=RUNS,
+        pr={"number": 4, "title": "vendoring goes home", "merged_at": "2026-09-03"},
+        actor_type="Bot",
+        via="webhook_inbox",
+        now=datetime(2026, 9, 3, tzinfo=timezone.utc),
+    )
     row = d.row
     assert row["status"] == "draft"
     assert row["source_lang"] == "ci" and row["target_lang"] == "ci"
     assert row["source_text"] == f"How did CI go for {REPO}@{SHA}?"
-    assert row["target_text"] == ("pass: CodeQL success (run 2); could_not_run: Release Please cancelled (run 3); "
-                                  "pass: Tests success (run 1)")
+    assert row["target_text"] == (
+        "pass: CodeQL success (run 2); could_not_run: Release Please cancelled (run 3); "
+        "pass: Tests success (run 1)"
+    )
     assert row["reason"].startswith('PR #4 "vendoring goes home" merged 2026-09-03')
     assert row["origin"] == f"{REPO}@{SHA} actor=Bot via=webhook_inbox at=2026-09-03T00:00:00+00:00"
     assert d.superseded is None
@@ -127,6 +171,7 @@ def test_deposit_lands_as_a_draft_in_the_ci_domain(store):
 @_needs_nestor
 def test_the_decision_verbs_are_blind_to_ci_rows(store):
     from nestor.decision import DecisionMemory
+
     deposit.deposit_ci(store, repo=REPO, sha=SHA, runs=RUNS, actor_type="User", via="gh")
     DecisionMemory(store)  # the decision domain, opened the way the entry opens it
     rows = store.memory_list(limit=1000)
@@ -135,9 +180,13 @@ def test_the_decision_verbs_are_blind_to_ci_rows(store):
 
 @_needs_nestor
 def test_a_rerun_supersedes_and_the_question_is_stable(store):
-    first = deposit.deposit_ci(store, repo=REPO, sha=SHA, runs=RUNS, actor_type="Bot", via="webhook_inbox")
+    first = deposit.deposit_ci(
+        store, repo=REPO, sha=SHA, runs=RUNS, actor_type="Bot", via="webhook_inbox"
+    )
     rerun = [Run("Tests", "completed", "failure", "9", "u9")]
-    second = deposit.deposit_ci(store, repo=REPO, sha=SHA, runs=rerun, actor_type="Bot", via="webhook_inbox")
+    second = deposit.deposit_ci(
+        store, repo=REPO, sha=SHA, runs=rerun, actor_type="Bot", via="webhook_inbox"
+    )
     assert second.row["source_text"] == first.row["source_text"]
     assert second.row["id"] != first.row["id"]
     assert second.superseded == first.row["id"] and second.row["status"] == "draft"
@@ -146,7 +195,7 @@ def test_a_rerun_supersedes_and_the_question_is_stable(store):
     assert old["target_text"] == first.row["target_text"]
     assert [r["id"] for r in store.memory_lineage(second.row["id"])] == [first.row["id"]]
     assert store.memory_edges_from(second.row["id"]) == [], "a revision is lineage, not an edge"
-    live = store.memory_list(limit=100)            # 0.19.1: live rows only, by default
+    live = store.memory_list(limit=100)  # 0.19.1: live rows only, by default
     assert [r["id"] for r in live] == [second.row["id"]]
     assert deposit.newest_deposit(store, REPO)["id"] == second.row["id"]
     # the same outcome again is one fact, not a third row
@@ -159,9 +208,14 @@ def test_a_rerun_supersedes_and_the_question_is_stable(store):
 @_needs_nestor
 def test_a_pending_run_refuses_the_whole_deposit(store):
     with pytest.raises(deposit.DepositError, match="pending"):
-        deposit.deposit_ci(store, repo=REPO, sha=SHA,
-                           runs=RUNS + [Run("Nightly", "in_progress", "")],
-                           actor_type="Bot", via="webhook_inbox")
+        deposit.deposit_ci(
+            store,
+            repo=REPO,
+            sha=SHA,
+            runs=RUNS + [Run("Nightly", "in_progress", "")],
+            actor_type="Bot",
+            via="webhook_inbox",
+        )
     assert store.memory_list(limit=10) == []
 
 
@@ -170,18 +224,23 @@ def test_empty_runs_and_bad_actor_refuse(store):
     with pytest.raises(deposit.DepositError, match="nothing was read"):
         deposit.deposit_ci(store, repo=REPO, sha=SHA, runs=[], actor_type="Bot", via="gh")
     with pytest.raises(deposit.DepositError, match="actor_type"):
-        deposit.deposit_ci(store, repo=REPO, sha=SHA, runs=RUNS, actor_type="willows-bot[bot]", via="gh")
+        deposit.deposit_ci(
+            store, repo=REPO, sha=SHA, runs=RUNS, actor_type="willows-bot[bot]", via="gh"
+        )
 
 
 @_needs_nestor
 def test_links_are_refines_edges_and_unmatched_or_ambiguous_refs_are_reported(store):
     from nestor.decision import DecisionMemory
+
     dm = DecisionMemory(store)
     a = dm.propose("Which domain holds a CI outcome?", "ci", origin="t")
     b = dm.propose("How is a conclusion mapped?", "by table", origin="t")
-    d = deposit.deposit_ci(store, repo=REPO, sha=SHA, runs=RUNS, actor_type="Bot", via="webhook_inbox")
+    d = deposit.deposit_ci(
+        store, repo=REPO, sha=SHA, runs=RUNS, actor_type="Bot", via="webhook_inbox"
+    )
     links = deposit.link_decisions(store, d.row["id"], [a["id"][:8].upper(), "ffffffff"])
-    assert [l["decision"] for l in links.linked] == [a["id"]]
+    assert [link["decision"] for link in links.linked] == [a["id"]]
     assert links.unmatched == ["ffffffff"] and links.ambiguous == []
     edges = store.memory_edges_from(d.row["id"])
     assert [(e["kind"], e["dst_id"], e["edge_sig"]) for e in edges] == [("refines", a["id"], "")]
@@ -191,9 +250,13 @@ def test_links_are_refines_edges_and_unmatched_or_ambiguous_refs_are_reported(st
 @_needs_nestor
 def test_an_ambiguous_prefix_links_nothing(store, monkeypatch):
     """Two decisions sharing a prefix: the ref names both, so neither is linked."""
-    d = deposit.deposit_ci(store, repo=REPO, sha=SHA, runs=RUNS, actor_type="Bot", via="webhook_inbox")
-    twins = [{"id": "abcdef01-1", "source_lang": "decision", "source_text": "one"},
-             {"id": "abcdef01-2", "source_lang": "decision", "source_text": "two"}]
+    d = deposit.deposit_ci(
+        store, repo=REPO, sha=SHA, runs=RUNS, actor_type="Bot", via="webhook_inbox"
+    )
+    twins = [
+        {"id": "abcdef01-1", "source_lang": "decision", "source_text": "one"},
+        {"id": "abcdef01-2", "source_lang": "decision", "source_text": "two"},
+    ]
     monkeypatch.setattr(deposit, "_rows", lambda s: twins)
     links = deposit.link_decisions(store, d.row["id"], ["abcdef01"])
     assert links.linked == [] and links.unmatched == []
@@ -206,12 +269,14 @@ def test_a_ci_row_never_answers_a_decision_check(store):
     """The whole reason for the domain split: the entry's tier-1 ask resolves
     in `decision`, and a CI row must not be there."""
     from nestor import answer
+
     deposit.deposit_ci(store, repo=REPO, sha=SHA, runs=RUNS, actor_type="Bot", via="webhook_inbox")
     r = answer.resolve(store, f"How did CI go for {REPO}@{SHA}?", domain="decision")
     assert r.get("state") != "sealed" and r.get("verified") is not True
 
 
 # ── the age (Rule 3, second question) ──────────────────────────────────────
+
 
 def test_human_age_reads_two_units():
     assert deposit.human_age(None) == "unknown age"
@@ -225,7 +290,9 @@ def test_human_age_reads_two_units():
 def test_deposit_age_is_none_on_an_empty_store_and_reads_the_live_row(store):
     assert deposit.deposit_age(store) is None
     then = datetime(2026, 9, 3, 6, 0, tzinfo=timezone.utc)
-    deposit.deposit_ci(store, repo=REPO, sha=SHA, runs=RUNS, actor_type="Bot", via="webhook_inbox", now=then)
+    deposit.deposit_ci(
+        store, repo=REPO, sha=SHA, runs=RUNS, actor_type="Bot", via="webhook_inbox", now=then
+    )
     age = deposit.deposit_age(store, now=then.replace(hour=9))
     assert age["repo"] == REPO and age["sha"] == SHA
     assert age["states"] == {"pass": 2, "could_not_run": 1}
@@ -238,15 +305,33 @@ def test_deposit_age_is_none_on_an_empty_store_and_reads_the_live_row(store):
 
 
 def test_inbox_reader_carries_the_sender_type_verbatim(tmp_path):
-    _item(tmp_path, "a", kind="check_run", head_sha=SHA, name="Tests", conclusion="success", sender_type="Bot")
-    _item(tmp_path, "b", kind="check_run", head_sha="f" * 40, name="Tests", conclusion="success",
-          sender_type="Organization")
+    _item(
+        tmp_path,
+        "a",
+        kind="check_run",
+        head_sha=SHA,
+        name="Tests",
+        conclusion="success",
+        sender_type="Bot",
+    )
+    _item(
+        tmp_path,
+        "b",
+        kind="check_run",
+        head_sha="f" * 40,
+        name="Tests",
+        conclusion="success",
+        sender_type="Organization",
+    )
     _item(tmp_path, "c", kind="check_run", head_sha="e" * 40, name="Tests", conclusion="success")
     r = deposit.read_inbox(tmp_path)
-    assert r.actor == {SHA: "Bot", "f" * 40: "Organization"}, "verbatim, unmapped; absent stays absent"
+    assert r.actor == {SHA: "Bot", "f" * 40: "Organization"}, (
+        "verbatim, unmapped; absent stays absent"
+    )
 
 
 # ── the covenant, as a type ────────────────────────────────────────────────
+
 
 @_needs_nestor
 def test_the_only_nestor_surface_is_propose_only(store):
@@ -270,8 +355,16 @@ def test_the_only_nestor_surface_is_propose_only(store):
 #: What forge/deposit.py must never name below its docstring: the sealing
 #: vocabulary (a deposit proposes, it never seals) and the means of opening a
 #: network or running a command. The docstring may discuss all of them.
-_COVENANT_WORDS = ("seal(", "seal_edge(", "keyring", "sign_seal", "NESTOR_SEAL_KEY",
-                   "import requests", "urllib", "subprocess")
+_COVENANT_WORDS = (
+    "seal(",
+    "seal_edge(",
+    "keyring",
+    "sign_seal",
+    "NESTOR_SEAL_KEY",
+    "import requests",
+    "urllib",
+    "subprocess",
+)
 
 
 def _covenant_breaches(module_path: Path) -> list[str]:
@@ -308,4 +401,6 @@ def test_the_covenant_scan_catches_a_planted_word_below_the_docstring(tmp_path):
     assert _covenant_breaches(probe) == ["sign_seal", "subprocess"]
 
     probe.write_text('"""keyring seal( subprocess urllib"""\nx = 1\n', encoding="utf-8")
-    assert _covenant_breaches(probe) == [], "words in the docstring are the explanation, not a breach"
+    assert _covenant_breaches(probe) == [], (
+        "words in the docstring are the explanation, not a breach"
+    )

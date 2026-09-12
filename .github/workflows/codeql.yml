@@ -1,0 +1,70 @@
+name: CodeQL
+
+# The fleet CI floor's static-analysis half (decision 5, C4-codeql). Two
+# languages: `python` for the package, tools and tests, and `actions` for the
+# workflows themselves — a workflow file is code that runs with a token, and
+# the actions query pack is what catches an untrusted `${{ }}` expansion in a
+# `run:` step or an over-broad `permissions:` block. The check is its own
+# status on a pull request, separate from tests.yml's `test` aggregate,
+# because CodeQL's runtime is not a reason to hold the unit suite and the unit
+# suite is not a reason to hold a security finding.
+#
+# `schedule` runs the queries weekly against master so a query-pack update
+# that finds something in unchanged code still surfaces without waiting for
+# the next commit.
+#
+# HOW THE RESULT IS ENFORCED, AND WHY NOT BY UPLOAD
+# This repository has CodeQL *default setup* enabled — the GitHub-managed
+# configuration under Settings → Code security, which an organisation policy
+# can switch on for every eligible repository. GitHub refuses SARIF uploaded
+# by a workflow while default setup is on ("CodeQL analyses from advanced
+# configurations cannot be processed when the default setup is enabled"),
+# which is how this workflow's first run (#29, 2026-09-12) went red with both
+# analyses clean. So this workflow does not upload: `analyze` runs the queries
+# with `upload: never` and writes the SARIF to disk, and tools/codeql_gate.py
+# reads that file and fails the job naming every result. The check is then a
+# gate on findings whatever the setting says, and default setup's own scan
+# still populates the Security tab. If default setup is ever turned off and
+# the alerts should land there from here instead, set `upload: always` and
+# give the job `security-events: write` — and keep the gate: a status that is
+# green because an upload was accepted has not said the tree is clean.
+# tests/test_release_wiring.py holds this shape to the file.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  schedule:
+    - cron: "17 6 * * 1"   # Mondays 06:17 UTC; off the hour so runs spread
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read            # the actions extractor reads workflow metadata
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, actions]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"
+          upload: never            # default setup refuses it; the gate reads the file
+          upload-database: false
+          output: ${{ runner.temp }}/codeql-results
+      - name: No findings (the gate — every result fails the job)
+        env:
+          LANGUAGE: ${{ matrix.language }}
+        run: python tools/codeql_gate.py "$RUNNER_TEMP/codeql-results/$LANGUAGE.sarif"

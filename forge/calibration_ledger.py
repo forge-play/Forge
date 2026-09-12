@@ -30,6 +30,7 @@ signal.
 Store-side (D1): `apps/the-forge/` never imports this — a sandboxed build does
 not grade its own model's confidence, any more than it marks its own homework.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -37,10 +38,7 @@ import hashlib
 import json
 from pathlib import Path
 
-
-
-from . import calibration
-from . import soil_store
+from . import calibration, soil_store
 from . import checkpoint_governance as governance
 
 # Predictions live in this module's own collection inside the builder's SOIL
@@ -286,10 +284,15 @@ def overconfidence_signal(
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
+
 def _cmd_record(args: argparse.Namespace) -> int:
     rec = record_prediction(
-        args.builder_id, args.claim, args.confidence,
-        prediction_id=args.id, kind=args.kind or "", root=Path(args.root) if args.root else None,
+        args.builder_id,
+        args.claim,
+        args.confidence,
+        prediction_id=args.id,
+        kind=args.kind or "",
+        root=Path(args.root) if args.root else None,
     )
     print(json.dumps(rec, indent=2))
     return 0
@@ -297,7 +300,9 @@ def _cmd_record(args: argparse.Namespace) -> int:
 
 def _cmd_resolve(args: argparse.Namespace) -> int:
     rec = resolve_prediction(
-        args.builder_id, args.id, args.outcome == "true",
+        args.builder_id,
+        args.id,
+        args.outcome == "true",
         root=Path(args.root) if args.root else None,
     )
     print(json.dumps(rec, indent=2))
@@ -332,7 +337,9 @@ def build_parser() -> argparse.ArgumentParser:
     v.add_argument("--root", default=None)
     v.set_defaults(func=_cmd_resolve)
 
-    s = sub.add_parser("scorecard", help="the model's calibration mirror (+ routes an overconfidence nudge)")
+    s = sub.add_parser(
+        "scorecard", help="the model's calibration mirror (+ routes an overconfidence nudge)"
+    )
     s.add_argument("builder_id")
     s.add_argument("--root", default=None)
     s.set_defaults(func=_cmd_scorecard)

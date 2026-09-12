@@ -33,6 +33,7 @@ confidence outside the believed range) is parsed and carries its `problems()`
 — the extractor refuses it WITH THE REASON rather than dropping it, and the
 build loop refuses to resolve a plan that holds one.
 """
+
 from __future__ import annotations
 
 import json
@@ -42,8 +43,17 @@ from typing import Union
 
 from . import _ids, checkpoint_memory
 
-__all__ = ["PlanShapeError", "KIND_FILE_WRITE", "KIND_FORK", "FileWrite", "ForkOption",
-           "Fork", "PlanDoc", "validate", "load"]
+__all__ = [
+    "PlanShapeError",
+    "KIND_FILE_WRITE",
+    "KIND_FORK",
+    "FileWrite",
+    "ForkOption",
+    "Fork",
+    "PlanDoc",
+    "validate",
+    "load",
+]
 
 KIND_FILE_WRITE = "file_write"
 KIND_FORK = "fork"
@@ -108,7 +118,9 @@ class Fork:
             if self.recommended is None:
                 out.append("confidence given with no recommended option — a confidence in nothing")
             elif not (0.5 <= self.confidence <= 1.0):
-                out.append(f"confidence {self.confidence} outside [0.5, 1.0] — state it in the direction believed")
+                out.append(
+                    f"confidence {self.confidence} outside [0.5, 1.0] — state it in the direction believed"
+                )
         for k in self.resolves:
             if k not in labels:
                 out.append(f"resolves names {k!r}, which is not an option")
@@ -116,9 +128,12 @@ class Fork:
 
     def to_dict(self) -> dict:
         return {
-            "kind": KIND_FORK, "decision_type": self.decision_type, "surface": self.surface,
+            "kind": KIND_FORK,
+            "decision_type": self.decision_type,
+            "surface": self.surface,
             "options": [{"label": o.label, "tradeoff": o.tradeoff} for o in self.options],
-            "recommended": self.recommended, "confidence": self.confidence,
+            "recommended": self.recommended,
+            "confidence": self.confidence,
             "resolves": {k: [w.to_dict() for w in v] for k, v in self.resolves.items()},
         }
 
@@ -169,8 +184,12 @@ def _fork(raw: dict, where: str) -> Fork:
     resolves: dict[str, tuple[FileWrite, ...]] = {}
     for label, ents in resolves_raw.items():
         if not isinstance(ents, list):
-            raise PlanShapeError(f"{where}: resolves[{label!r}] must be a list of file_write entries")
-        resolves[label] = tuple(_file_write(e, f"{where}.resolves[{label!r}][{k}]") for k, e in enumerate(ents))
+            raise PlanShapeError(
+                f"{where}: resolves[{label!r}] must be a list of file_write entries"
+            )
+        resolves[label] = tuple(
+            _file_write(e, f"{where}.resolves[{label!r}][{k}]") for k, e in enumerate(ents)
+        )
     conf = raw.get("confidence")
     if conf is not None and not isinstance(conf, (int, float)):
         raise PlanShapeError(f"{where}: confidence must be a number or null")
@@ -191,7 +210,9 @@ def validate(plan: dict) -> PlanDoc:
         raise PlanShapeError(f"a plan is an object, got {type(plan).__name__}")
     app = plan.get("app_name")
     if not isinstance(app, str) or not _ids._ID_PATTERN.match(app or ""):
-        raise PlanShapeError(f"app_name {app!r} fails the path-safety charset — it becomes a path component")
+        raise PlanShapeError(
+            f"app_name {app!r} fails the path-safety charset — it becomes a path component"
+        )
     entries_raw = plan.get("entries")
     if not isinstance(entries_raw, list) or not entries_raw:
         raise PlanShapeError("plan has no entries")

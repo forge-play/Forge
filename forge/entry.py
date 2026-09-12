@@ -31,6 +31,7 @@ checkpoint router. `open_bite` takes a maker's opening sentence and:
 `Entry.tiers` records which tier answered and how. The model is never
 consulted: the scan is a regex over a table, the routing is memory.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -43,8 +44,15 @@ from typing import Protocol, runtime_checkable
 
 from . import checkpoint, checkpoint_memory, deposit, majors, paths, store_diff
 
-__all__ = ["Entry", "EntryError", "BoxLookup", "NoBox", "Candidate", "open_bite",
-           "DECISION_TYPE_MAJOR"]
+__all__ = [
+    "Entry",
+    "EntryError",
+    "BoxLookup",
+    "NoBox",
+    "Candidate",
+    "open_bite",
+    "DECISION_TYPE_MAJOR",
+]
 
 DECISION_TYPE_MAJOR = "major"
 
@@ -57,6 +65,7 @@ class EntryError(Exception):
 @dataclass(frozen=True)
 class Candidate:
     """Something the box already holds that may answer the bite."""
+
     name: str
     where: str
     why: str = ""
@@ -65,6 +74,7 @@ class Candidate:
 @runtime_checkable
 class BoxLookup(Protocol):
     """Tier 2. Given the scan's hits, what does the box already have?"""
+
     name: str
 
     def lookup(self, hits: list[majors.Hit]) -> list[Candidate]: ...
@@ -73,6 +83,7 @@ class BoxLookup(Protocol):
 class NoBox:
     """The default box: nothing, and says so. The real lookup (the corpus,
     the app catalog) lives on the willow side; this is the seam it plugs into."""
+
     name = "no box wired"
 
     def lookup(self, hits: list[majors.Hit]) -> list[Candidate]:
@@ -85,11 +96,13 @@ class Entry:
     project_id: str
     builder_id: str
     hits: list[majors.Hit] = field(default_factory=list)
-    majors: dict[str, list[str]] = field(default_factory=dict)   # major -> keywords
+    majors: dict[str, list[str]] = field(default_factory=dict)  # major -> keywords
     major: str | None = None
-    answer: str | None = None                                     # a sealed project answer, if any
+    answer: str | None = None  # a sealed project answer, if any
     candidates: list[Candidate] = field(default_factory=list)
-    tiers: dict[str, str] = field(default_factory=dict)          # nestor / deposit / main / box / remote / scan
+    tiers: dict[str, str] = field(
+        default_factory=dict
+    )  # nestor / deposit / main / box / remote / scan
     decision_outcome: checkpoint.CheckpointOutcome | None = None
 
     def to_dict(self) -> dict:
@@ -128,8 +141,9 @@ def _deposit_tier(store: object) -> str:
     if age is None:
         return "none: no CI row in the project store"
     states = ", ".join(f"{k} {v}" for k, v in sorted(age["states"].items())) or "no runs parsed"
-    return (f"{deposit.human_age(age['age_seconds'])} old: "
-            f"{age['repo']}@{age['sha'][:12]} ({states})")
+    return (
+        f"{deposit.human_age(age['age_seconds'])} old: {age['repo']}@{age['sha'][:12]} ({states})"
+    )
 
 
 MAIN_ENV = "FORGE_MAIN_NESTOR"
@@ -147,7 +161,9 @@ def _main_tier(store: object, main: str | Path | None) -> str:
     try:
         d = store_diff.diff(store, target)
     except Exception as err:  # noqa: BLE001 — every failure is a state, reported, never clean
-        return f"could not read main {Path(str(target)).name}: {type(err).__name__}: {str(err)[:80]}"
+        return (
+            f"could not read main {Path(str(target)).name}: {type(err).__name__}: {str(err)[:80]}"
+        )
     return store_diff.summary(d)
 
 
@@ -191,12 +207,18 @@ def open_bite(
         e.tiers["nestor"] = (
             f"sealed (confidence {r.get('confidence', 0):.2f}, "
             f"verifier {r.get('verifier', '')!r})"
-            + ("" if checkpoint_memory.seal_signatures_verified()
-               else " — SIGNATURES NOT VERIFIED (no seal key or keyring; "
-                    "any 'sealed' row is trusted)"))
+            + (
+                ""
+                if checkpoint_memory.seal_signatures_verified()
+                else " — SIGNATURES NOT VERIFIED (no seal key or keyring; "
+                "any 'sealed' row is trusted)"
+            )
+        )
     else:
         n = len(r.get("candidates") or [])
-        e.tiers["nestor"] = "pending" + (f" ({n} unsealed candidate{'s' if n != 1 else ''})" if n else "")
+        e.tiers["nestor"] = "pending" + (
+            f" ({n} unsealed candidate{'s' if n != 1 else ''})" if n else ""
+        )
     # 1b — was the answer current? The store's last CI knowledge, with its age.
     e.tiers["deposit"] = _deposit_tier(store)
     # 1c — how far is this store from the main one? Four counts, or "not consulted".
@@ -207,8 +229,9 @@ def open_bite(
     e.majors = {m: [h.source for h in hs] for m, hs in majors.majors_for(e.hits).items()}
     box = box or NoBox()
     e.candidates = list(box.lookup(e.hits))
-    e.tiers["box"] = (f"{box.name}: {len(e.candidates)} candidate(s)" if e.candidates
-                      else f"{box.name}: nothing")
+    e.tiers["box"] = (
+        f"{box.name}: {len(e.candidates)} candidate(s)" if e.candidates else f"{box.name}: nothing"
+    )
 
     # 3 — remote. Not built. Say so.
     e.tiers["remote"] = "not_attempted (not built)"
@@ -245,13 +268,18 @@ def open_bite(
     # filter rather than a guess about which rows belong to the repository
     # being exported.
     outcome = checkpoint.run_checkpoint(
-        decision, builder_id=builder_id, responder=responder, root=root,
-        recognize_threshold=recognize_threshold, project=project_id,
+        decision,
+        builder_id=builder_id,
+        responder=responder,
+        root=root,
+        recognize_threshold=recognize_threshold,
+        project=project_id,
     )
     e.decision_outcome = outcome
     e.major = _major_from_chosen(outcome.chosen, ask)
     e.tiers["scan"] = f"{len(ask)} majors → checkpoint band {outcome.band}" + (
-        f", chose {e.major}" if e.major else f", chose {outcome.chosen!r} (not a major on offer)")
+        f", chose {e.major}" if e.major else f", chose {outcome.chosen!r} (not a major on offer)"
+    )
     # An auto or recognize band means a prior sealed row answered instead of the
     # maker. Say whether that row's signature was checkable, for the same reason
     # the nestor tier does.
@@ -261,6 +289,7 @@ def open_bite(
 
 
 # ── CLI (dev shape, like the sibling modules) ───────────────────────────────
+
 
 class _PickResponder:
     """Non-interactive: confirm yes; choose `--choose LABEL` (or the first
@@ -322,16 +351,21 @@ class _PickResponder:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="entry.py", description="open a bite: Nestor first, then the scan")
+    p = argparse.ArgumentParser(
+        prog="entry.py", description="open a bite: Nestor first, then the scan"
+    )
     p.add_argument("sentence")
     p.add_argument("--project", required=True, dest="project_id")
     p.add_argument("--builder", required=True, dest="builder_id")
     p.add_argument("--root", default=str(checkpoint_memory.DEFAULT_CHECKPOINT_ROOT))
     p.add_argument("--choose", default=None, help="the major to pick if asked (default: first)")
-    p.add_argument("--why", default=None,
-                   help="the rationale, if asked. No default: a rationale nobody "
-                        "typed is not one, and an absent one seals empty and flags "
-                        "as a rubber-stamp rather than passing as a reason.")
+    p.add_argument(
+        "--why",
+        default=None,
+        help="the rationale, if asked. No default: a rationale nobody "
+        "typed is not one, and an absent one seals empty and flags "
+        "as a rubber-stamp rather than passing as a reason.",
+    )
     p.add_argument("--json", action="store_true")
     return p
 
@@ -339,8 +373,13 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     a = build_parser().parse_args(argv)
     try:
-        e = open_bite(a.sentence, project_id=a.project_id, builder_id=a.builder_id,
-                      responder=_PickResponder(a.choose, a.why), root=Path(a.root))
+        e = open_bite(
+            a.sentence,
+            project_id=a.project_id,
+            builder_id=a.builder_id,
+            responder=_PickResponder(a.choose, a.why),
+            root=Path(a.root),
+        )
     except EntryError as err:
         print(f"REFUSED: {err}", file=sys.stderr)
         return 2

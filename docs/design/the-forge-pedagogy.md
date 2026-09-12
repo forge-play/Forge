@@ -255,10 +255,10 @@ The open question in §8 assumed FSRS reads something coarse — "waved through"
 versus "argued." It does not. Read `checkpoint_schedule.grade`:
 
 ```python
-if engagement < _HARD_MAX_ENGAGEMENT:   # == checkpoint_engagement.RUBBER_STAMP_FLOOR
-    return _RATING_HARD                 # resurface sooner
-if engagement > _EASY_MIN_ENGAGEMENT:   # 0.66
-    return _RATING_EASY                 # push it out
+if engagement < _HARD_MAX_ENGAGEMENT:  # == checkpoint_engagement.RUBBER_STAMP_FLOOR
+    return _RATING_HARD  # resurface sooner
+if engagement > _EASY_MIN_ENGAGEMENT:  # 0.66
+    return _RATING_EASY  # push it out
 ```
 
 `checkpoint_calibration.resurface` scores the held rationale with

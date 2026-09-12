@@ -6,6 +6,7 @@ by the demo itself, then reads the facts it emits beside the friction log.
 Beats 1 and 11 must report no friction when Nestor is installed; without it
 they must say so as MISSING, honestly, rather than crash.
 """
+
 from __future__ import annotations
 
 import json
@@ -26,8 +27,14 @@ _HAS_NESTOR = checkpoint_memory.nestor_available()
 def _run() -> dict:
     env = {k: v for k, v in os.environ.items() if not k.startswith("NESTOR_")}
     env["FORGE_HOME"] = ""  # the demo sets its own, inside the playground
-    r = subprocess.run([sys.executable, str(_DEMO), "--json", "--pace", "off"],
-                       capture_output=True, text=True, cwd=str(_REPO), env=env, timeout=600)
+    r = subprocess.run(
+        [sys.executable, str(_DEMO), "--json", "--pace", "off"],
+        capture_output=True,
+        text=True,
+        cwd=str(_REPO),
+        env=env,
+        timeout=600,
+    )
     assert r.returncode == 0, r.stderr[-2000:]
     return json.loads(r.stdout)
 
@@ -80,7 +87,9 @@ def test_without_nestor_the_entry_refuses_but_the_loop_still_learns(log):
     assert "refused" in log["facts"]["entry"]
     c = log["facts"]["calibration"]
     assert c["outcome"] is False and c["resolved"] == 1
-    assert c["sealed"] is False, "without memory the decision is made, not sealed — and the demo must say so"
+    assert c["sealed"] is False, (
+        "without memory the decision is made, not sealed — and the demo must say so"
+    )
 
 
 def test_the_demo_never_writes_outside_its_playground(tmp_path):

@@ -8,6 +8,7 @@ the same "vendor the primitive, not the package" discipline calibration/human_lo
 friction_floor follow. Bound as `principal` at the import site so the reference is
 unchanged. If principal.py's charset moves, reconcile this copy.
 """
+
 from __future__ import annotations
 
 import re

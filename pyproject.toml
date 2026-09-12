@@ -57,9 +57,9 @@ forge-export = "forge.bundle:main"
 # grade and then ignores it. A behaviour that no leg exercises is not covered,
 # and one such test was silently passing-by-skipping while the behaviour under
 # it changed. The no-extras leg still proves the fallback path.
-# Floor 0.19.1: that release lists live rows only from `memory_list` and adds
-# `include_superseded`; store_diff._history and tests/test_deposit.py assume it.
-test = ["pytest>=8.0", "pyyaml", "nestor-meaning>=0.19.1,<1.0.0", "fsrs"]
+# Floor 0.20.2: ships the Windows text-mode ledger newline fix (item 89,
+# Die-Namic-Systems/Nestor#297) so the tail checkpoint survives \r\n appends.
+test = ["pytest>=8.0", "pyyaml", "nestor-meaning>=0.20.2,<1.0.0", "fsrs"]
 # The optional promotion-trust seam (forge/trust.py): turns §0.2's verified_by
 # from a string into a two-tier mechanism — the author provisionally seals the
 # promotion through willow-gate, a different verifier confers canonical via a
@@ -81,6 +81,32 @@ trust = ["nestor-meaning[gate]"]
 # simple`) — let it pick the number from the commits rather than tagging by
 # hand.
 source = "vcs"
+
+# The fleet CI floor's lint (decision 5, C4-tests-yml): `ruff check` and
+# `ruff format --check`, ruff pinned to one exact version in tests.yml. This
+# block was written on 2026-09-12 when the floor arrived; there was no ruff
+# configuration before it, so nothing here loosens anything.
+#
+# The rule set is ruff's own long-standing default (E4/E7/E9 + pyflakes) plus
+# import ordering, at the width this tree was evidently written to. It is
+# deliberately NOT the wide 0.16 default set: that set rewrites `re.I` to
+# `re.IGNORECASE` and `Optional[X]` to `X | None`, and the two files below are
+# pinned BY THEIR BYTES by consumers in other repos (tools/vendor_manifest.json
+# says which and why) — a lint fix there is a fleet event, not a lint fix.
+# Widening the set is a decision to take with the pins in view, not a default
+# to inherit. E501 is left to the formatter: `ruff format` wraps code, and the
+# long lines that remain are prose in docstrings and comments.
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+# Bodies other repos pin by SHA-256 (willow-mcp pins friction_floor's body;
+# kartikeya, corpus-lens, Jeles and willow-mcp pin changelog_dedup's). Neither
+# the formatter nor a lint fix may move a byte of them here; they change in
+# the same hour as their consumers, or not at all.
+extend-exclude = ["forge/friction_floor.py", "tools/changelog_dedup.py"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
 
 [tool.hatch.build.targets.wheel]
 # The import name stays `forge`; only the distribution name is `forge-play`.

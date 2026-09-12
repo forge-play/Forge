@@ -17,14 +17,15 @@ tests only `home()`, the function that still exists; if `ensure()` is
 reintroduced, restore tests for it (git history has the removed version if
 a reference is useful — `git log -p -- forge/paths.py`).
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 
 from forge import paths
 
-
 # ── home() ───────────────────────────────────────────────────────────────────
+
 
 def test_home_defaults_to_dot_forge_under_the_real_home(monkeypatch):
     monkeypatch.delenv("FORGE_HOME", raising=False)

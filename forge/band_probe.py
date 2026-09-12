@@ -43,6 +43,7 @@ Usage:
     python -m forge.band_probe --rounds 6
     python -m forge.band_probe --rounds 6 --json
 """
+
 from __future__ import annotations
 
 import argparse
@@ -68,18 +69,32 @@ MAKERS = ("aligned", "contrary")
 # Three decision-types, each asked once per round. Two options apiece, with the
 # first always the recommendation, so "picks the other" is unambiguous.
 _TYPES: tuple[tuple[str, str, str, str], ...] = (
-    ("where-the-dates-live", "When a picture gets a date, where does the date go?",
-     "sidecar json", "exif in place"),
-    ("auth-flow-for-user-facing-form", "How should the login form authenticate?",
-     "session cookie + CSRF", "JWT bearer token"),
-    ("cache-write-policy", "Should the cache be write-through or write-back?",
-     "write-through", "write-back"),
+    (
+        "where-the-dates-live",
+        "When a picture gets a date, where does the date go?",
+        "sidecar json",
+        "exif in place",
+    ),
+    (
+        "auth-flow-for-user-facing-form",
+        "How should the login form authenticate?",
+        "session cookie + CSRF",
+        "JWT bearer token",
+    ),
+    (
+        "cache-write-policy",
+        "Should the cache be write-through or write-back?",
+        "write-through",
+        "write-back",
+    ),
 )
 
 # A substantive rationale, deliberately: a thin one would confound this
 # measurement with the engagement defect (the-forge-engagement-defect.md).
-_RATIONALE = ("the tradeoff we already argued applies here too, and the failure "
-              "mode we measured last time has not changed")
+_RATIONALE = (
+    "the tradeoff we already argued applies here too, and the failure "
+    "mode we measured last time has not changed"
+)
 
 
 class _Maker:
@@ -110,23 +125,28 @@ def run(policy: str, rounds: int, root: Path) -> dict:
         counts: dict[str, int] = {}
         for dtype, surface, first, second in _TYPES:
             decision = checkpoint.Decision(
-                decision_type=dtype, surface=surface,
-                options=[checkpoint.Option(first, "the recommended call"),
-                         checkpoint.Option(second, "the other call")],
-                recommended=first)
+                decision_type=dtype,
+                surface=surface,
+                options=[
+                    checkpoint.Option(first, "the recommended call"),
+                    checkpoint.Option(second, "the other call"),
+                ],
+                recommended=first,
+            )
             # A fresh claim per round: record_prediction is idempotent on claim
             # text and refuses to re-record a settled one, which is correct and
             # would otherwise collapse every round into one data point.
             claim = f"{dtype} r{r}: maker picks {first}"
             pred = calibration_ledger.record_prediction(
-                builder_id, claim, CONFIDENCE, kind="fork",
-                decision_type=dtype, root=root)
+                builder_id, claim, CONFIDENCE, kind="fork", decision_type=dtype, root=root
+            )
             outcome = checkpoint.run_checkpoint(
-                decision, builder_id=builder_id, responder=maker, root=root)
+                decision, builder_id=builder_id, responder=maker, root=root
+            )
             chosen_label = outcome.chosen.split(":", 1)[0].strip()
             calibration_ledger.resolve_prediction(
-                builder_id, pred["id"], chosen_label == first,
-                decision=outcome, root=root)
+                builder_id, pred["id"], chosen_label == first, decision=outcome, root=root
+            )
             counts[outcome.band] = counts.get(outcome.band, 0) + 1
             maker.bands.append(outcome.band)
         per_round.append(counts)
@@ -142,9 +162,14 @@ def run(policy: str, rounds: int, root: Path) -> dict:
         "hit_rate": card["summary"]["hit_rate"],
         "brier": card["summary"]["brier"],
         "overconfidence": card["summary"]["overconfidence"],
-        "by_band": {k: {"n": v["n"], "hit_rate": v["summary"]["hit_rate"],
-                        "overconfidence": v["summary"]["overconfidence"]}
-                    for k, v in card["groups"].items()},
+        "by_band": {
+            k: {
+                "n": v["n"],
+                "hit_rate": v["summary"]["hit_rate"],
+                "overconfidence": v["summary"]["overconfidence"],
+            }
+            for k, v in card["groups"].items()
+        },
     }
 
 
@@ -169,38 +194,47 @@ def summary(results: dict[str, dict]) -> dict:
 
 def _render(results: dict[str, dict], s: dict) -> str:
     out = ["§5 — does the band selector read the maker?", ""]
-    out.append(f"{'maker':<10} {'n':>4} {'auto':>5} {'recog':>6} {'socr':>5} "
-               f"{'auto%':>7} {'hit':>6} {'overconf':>9}")
+    out.append(
+        f"{'maker':<10} {'n':>4} {'auto':>5} {'recog':>6} {'socr':>5} "
+        f"{'auto%':>7} {'hit':>6} {'overconf':>9}"
+    )
     out.append("-" * 62)
     for k in MAKERS:
         r = results[k]
         b = r["band_counts"]
-        out.append(f"{r['policy']:<10} {r['n_decisions']:>4} {b['auto']:>5} "
-                   f"{b['recognize']:>6} {b['socratic']:>5} "
-                   f"{r['auto_rate_pct']:>6.1f}% {r['hit_rate']:>6.2f} "
-                   f"{r['overconfidence']:>9.2f}")
-    out += ["",
-            f"calibration gap between them : {s['calibration_gap_pp']:.0f}pp",
-            f"auto-band rate gap           : {s['auto_rate_gap_pp']:.1f}pp",
-            f"reportability floor          : {s['harness_spread_floor_pp']:.0f}pp "
-            f"(sealed benchmark-eval-harness-spread-pp)",
-            f"separable above the floor    : {s['separable']}",
-            "",
-            s["finding"]]
+        out.append(
+            f"{r['policy']:<10} {r['n_decisions']:>4} {b['auto']:>5} "
+            f"{b['recognize']:>6} {b['socratic']:>5} "
+            f"{r['auto_rate_pct']:>6.1f}% {r['hit_rate']:>6.2f} "
+            f"{r['overconfidence']:>9.2f}"
+        )
+    out += [
+        "",
+        f"calibration gap between them : {s['calibration_gap_pp']:.0f}pp",
+        f"auto-band rate gap           : {s['auto_rate_gap_pp']:.1f}pp",
+        f"reportability floor          : {s['harness_spread_floor_pp']:.0f}pp "
+        f"(sealed benchmark-eval-harness-spread-pp)",
+        f"separable above the floor    : {s['separable']}",
+        "",
+        s["finding"],
+    ]
     if results["contrary"]["by_band"]:
         out += ["", "the contrary maker's calibration, by band:"]
         for band, v in results["contrary"]["by_band"].items():
-            out.append(f"  {band:<10} n={v['n']:<3} hit_rate={v['hit_rate']:.2f} "
-                       f"overconfidence={v['overconfidence']:+.2f}")
+            out.append(
+                f"  {band:<10} n={v['n']:<3} hit_rate={v['hit_rate']:.2f} "
+                f"overconfidence={v['overconfidence']:+.2f}"
+            )
     return "\n".join(out)
 
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="band_probe.py",
-        description="does the band selector read the maker's calibration?")
-    p.add_argument("--rounds", type=int, default=6,
-                   help="passes over the same decisions (default 6)")
+        prog="band_probe.py", description="does the band selector read the maker's calibration?"
+    )
+    p.add_argument(
+        "--rounds", type=int, default=6, help="passes over the same decisions (default 6)"
+    )
     p.add_argument("--json", action="store_true")
     return p
 
@@ -208,9 +242,12 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if not checkpoint_memory.nestor_available():
-        print("refused: this probe needs Nestor — a band trajectory without "
-              "memory is every decision in the socratic band by definition, "
-              "which measures nothing.", file=__import__("sys").stderr)
+        print(
+            "refused: this probe needs Nestor — a band trajectory without "
+            "memory is every decision in the socratic band by definition, "
+            "which measures nothing.",
+            file=__import__("sys").stderr,
+        )
         return 1
     with tempfile.TemporaryDirectory() as td:
         root = Path(td) / "checkpoints"

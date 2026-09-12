@@ -156,6 +156,7 @@ Usage (dev CLI, mirroring principal.py / session.py's shape):
     python -m forge.checkpoint_memory reject-pair <builder_id> <decision_type> \\
         --pair-id <id> --reason "..."
 """
+
 from __future__ import annotations
 
 import argparse
@@ -168,6 +169,7 @@ from pathlib import Path
 from typing import Any
 
 from . import paths as _forge_paths
+
 DEFAULT_CHECKPOINT_ROOT = _forge_paths.home() / "checkpoints"
 
 # Same charset rule `principal.py` defines and `session.py` re-uses rather
@@ -202,7 +204,7 @@ _DOMAIN_TEMPLATE = "builder:{builder_id}:decision:{decision_type}"
 # path-safety charset is defined, and this module's own directory-per-builder
 # guarantee (see module docstring) depends on every builder_id that reaches
 # `checkpoint_db_path` having already passed that exact check.
-from . import _ids as principal
+from . import _ids as principal  # noqa: E402  deliberately late: see the paragraph above
 
 _principal_check_builder_id = principal._check_builder_id
 
@@ -289,14 +291,16 @@ def _nestor() -> "types.SimpleNamespace":
     global _nestor_cache
     if _nestor_cache is None:
         try:
-            from nestor import cascade
-            from nestor import memory
+            from nestor import cascade, memory
             from nestor.entity import EntityResolver
             from nestor.sqlite_store import SqliteStore
         except ImportError as e:
             raise CheckpointMemoryError(_NESTOR_MISSING_MSG) from e
         _nestor_cache = types.SimpleNamespace(
-            cascade=cascade, memory=memory, EntityResolver=EntityResolver, SqliteStore=SqliteStore,
+            cascade=cascade,
+            memory=memory,
+            EntityResolver=EntityResolver,
+            SqliteStore=SqliteStore,
         )
     return _nestor_cache
 
@@ -348,12 +352,14 @@ def seal_signatures_verified() -> bool:
         return False
     try:
         from nestor import signing
+
         return bool(signing.signing_enabled())
     except Exception:  # noqa: BLE001 — a probe that cannot answer says "not verified"
         return False
 
 
 # ── validation ───────────────────────────────────────────────────────────────
+
 
 def _check_builder_id(builder_id: Any) -> str:
     """Delegates to `principal.py`'s own `_check_builder_id` — not
@@ -390,6 +396,7 @@ def _domain(builder_id: str, decision_type: str) -> str:
 
 
 # ── the one-file-per-builder path ───────────────────────────────────────────
+
 
 def checkpoint_db_path(builder_id: str, root: Path = DEFAULT_CHECKPOINT_ROOT) -> Path:
     """The one Nestor `SqliteStore` file for `builder_id`. Computes a path
@@ -449,6 +456,7 @@ def checkpoint_db_path(builder_id: str, root: Path = DEFAULT_CHECKPOINT_ROOT) ->
 # `principal.py`'s free-function layer above them. Use it as a context
 # manager (`with open_checkpoint_memory(...) as cm:`) or call `.close()`
 # explicitly — never let it be garbage-collected with the store still open.
+
 
 class CheckpointMemory:
     """One builder's checkpoint memory for one decision-type — the D8
@@ -566,7 +574,7 @@ class CheckpointMemory:
         verifier: str | None = None,
         reason: str = "",
     ) -> dict:
-        """"That explanation didn't fit THIS specific case" — D12's own
+        """ "That explanation didn't fit THIS specific case" — D12's own
         framing. Suppresses `decision_description` as a query for the named
         pair (`pair_id`) or draft (`target_text`); the pair itself, and
         everything else that resolves to it, is untouched. Requires at
@@ -590,23 +598,22 @@ class CheckpointMemory:
             # internal failure, so it is worth its own message rather than
             # being folded into the generic wrap below.
             raise CheckpointMemoryError(
-                "reject_match needs pair_id or target_text — otherwise there "
-                "is nothing to suppress"
+                "reject_match needs pair_id or target_text — otherwise there is nothing to suppress"
             ) from None
         except Exception as e:  # noqa: BLE001 — boundary
             raise self._wrap(e) from e
 
-    def reject_pair(
-        self, pair_id: str, *, verifier: str | None = None, reason: str = ""
-    ) -> None:
-        """"I was wrong about this generally, unseal it everywhere" —
+    def reject_pair(self, pair_id: str, *, verifier: str | None = None, reason: str = "") -> None:
+        """ "I was wrong about this generally, unseal it everywhere" —
         D12's own framing. Retires `pair_id` itself: never served, never
         offered as a match, for ANY query, in this decision-type's memory.
         Use `reject_match` instead when the pair is right in general but
         wrong for one specific query."""
         verifier = self.builder_id if verifier is None else verifier
         try:
-            _nestor().memory.reject_pair(pair_id, verifier=verifier, reason=reason, store=self._store)
+            _nestor().memory.reject_pair(
+                pair_id, verifier=verifier, reason=reason, store=self._store
+            )
         except Exception as e:  # noqa: BLE001 — boundary
             raise self._wrap(e) from e
 
@@ -726,9 +733,12 @@ def open_checkpoint_memory(
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
+
 def _cmd_has_sealed(args: argparse.Namespace) -> int:
     try:
-        with open_checkpoint_memory(args.builder_id, args.decision_type, root=Path(args.root)) as cm:
+        with open_checkpoint_memory(
+            args.builder_id, args.decision_type, root=Path(args.root)
+        ) as cm:
             sealed = cm.has_sealed()
     except CheckpointMemoryError as e:
         print(f"refused: {e}", file=sys.stderr)
@@ -737,14 +747,15 @@ def _cmd_has_sealed(args: argparse.Namespace) -> int:
     # "no, nothing sealed" and "yes, but nobody checked the signature" are
     # different facts and a reader needs both. The exit code still tracks
     # has_sealed alone, so existing hooks keep their meaning.
-    print(json.dumps({"has_sealed": sealed,
-                      "signatures_verified": seal_signatures_verified()}))
+    print(json.dumps({"has_sealed": sealed, "signatures_verified": seal_signatures_verified()}))
     return 0 if sealed else 1
 
 
 def _cmd_seal(args: argparse.Namespace) -> int:
     try:
-        with open_checkpoint_memory(args.builder_id, args.decision_type, root=Path(args.root)) as cm:
+        with open_checkpoint_memory(
+            args.builder_id, args.decision_type, root=Path(args.root)
+        ) as cm:
             result = cm.seal(args.surface, args.canonical, verifier=args.verifier)
     except CheckpointMemoryError as e:
         print(f"refused: {e}", file=sys.stderr)
@@ -755,10 +766,15 @@ def _cmd_seal(args: argparse.Namespace) -> int:
 
 def _cmd_reject_match(args: argparse.Namespace) -> int:
     try:
-        with open_checkpoint_memory(args.builder_id, args.decision_type, root=Path(args.root)) as cm:
+        with open_checkpoint_memory(
+            args.builder_id, args.decision_type, root=Path(args.root)
+        ) as cm:
             result = cm.reject_match(
-                args.surface, pair_id=args.pair_id or "", target_text=args.target or "",
-                verifier=args.verifier, reason=args.reason or "",
+                args.surface,
+                pair_id=args.pair_id or "",
+                target_text=args.target or "",
+                verifier=args.verifier,
+                reason=args.reason or "",
             )
     except CheckpointMemoryError as e:
         print(f"refused: {e}", file=sys.stderr)
@@ -769,7 +785,9 @@ def _cmd_reject_match(args: argparse.Namespace) -> int:
 
 def _cmd_reject_pair(args: argparse.Namespace) -> int:
     try:
-        with open_checkpoint_memory(args.builder_id, args.decision_type, root=Path(args.root)) as cm:
+        with open_checkpoint_memory(
+            args.builder_id, args.decision_type, root=Path(args.root)
+        ) as cm:
             cm.reject_pair(args.pair_id, verifier=args.verifier, reason=args.reason or "")
     except CheckpointMemoryError as e:
         print(f"refused: {e}", file=sys.stderr)

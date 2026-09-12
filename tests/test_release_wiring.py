@@ -509,3 +509,219 @@ def test_the_pile_gate_check_fires_on_a_planted_pile_with_no_workflow(tmp_path):
     no_pile = tmp_path / "no_pile"
     no_pile.mkdir()
     assert not _pile_without_its_gate(no_pile), "no pile, nothing to gate"
+
+
+# ── the fleet CI floor (decision 5: C4-tests-yml, C4-codeql, 2026-09-12) ─────
+#
+# tests.yml is held to the floor's shape by reading the file, never by
+# restating it: the Linux matrix equals the Python classifiers pyproject.toml
+# declares (a classifier CI never runs is a promise nobody checked; a matrix
+# entry with no classifier is a version the package does not claim); the
+# Windows job runs the floor and the ceiling of that list; the lint job pins
+# ruff to one exact version and runs both `check` and `format --check`; the
+# aggregate `test` job needs every other job, runs `if: always()`, and rejects
+# any result that is not `success` — skipped and cancelled included, because a
+# required check that goes green on a skipped leg protects nothing. codeql.yml
+# analyzes python and actions. Each helper below is planted.
+
+_TESTS_WF = _REPO / ".github" / "workflows" / "tests.yml"
+_CODEQL_WF = _REPO / ".github" / "workflows" / "codeql.yml"
+_PYPROJECT = _REPO / "pyproject.toml"
+_CLASSIFIER_RE = re.compile(r"Programming Language :: Python :: (3\.\d+)\b")
+_RUFF_PIN_RE = re.compile(r"\bruff==(\d+\.\d+\.\d+)\b")
+_GATE = "test"
+
+
+def _classifier_minors(pyproject_text: str) -> list[str]:
+    """Every `Programming Language :: Python :: 3.X` classifier, in file order."""
+    return _CLASSIFIER_RE.findall(pyproject_text)
+
+
+def _matrix_versions(workflow: dict, job: str) -> list[str]:
+    return [str(v) for v in workflow["jobs"][job]["strategy"]["matrix"]["python-version"]]
+
+
+def _ruff_pin(workflow: dict) -> str | None:
+    """The exact `ruff==X.Y.Z` the lint job installs, or None when it is
+    unpinned (`pip install ruff`, `ruff>=…`) — an unpinned ruff is a ruff
+    release reddening every open PR at once."""
+    runs = "\n".join(str(s.get("run", "")) for s in workflow["jobs"]["lint"]["steps"])
+    m = _RUFF_PIN_RE.search(runs)
+    return m.group(1) if m else None
+
+
+def _gate_problems(workflow: dict, gate: str = _GATE) -> list[str]:
+    """Everything wrong with the aggregate job `gate`: absent, not
+    `if: always()`, not needing every other job in the workflow, or not
+    rejecting a non-success result. "Rejects" means the gate's own step text
+    either reads `toJSON(needs)` and compares to `success`, or names all
+    three of failure/cancelled/skipped in `contains(needs.*.result, …)`; a
+    gate that only checks for `failure` passes on a skipped leg."""
+    jobs = workflow["jobs"]
+    if gate not in jobs:
+        return [f"no `{gate}` job"]
+    job = jobs[gate]
+    problems: list[str] = []
+    if str(job.get("if", "")).strip() != "always()":
+        problems.append(
+            f"`{gate}` is not `if: always()`, so a failed leg skips it "
+            "and a skipped required check reads as passing"
+        )
+    needs = job.get("needs") or []
+    needs = [needs] if isinstance(needs, str) else list(needs)
+    missing = sorted(set(jobs) - {gate} - set(needs))
+    if missing:
+        problems.append(f"`{gate}` does not need {missing}")
+    text = "\n".join(
+        str(part)
+        for step in job.get("steps", [])
+        for part in (step.get("run", ""), step.get("if", ""), *(step.get("env") or {}).values())
+    )
+    explicit = "toJSON(needs)" in text and "success" in text
+    triple = all(
+        f"'{r}'" in text and "needs.*.result" in text for r in ("failure", "cancelled", "skipped")
+    )
+    if not (explicit or triple):
+        problems.append(
+            f"`{gate}` does not reject a skipped or cancelled leg — "
+            "it must fail on any needed result that is not `success`"
+        )
+    return problems
+
+
+def _codeql_languages(workflow: dict) -> set[str]:
+    return {str(lang) for lang in workflow["jobs"]["analyze"]["strategy"]["matrix"]["language"]}
+
+
+def test_the_linux_matrix_is_the_classifiers():
+    classifiers = _classifier_minors(_PYPROJECT.read_text(encoding="utf-8"))
+    assert classifiers, (
+        "pyproject.toml declares no `Programming Language :: Python :: 3.X` classifier"
+    )
+    assert _matrix_versions(_yaml(_TESTS_WF), "test-matrix") == classifiers, (
+        "tests.yml's Linux matrix must be exactly the Python classifiers pyproject.toml "
+        "declares, in order — change both together"
+    )
+
+
+def test_the_windows_job_runs_the_floor_and_the_ceiling():
+    classifiers = _classifier_minors(_PYPROJECT.read_text(encoding="utf-8"))
+    by_minor = sorted(classifiers, key=lambda v: int(v.split(".")[1]))
+    assert _matrix_versions(_yaml(_TESTS_WF), "windows") == [by_minor[0], by_minor[-1]]
+    assert _yaml(_TESTS_WF)["jobs"]["windows"]["runs-on"].startswith("windows")
+
+
+def test_ruff_is_pinned_to_an_exact_version():
+    wf = _yaml(_TESTS_WF)
+    assert _ruff_pin(wf) is not None, "the lint job must `pip install ruff==X.Y.Z`"
+    runs = "\n".join(str(s.get("run", "")) for s in wf["jobs"]["lint"]["steps"])
+    assert "ruff check" in runs and "ruff format --check" in runs
+
+
+def test_the_aggregate_gate_needs_every_leg_and_rejects_a_skipped_one():
+    assert _gate_problems(_yaml(_TESTS_WF)) == []
+
+
+def test_codeql_analyzes_python_and_actions():
+    assert _CODEQL_WF.exists(), "the floor's static-analysis half is missing"
+    assert _codeql_languages(_yaml(_CODEQL_WF)) == {"python", "actions"}
+
+
+def test_the_classifier_reader_catches_a_planted_mismatch():
+    """Planted: a pyproject declaring 3.11 and 3.13, and a workflow whose
+    matrix also runs 3.12 — the reader must return exactly the two declared
+    minors so the equality above can fail on the third."""
+    planted = (
+        "classifiers = [\n"
+        '    "Programming Language :: Python :: 3",\n'
+        '    "Programming Language :: Python :: 3.11",\n'
+        '    "Programming Language :: Python :: 3.13",\n'
+        "]\n"
+    )
+    assert _classifier_minors(planted) == ["3.11", "3.13"], "the bare `3` is not a minor"
+    workflow = {
+        "jobs": {
+            "test-matrix": {"strategy": {"matrix": {"python-version": ["3.11", "3.12", "3.13"]}}}
+        }
+    }
+    assert _matrix_versions(workflow, "test-matrix") != _classifier_minors(planted)
+    assert _classifier_minors("requires-python = '>=3.11'\n") == [], (
+        "requires-python is not a classifier"
+    )
+
+
+def test_the_ruff_pin_check_catches_an_unpinned_install():
+    """Planted: the three spellings of not pinning, and the one that is."""
+
+    def lint(run: str) -> dict:
+        return {"jobs": {"lint": {"steps": [{"run": run}]}}}
+
+    assert _ruff_pin(lint("pip install ruff")) is None
+    assert _ruff_pin(lint("pip install 'ruff>=0.5'")) is None
+    assert _ruff_pin(lint("pip install ruff~=0.16")) is None
+    assert _ruff_pin(lint("pip install ruff==0.16.7\nruff check .")) == "0.16.7"
+
+
+def test_the_gate_check_fires_on_a_planted_gate_that_tolerates_a_skipped_leg():
+    """Planted three ways, each the mistake a real workflow has shipped:
+    a gate that checks only `failure` (so a skipped leg passes), a gate
+    without `if: always()` (so a failed leg skips the gate itself), and a
+    gate whose `needs` forgot a job. Then the shape this repo carries, which
+    must clear."""
+
+    def workflow(gate: dict) -> dict:
+        return {"jobs": {"a": {}, "b": {}, "test": gate}}
+
+    failure_only = workflow(
+        {
+            "needs": ["a", "b"],
+            "if": "always()",
+            "steps": [{"if": "${{ contains(needs.*.result, 'failure') }}", "run": "exit 1"}],
+        }
+    )
+    assert any("skipped" in p for p in _gate_problems(failure_only)), _gate_problems(failure_only)
+
+    not_always = workflow(
+        {
+            "needs": ["a", "b"],
+            "steps": [{"env": {"NEEDS": "${{ toJSON(needs) }}"}, "run": 'assert r == "success"'}],
+        }
+    )
+    assert any("always()" in p for p in _gate_problems(not_always)), _gate_problems(not_always)
+
+    forgot_b = workflow(
+        {
+            "needs": ["a"],
+            "if": "always()",
+            "steps": [{"env": {"NEEDS": "${{ toJSON(needs) }}"}, "run": 'assert r == "success"'}],
+        }
+    )
+    assert any("['b']" in p for p in _gate_problems(forgot_b)), _gate_problems(forgot_b)
+
+    assert _gate_problems({"jobs": {"a": {}}}) == ["no `test` job"]
+
+    explicit = workflow(
+        {
+            "needs": ["a", "b"],
+            "if": "always()",
+            "steps": [
+                {"env": {"NEEDS": "${{ toJSON(needs) }}"}, "run": 'if r != "success": exit(1)'}
+            ],
+        }
+    )
+    assert _gate_problems(explicit) == []
+    triple = workflow(
+        {
+            "needs": ["a", "b"],
+            "if": "always()",
+            "steps": [
+                {
+                    "if": "${{ contains(needs.*.result, 'failure') || "
+                    "contains(needs.*.result, 'cancelled') || "
+                    "contains(needs.*.result, 'skipped') }}",
+                    "run": "exit 1",
+                }
+            ],
+        }
+    )
+    assert _gate_problems(triple) == [], "the contains-triple is the other accepted spelling"

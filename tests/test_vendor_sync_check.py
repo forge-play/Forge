@@ -1,6 +1,8 @@
 """tools/vendor_sync_check.py — the drift guard tests/test_no_reach_back.py and
-tests/test_human_loop.py cited for a year before it existed (made real under
-G2-vendor-pins-forge, 2026-09-12).
+tests/test_human_loop.py went on citing after it had been retired (a9ee4c2,
+2026-09-02: the old one diffed against a willow-mcp checkout on disk and
+skipped without one), rebuilt as a manifest of hashes under
+G2-vendor-pins-forge on 2026-09-12.
 
 Two different things are proven here, on purpose:
 

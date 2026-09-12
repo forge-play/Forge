@@ -4,15 +4,26 @@ still hashes to what the manifest pins. Exit non-zero naming every drift.
 
 WHY THIS EXISTS
 ---------------
-Two of this repo's own test docstrings (tests/test_no_reach_back.py,
-tests/test_human_loop.py) cited a `tools/vendor_sync_check.py` for a year that
-did not exist — the guard was a sentence. Meanwhile the guards that did exist
-were all downstream: willow-mcp pins forge/friction_floor.py's body by SHA-256
-(its tests/test_stance_friction.py) and identity-checks human_loop and
-model_egress (its tests/test_forge_take.py). Nothing here noticed a drift
-until a consumer's release broke. This is the checker those docstrings named,
-made real and kept small: the manifest is the one place a pinned hash lives,
-and a deliberate change is `--print`, paste, and a note saying why.
+This repo had a tools/vendor_sync_check.py before: 308 lines that diffed the
+three modules vendored from willow-mcp against a willow-mcp checkout on disk
+(and skipped without one), retired on 2026-09-02 (a9ee4c2) when those modules
+came home and willow-mcp began importing them — "there is no copy left to
+keep honest". That reasoning missed one: forge/friction_floor.py is still a
+copy of willow-gate's scorer, and the same commit's claim that it was
+byte-for-byte with willow-gate was measured false on 2026-09-12 (#25).
+Meanwhile two test docstrings (tests/test_no_reach_back.py,
+tests/test_human_loop.py) went on citing the retired script as what enforced
+their contracts, and the only live guards were downstream: willow-mcp pins
+friction_floor's body by SHA-256 (its tests/test_stance_friction.py) and
+identity-checks human_loop and model_egress (its tests/test_forge_take.py).
+Nothing here would notice a drift until a consumer's release broke.
+
+This is the checker those docstrings named, back under the same name and
+built differently on purpose: the old one needed the upstream checkout to
+compare against, so it could not run in CI and skipped on every machine
+without one; this one pins hashes in a manifest and needs nothing but the
+tree. The manifest is the one place a pinned hash lives, and a deliberate
+change is `--print`, paste, and a note saying why.
 
 WHAT A PIN MEANS
 ----------------

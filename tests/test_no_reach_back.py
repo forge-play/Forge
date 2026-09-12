@@ -10,9 +10,11 @@ imports willow_mcp — and the reason willow-mcp can take all three cheaply.
 The three vendored modules (human_loop, friction_floor, model_egress) are
 COPIES, deliberately, not imports — vendored from willow-mcp on 2026-08-11 and
 canonical here since 2026-09-03, when willow-mcp switched to re-exporting them
-from forge-play instead. tools/vendor_sync_check.py keeps them honest — real
-since 2026-09-12 (G2-vendor-pins-forge; this docstring named it for a year
-before it existed): tools/vendor_manifest.json pins each body by SHA-256,
+from forge-play instead. tools/vendor_sync_check.py keeps them honest — the
+earlier one (a diff against a willow-mcp checkout) was retired on 2026-09-02
+(a9ee4c2, when the modules came home) while this docstring went on citing it;
+it was rebuilt on 2026-09-12 (G2-vendor-pins-forge) as a manifest of hashes
+that needs no upstream checkout: tools/vendor_manifest.json pins each body by SHA-256,
 friction_floor against its willow-gate origin under a recorded local override
 (the manifest note says what diverged and why the body is not touched here),
 human_loop and model_egress as canonical here, and tests/test_vendor_sync_check.py

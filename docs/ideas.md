@@ -31,6 +31,8 @@ and were not carried. A legend tag counts only when it LEADS the item text.
 
 1. A numbered idea pile at `docs/ideas.md` in the reconciler's form (E3-piles): this file, converted from the design papers' open sections, validated by `reconciler run --validate`.
 2. Adopt `Idea-Id` commit trailers (fleet CONVENTION, decision-2026-09-11): `.github/workflows/trailers.yml` runs `reconciler verify` on every PR, CONTRIBUTING.md names `reconciler id --grep` so no id is ever typed by hand, and `tests/test_release_wiring.py` holds the workflow to existing wherever this pile does (E3-trailers).
+87. The fleet CI floor (decision 5; C4-tests-yml, C4-codeql): a Linux job whose Python matrix is derived from `pyproject.toml`'s `Programming Language :: Python :: 3.X` classifiers, a Windows job on the floor and ceiling Pythons, a lint job with ruff pinned to an exact version running `ruff check` and `ruff format --check`, CodeQL over python and actions, and an aggregate `test` job that needs every leg, runs `if: always()`, and fails when any needed result is not `success` — skipped and cancelled included — with `tests/test_release_wiring.py` holding each of those to the file and planting each check.
+88. `forge/engagement_probe.py`'s `__all__` names `Row`, which the module never defines, so `from forge.engagement_probe import *` raises `AttributeError`; found by the CI floor's first ruff run (F822) on 2026-09-12. Remove the dead name.
 
 ## B. The owner's decision of 2026-09-12 04:55Z: the Forge is the fleet's vendoring source
 

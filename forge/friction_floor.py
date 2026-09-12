@@ -6,10 +6,29 @@
 # PGP (the gate package pulls python-gnupg), vendored here on 2026-08-11 and
 # aimed at the maker's own rationale (the engagement gate: waved-through
 # decisions come back sooner). willow-mcp now imports it from forge-play;
-# willow-gate keeps its own copy inside the gate. Everything from the docstring
-# down is byte-for-byte with the willow-gate original and willow-mcp's drift
-# guard (tests/test_stance_friction.py) hashes THIS file to prove it — edit the
-# scorer in willow-gate first, then re-sync, never here alone.
+# willow-gate keeps its own copy inside the gate.
+#
+# CORRECTED 2026-09-12: this used to say everything from the docstring down is
+# byte-for-byte with the willow-gate original. Measured (`diff` against
+# willow-gate's src/willow_gate/friction_floor.py) it is not: this copy spells
+# its regex flag `re.I` where willow-gate spells `re.IGNORECASE` (six call
+# sites), and types several signatures with `typing.List`/`Optional` where
+# willow-gate uses PEP 604 `list[...]` / `X | None`. No behaviour differs —
+# both are the same flag and the same types under different spellings — but
+# the bytes do not match, and "byte-for-byte" was a claim about bytes.
+# What IS true and checked: willow-mcp's drift guard
+# (tests/test_stance_friction.py's EXPECTED_BODY_SHA256) hashes THIS file's
+# body — the docstring through EOF — and pins it, so willow-mcp will notice if
+# this copy moves. That pin is against this file's own text, not against
+# willow-gate's; it does not (and cannot) catch this copy having already
+# diverged from willow-gate before the pin was taken. Do not close this gap by
+# editing the body here — a body change breaks willow-mcp's pin at Forge's
+# next release, and that reconciliation is deliberately a separate, later
+# change (the fleet plan's Wave 2 G2-vendor-pins bite, which also gives this
+# repo its own hash-pin test against willow-gate, the way willow-mcp pins
+# against this file). willow-gate stays the declared origin: edit the scorer
+# there first, then re-sync — that instruction was correct before and still
+# is; only the "already in sync" claim was wrong.
 """friction_floor.py — a smoke detector for the mirror, not a wall.
 
 The gap WillowGate and the inversion-check don't cover: neither watches the

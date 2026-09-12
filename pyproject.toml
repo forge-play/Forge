@@ -74,10 +74,12 @@ trust = ["nestor-meaning[gate]"]
 # from an untagged commit fails loudly instead of shipping something
 # mislabelled. CI must check out with `fetch-depth: 0` or no tags are present.
 #
-# No tag exists yet; `.release-please-manifest.json` starts at 0.0.0 so the
-# first `feat:` proposes v0.1.0. Cutting a release is release-please's job
-# (`release-please-config.json`, `release-type: simple`) — let it pick the
-# number from the commits rather than tagging by hand.
+# As of 2026-09-12, nine tags exist (v0.1.0 through v0.7.2) and
+# `.release-please-manifest.json` tracks the latest, 0.7.2 — it no longer
+# starts at 0.0.0 waiting for a first `feat:`. Cutting a release is still
+# release-please's job (`release-please-config.json`, `release-type:
+# simple`) — let it pick the number from the commits rather than tagging by
+# hand.
 source = "vcs"
 
 [tool.hatch.build.targets.wheel]

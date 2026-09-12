@@ -82,6 +82,32 @@ trust = ["nestor-meaning[gate]"]
 # hand.
 source = "vcs"
 
+# The fleet CI floor's lint (decision 5, C4-tests-yml): `ruff check` and
+# `ruff format --check`, ruff pinned to one exact version in tests.yml. This
+# block was written on 2026-09-12 when the floor arrived; there was no ruff
+# configuration before it, so nothing here loosens anything.
+#
+# The rule set is ruff's own long-standing default (E4/E7/E9 + pyflakes) plus
+# import ordering, at the width this tree was evidently written to. It is
+# deliberately NOT the wide 0.16 default set: that set rewrites `re.I` to
+# `re.IGNORECASE` and `Optional[X]` to `X | None`, and the two files below are
+# pinned BY THEIR BYTES by consumers in other repos (tools/vendor_manifest.json
+# says which and why) — a lint fix there is a fleet event, not a lint fix.
+# Widening the set is a decision to take with the pins in view, not a default
+# to inherit. E501 is left to the formatter: `ruff format` wraps code, and the
+# long lines that remain are prose in docstrings and comments.
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+# Bodies other repos pin by SHA-256 (willow-mcp pins friction_floor's body;
+# kartikeya, corpus-lens, Jeles and willow-mcp pin changelog_dedup's). Neither
+# the formatter nor a lint fix may move a byte of them here; they change in
+# the same hour as their consumers, or not at all.
+extend-exclude = ["forge/friction_floor.py", "tools/changelog_dedup.py"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
 [tool.hatch.build.targets.wheel]
 # The import name stays `forge`; only the distribution name is `forge-play`.
 packages = ["forge"]

@@ -1,0 +1,48 @@
+name: CodeQL
+
+# The fleet CI floor's static-analysis half (decision 5, C4-codeql). Two
+# languages: `python` for the package, tools and tests, and `actions` for the
+# workflows themselves — a workflow file is code that runs with a token, and
+# the actions query pack is what catches an untrusted `${{ }}` expansion in a
+# `run:` step or an over-broad `permissions:` block. Alerts land under the
+# repository's Security tab; the check is its own status on a pull request,
+# separate from tests.yml's `test` aggregate, because CodeQL's runtime is not
+# a reason to hold the unit suite and the unit suite is not a reason to hold
+# a security finding.
+#
+# `schedule` runs the queries weekly against master so a query-pack update
+# that finds something in unchanged code still surfaces without waiting for
+# the next commit.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  schedule:
+    - cron: "17 6 * * 1"   # Mondays 06:17 UTC; off the hour so runs spread
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write   # to upload the SARIF results
+      actions: read            # for private-repo workflow metadata
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, actions]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"

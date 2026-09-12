@@ -1,0 +1,11 @@
+# Every text file checks out with LF line endings on every platform.
+#
+# The fleet CI floor (C4-tests-yml) runs the suite on Windows, whose hosted
+# runners set core.autocrlf=true: without this file a checkout there rewrites
+# every text file to CRLF, and anything that hashes a file's BYTES — the
+# fleet conventions document's pin in tests/test_fleet_conventions.py, the
+# bodies tools/vendor_sync_check.py reads when it is asked for bytes rather
+# than text — stops matching the number recorded on Linux. Pinning the
+# checkout to LF is the fix at the source; normalising CRLF away in each
+# reader would only hide which platform the bytes came from.
+* text=auto eol=lf

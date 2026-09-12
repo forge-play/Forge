@@ -85,6 +85,7 @@ hash comparison (`vsc.drifts() == []`) — no membership, no pattern, no AST —
 so this file cannot see it, and that file carries its own plants for the
 same reason this one carries its own.
 """
+
 from __future__ import annotations
 
 import ast
@@ -97,8 +98,7 @@ TESTS_DIR = Path(__file__).resolve().parent
 #: `_reads_a_jsonl_path_with_bare_json_loads`-style names (reads is the
 #: *first*) both match without over-firing on unrelated names.
 _NAME_TOKENS = frozenset(
-    {"scan", "scans", "reads", "calls", "offenders", "uses", "check", "checks",
-     "guard", "guards"}
+    {"scan", "scans", "reads", "calls", "offenders", "uses", "check", "checks", "guard", "guards"}
 )
 
 #: The convention this repo actually uses for "this scan was shown to fire on
@@ -118,9 +118,7 @@ _PLANT_DOC_WORDS = ("plant",)
 #: Pattern-matching methods. Matched on the attribute name alone, so both
 #: `re.search(...)` and a module-level `_STRIKE_RE.finditer(...)` count — a
 #: compiled pattern is the same scan with the compile hoisted.
-_MATCH_CALLS = frozenset(
-    {"search", "findall", "finditer", "match", "fullmatch", "compile"}
-)
+_MATCH_CALLS = frozenset({"search", "findall", "finditer", "match", "fullmatch", "compile"})
 
 #: Reading a file's text through `pathlib`. The grep half of a grep-shaped
 #: scan, in the spelling this suite reaches for first.
@@ -146,11 +144,7 @@ _SOURCE_READS = frozenset({"getsource", "getsourcelines"})
 
 def _is_open_call(expr: ast.AST) -> bool:
     """A builtin `open(...)`, however its mode and encoding are spelled."""
-    return (
-        isinstance(expr, ast.Call)
-        and isinstance(expr.func, ast.Name)
-        and expr.func.id == "open"
-    )
+    return isinstance(expr, ast.Call) and isinstance(expr.func, ast.Name) and expr.func.id == "open"
 
 
 def _open_handles(node: ast.AST) -> frozenset[str]:
@@ -226,8 +220,7 @@ def _tests_membership(node: ast.AST) -> bool:
     """True if the body asks `x in y` / `x not in y` anywhere — the grep
     question, once the text is in hand."""
     return any(
-        isinstance(sub, ast.Compare)
-        and any(isinstance(op, (ast.In, ast.NotIn)) for op in sub.ops)
+        isinstance(sub, ast.Compare) and any(isinstance(op, (ast.In, ast.NotIn)) for op in sub.ops)
         for sub in ast.walk(node)
     )
 
@@ -263,9 +256,7 @@ def _scans_a_word_list(node: ast.AST, constants: frozenset[str]) -> bool:
             iterables, body = [g.iter for g in sub.generators], [sub]
         else:
             continue
-        if not any(
-            isinstance(it, ast.Name) and it.id in constants for it in iterables
-        ):
+        if not any(isinstance(it, ast.Name) and it.id in constants for it in iterables):
             continue
         if any(_tests_membership(part) for part in body):
             return True
@@ -300,10 +291,7 @@ def _filters_by_membership(node: ast.AST) -> bool:
     """
     for sub in ast.walk(node):
         if isinstance(sub, (ast.ListComp, ast.SetComp, ast.GeneratorExp)):
-            targets = {
-                gen.target.id for gen in sub.generators
-                if isinstance(gen.target, ast.Name)
-            }
+            targets = {gen.target.id for gen in sub.generators if isinstance(gen.target, ast.Name)}
             conditions = [cond for gen in sub.generators for cond in gen.ifs]
         elif isinstance(sub, ast.For) and isinstance(sub.target, ast.Name):
             targets, conditions = {sub.target.id}, list(sub.body)
@@ -333,9 +321,7 @@ def _is_fixture(node: ast.FunctionDef) -> bool:
     return any(_decorator_name(dec) == "fixture" for dec in node.decorator_list)
 
 
-def _is_scan_helper(
-    node: ast.FunctionDef, constants: frozenset[str] = frozenset()
-) -> bool:
+def _is_scan_helper(node: ast.FunctionDef, constants: frozenset[str] = frozenset()) -> bool:
     """A module-level helper counts as a scan/guard if it is shaped like one
     (walks source, matches a pattern, reads a file and asks a membership
     question of it, walks a module-level word list asking membership of
@@ -387,9 +373,7 @@ def _scan_helpers(source: str) -> list[str]:
     tree = ast.parse(source)
     constants = _module_collection_constants(tree)
     return sorted(
-        name
-        for name, node in _module_helpers(tree).items()
-        if _is_scan_helper(node, constants)
+        name for name, node in _module_helpers(tree).items() if _is_scan_helper(node, constants)
     )
 
 
@@ -514,9 +498,7 @@ def _unplanted_shared_scan_helpers(shared: Path = SHARED_SCANS) -> list[str]:
             continue
         exercised |= _names_the_plants_call(path.read_text(encoding="utf-8"))
     return [
-        name
-        for name in _scan_helpers(shared.read_text(encoding="utf-8"))
-        if name not in exercised
+        name for name in _scan_helpers(shared.read_text(encoding="utf-8")) if name not in exercised
     ]
 
 
@@ -976,8 +958,18 @@ def test_a_docstring_that_says_planted_does_clear_the_scan(tmp_path):
 #: not one of these, so a dict built from a read is still several steps
 #: removed and still not a scan.
 _TEXT_SLICERS = _TEXT_WRAPPERS | frozenset(
-    {"split", "rsplit", "splitlines", "partition", "rpartition", "replace",
-     "lstrip", "rstrip", "removeprefix", "removesuffix"}
+    {
+        "split",
+        "rsplit",
+        "splitlines",
+        "partition",
+        "rpartition",
+        "replace",
+        "lstrip",
+        "rstrip",
+        "removeprefix",
+        "removesuffix",
+    }
 )
 
 
@@ -1018,9 +1010,7 @@ def _direct_text_names(func: ast.FunctionDef) -> frozenset[str]:
         for targets, root in assigns:
             if not targets or set(targets) <= names:
                 continue
-            if _is_read_call(root, handles) or (
-                isinstance(root, ast.Name) and root.id in names
-            ):
+            if _is_read_call(root, handles) or (isinstance(root, ast.Name) and root.id in names):
                 names.update(targets)
                 grew = True
         if not grew:
@@ -1028,13 +1018,9 @@ def _direct_text_names(func: ast.FunctionDef) -> frozenset[str]:
     return frozenset(names)
 
 
-def _is_text_source(
-    expr: ast.AST, direct_names: frozenset[str], handles: frozenset[str]
-) -> bool:
+def _is_text_source(expr: ast.AST, direct_names: frozenset[str], handles: frozenset[str]) -> bool:
     root = _text_root(expr)
-    return _is_read_call(root, handles) or (
-        isinstance(root, ast.Name) and root.id in direct_names
-    )
+    return _is_read_call(root, handles) or (isinstance(root, ast.Name) and root.id in direct_names)
 
 
 def _membership_on_read_text(node: ast.FunctionDef) -> bool:
@@ -1043,7 +1029,9 @@ def _membership_on_read_text(node: ast.FunctionDef) -> bool:
     direct_names = _direct_text_names(node)
     handles = _open_handles(node)
     for sub in ast.walk(node):
-        if isinstance(sub, ast.Compare) and any(isinstance(op, (ast.In, ast.NotIn)) for op in sub.ops):
+        if isinstance(sub, ast.Compare) and any(
+            isinstance(op, (ast.In, ast.NotIn)) for op in sub.ops
+        ):
             if any(
                 _is_text_source(operand, direct_names, handles)
                 for operand in (sub.left, *sub.comparators)
@@ -1130,9 +1118,7 @@ def _resolvable_helpers(source: str, global_helpers: frozenset[str]) -> frozense
     """The known scan helpers this module can reach by a *bare* name: the
     ones it imports, and the ones it defines itself."""
     tree = ast.parse(source)
-    return global_helpers & (
-        _imported_names(tree) | frozenset(_scan_helpers(source))
-    )
+    return global_helpers & (_imported_names(tree) | frozenset(_scan_helpers(source)))
 
 
 def _is_inline_scan(
@@ -1155,8 +1141,7 @@ def _is_inline_scan(
     inline `in` hidden behind a delegated call is not seen.
     """
     if not (
-        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and node.name.startswith("test_")
+        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_")
     ):
         return False
     if _is_fixture(node):
@@ -1193,9 +1178,7 @@ def _inline_scan_tests(source: str, global_helpers: frozenset[str]) -> list[str]
     tree = ast.parse(source)
     bare = _resolvable_helpers(source, global_helpers)
     return sorted(
-        name
-        for name, node in _test_functions(tree)
-        if _is_inline_scan(node, global_helpers, bare)
+        name for name, node in _test_functions(tree) if _is_inline_scan(node, global_helpers, bare)
     )
 
 
@@ -1262,8 +1245,7 @@ def test_the_inline_scan_check_knows_every_spelling_of_reading_a_real_file(tmp_p
     spellings = {
         "open_chain": "    text = open('x', encoding='utf-8').read()\n",
         "open_with": (
-            "    with open('x', encoding='utf-8') as handle:\n"
-            "        text = handle.read()\n"
+            "    with open('x', encoding='utf-8') as handle:\n        text = handle.read()\n"
         ),
         "read_bytes_decode": "    text = Path('x').read_bytes().decode()\n",
         "getsource": "    text = inspect.getsource(Path)\n",
@@ -1298,7 +1280,7 @@ def test_the_inline_scan_check_follows_a_slice_of_the_text_but_not_a_parse_of_it
         "\n"
         "def test_the_body_names_no_seal():\n"
         "    source = Path('x').read_text(encoding='utf-8')\n"
-        "    body = source.split('\"\"\"', 2)[2]\n"
+        '    body = source.split(\'"""\', 2)[2]\n'
         "    assert 'seal(' not in body\n",
     )
     assert _inline_scan_tests(sliced, frozenset()) == ["test_the_body_names_no_seal"]
@@ -1425,9 +1407,9 @@ def test_the_inline_scan_check_reads_class_methods_and_async_tests_too(tmp_path)
         "        text = Path('x').read_text(encoding='utf-8')\n"
         "        assert 'banned' not in text\n",
     )
-    assert _inline_scan_tests(in_a_class, frozenset()) == [
-        "TestTheTree::test_no_banned_word"
-    ], "a scan in a test class's method is still a scan, and is named as one"
+    assert _inline_scan_tests(in_a_class, frozenset()) == ["TestTheTree::test_no_banned_word"], (
+        "a scan in a test class's method is still a scan, and is named as one"
+    )
 
     awaited = _write(
         tmp_path,
@@ -1460,9 +1442,9 @@ def test_delegating_clears_a_test_that_also_asks_its_own_question(tmp_path):
         "    assert _covenant_breaches(Path('x'))\n",
     )
     assert _inline_scan_tests(source, frozenset({"_covenant_breaches"})) == []
-    assert _inline_scan_tests(source, frozenset()) == [
-        "test_the_planted_word_is_reported"
-    ], "and with no helper behind it, the same body is an inline scan"
+    assert _inline_scan_tests(source, frozenset()) == ["test_the_planted_word_is_reported"], (
+        "and with no helper behind it, the same body is an inline scan"
+    )
 
 
 def test_a_local_function_sharing_a_helpers_name_does_not_clear_a_scan(tmp_path):
@@ -1524,7 +1506,7 @@ def test_the_inline_scan_check_does_not_fire_on_the_real_tree():
         "\n"
         "def test_the_module_never_names_seal_or_a_keyring():\n"
         "    src = Path('forge/deposit.py').read_text(encoding='utf-8')\n"
-        "    body = src.split('\"\"\"', 2)[2]  # below the module docstring\n"
+        '    body = src.split(\'"""\', 2)[2]  # below the module docstring\n'
         "    for word in ('seal(', 'seal_edge(', 'keyring'):\n"
         "        assert word not in body, f'{word!r} appears in forge/deposit.py'\n"
     )

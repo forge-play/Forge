@@ -27,6 +27,7 @@ device actually needs, small enough to audit in one sitting.
 A "pair" everywhere below is (confidence, outcome): the final P(true) the
 person stated, and whether the claim turned out true.
 """
+
 from __future__ import annotations
 
 import math
@@ -59,13 +60,15 @@ def bins(pairs: list[tuple[float, bool]]) -> list[dict]:
     for lo, hi in zip(BIN_EDGES, BIN_EDGES[1:]):
         members = [(c, o) for c, o in pairs if lo <= c < hi or (hi == 1.0 and c == 1.0)]
         n = len(members)
-        out.append({
-            "lo": lo,
-            "hi": hi,
-            "n": n,
-            "mean_confidence": sum(c for c, _ in members) / n if n else None,
-            "hit_rate": sum(1 for _, o in members if o) / n if n else None,
-        })
+        out.append(
+            {
+                "lo": lo,
+                "hi": hi,
+                "n": n,
+                "mean_confidence": sum(c for c, _ in members) / n if n else None,
+                "hit_rate": sum(1 for _, o in members if o) / n if n else None,
+            }
+        )
     return out
 
 

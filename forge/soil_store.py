@@ -25,13 +25,13 @@ beyond last-writer-wins on the whole file (a torn write is the same dev-only
 risk the sibling `.checkpoints/` JSON stores carry — matched, not widened). It
 exists to satisfy `human_loop`'s contract, nothing more.
 """
+
 from __future__ import annotations
 
 import json
 import os
 from pathlib import Path
 from typing import Any
-
 
 # Reuse checkpoint_memory's validated builder-id check and shared root — one
 # source for the charset and the checkpoint root, same as checkpoint_schedule.

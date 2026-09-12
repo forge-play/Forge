@@ -34,6 +34,7 @@ fail-closes on import without nestor.cloud_seal + willow-gate, and so does this.
     python tools/promotion_trust.py witness --custody custody.jsonl --checkpoint checkpoint.json \
         --key-file verifier.key --author-id agent:vishwakarma --verifier-id rudi193 --promotion promotion.json
 """
+
 from __future__ import annotations
 
 import argparse
@@ -46,10 +47,14 @@ from pathlib import Path
 try:
     from willow_gate import WillowGate
     from willow_gate.custody import CustodyLedger
+
     from forge import trust
 except ImportError as e:  # the seam is optional; this tool is not usable without it
-    print(f"promotion_trust: the trust seam is not installed ({e}); "
-          f"`pip install 'forge-play[trust]'`", file=sys.stderr)
+    print(
+        f"promotion_trust: the trust seam is not installed ({e}); "
+        f"`pip install 'forge-play[trust]'`",
+        file=sys.stderr,
+    )
     raise SystemExit(3)
 
 
@@ -87,16 +92,24 @@ def cmd_enroll(a: argparse.Namespace) -> int:
         # author's own dev gate it is explicit here, never implicit.
         gate.register_agent(a.author_id, secret, max_trust=max(2, a.trust_level + 1))
     custody = CustodyLedger(path=a.custody)
-    res = trust.enroll(gate, a.author_id, secret, custody=custody, promotion=promo,
-                       trust_level=a.trust_level)
-    print(json.dumps({
-        "enrolled": promo.get("app_id"), "by": a.author_id,
-        "lineage": trust.promotion_lineage(promo["app_id"]),
-        "canonical": bool(getattr(res, "canonical", False)),
-        "sealed": list(getattr(res, "sealed", [])),
-        "custody": a.custody, "custody_events": len(custody),
-        "note": "provisional — a different hand ratifies (see `ratify`)",
-    }, indent=2))
+    res = trust.enroll(
+        gate, a.author_id, secret, custody=custody, promotion=promo, trust_level=a.trust_level
+    )
+    print(
+        json.dumps(
+            {
+                "enrolled": promo.get("app_id"),
+                "by": a.author_id,
+                "lineage": trust.promotion_lineage(promo["app_id"]),
+                "canonical": bool(getattr(res, "canonical", False)),
+                "sealed": list(getattr(res, "sealed", [])),
+                "custody": a.custody,
+                "custody_events": len(custody),
+                "note": "provisional — a different hand ratifies (see `ratify`)",
+            },
+            indent=2,
+        )
+    )
     return 0
 
 
@@ -105,8 +118,16 @@ def cmd_ratify(a: argparse.Namespace) -> int:
     signer = HmacKeySigner(_read_bytes(a.key_file))
     cp = trust.ratify(custody, signer, ts=a.ts)
     Path(a.out).write_text(json.dumps(cp, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(json.dumps({"checkpoint": a.out, "covers_to_seq": cp.get("covers_to_seq"),
-                      "custody_events": len(custody)}, indent=2))
+    print(
+        json.dumps(
+            {
+                "checkpoint": a.out,
+                "covers_to_seq": cp.get("covers_to_seq"),
+                "custody_events": len(custody),
+            },
+            indent=2,
+        )
+    )
     return 0
 
 
@@ -115,8 +136,14 @@ def cmd_witness(a: argparse.Namespace) -> int:
     custody = CustodyLedger.load(a.custody)
     cp = json.loads(Path(a.checkpoint).read_text(encoding="utf-8"))
     signer = HmacKeySigner(_read_bytes(a.key_file))
-    w = trust.witnessed(custody, cp, signer, author_id=a.author_id,
-                        verifier_id=a.verifier_id, app_id=promo["app_id"])
+    w = trust.witnessed(
+        custody,
+        cp,
+        signer,
+        author_id=a.author_id,
+        verifier_id=a.verifier_id,
+        app_id=promo["app_id"],
+    )
     block = {
         "custody": a.custody,
         "checkpoint": cp,
@@ -124,8 +151,11 @@ def cmd_witness(a: argparse.Namespace) -> int:
         "verifier_id": a.verifier_id,
         "signer": "hmac-sha256",
     }
-    print(json.dumps({"witnessed": w.ok, "reason": w.reason,
-                      "trust": block if w.ok else None}, indent=2))
+    print(
+        json.dumps(
+            {"witnessed": w.ok, "reason": w.reason, "trust": block if w.ok else None}, indent=2
+        )
+    )
     if w.ok and a.write_into:
         p = Path(a.write_into)
         doc = json.loads(p.read_text(encoding="utf-8"))
@@ -136,8 +166,11 @@ def cmd_witness(a: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="promotion_trust.py", description=__doc__,
-                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p = argparse.ArgumentParser(
+        prog="promotion_trust.py",
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     sub = p.add_subparsers(dest="cmd", required=True)
 
     e = sub.add_parser("enroll", help="author: provisional seal through the gate")
@@ -147,8 +180,11 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--secret-file", required=True, help="the author's gate secret (bytes)")
     e.add_argument("--promotion", default="promotion.json")
     e.add_argument("--trust-level", type=int, default=1)
-    e.add_argument("--register", action="store_true",
-                   help="register the author in this gate first (dev gate only)")
+    e.add_argument(
+        "--register",
+        action="store_true",
+        help="register the author in this gate first (dev gate only)",
+    )
     e.set_defaults(fn=cmd_enroll)
 
     r = sub.add_parser("ratify", help="verifier: checkpoint the custody chain with your key")
@@ -165,8 +201,9 @@ def build_parser() -> argparse.ArgumentParser:
     w.add_argument("--author-id", required=True)
     w.add_argument("--verifier-id", required=True)
     w.add_argument("--promotion", default="promotion.json")
-    w.add_argument("--write-into", default=None,
-                   help="also write the trust block into this promotion.json")
+    w.add_argument(
+        "--write-into", default=None, help="also write the trust block into this promotion.json"
+    )
     w.set_defaults(fn=cmd_witness)
     return p
 

@@ -40,13 +40,12 @@ Exit 1 when any rationale labelled `not_a_decision` scores at or above
 read as a rubber-stamp. That is the condition this probe was written to catch,
 so a hook can gate on it.
 """
+
 from __future__ import annotations
 
 import argparse
 import json
 import re
-import sys
-from pathlib import Path
 
 from . import checkpoint_engagement, friction_floor
 
@@ -56,7 +55,7 @@ __all__ = ["Row", "CORPUS", "decompose", "probe", "summary", "main"]
 # ceiling above which checkpoint_schedule.grade pushes the review interval OUT.
 # Both imported/named from their owners rather than restated (the audit that
 # caught two coincidental `0.34` literals applies here too).
-FLOOR = checkpoint_engagement.RUBBER_STAMP_FLOOR          # 0.34
+FLOOR = checkpoint_engagement.RUBBER_STAMP_FLOOR  # 0.34
 EASY_MIN = 0.66  # checkpoint_schedule._EASY_MIN_ENGAGEMENT (private; see note)
 
 # `_EASY_MIN_ENGAGEMENT` is module-private in checkpoint_schedule and is
@@ -85,54 +84,99 @@ CONTEXT_DATES = "When a picture gets a date, where does the date go?"
 
 CORPUS: tuple[dict, ...] = (
     # ── the one that started this: argparse's own --why default ─────────────
-    {"id": "argparse-default", "kind": "not_a_decision", "context": CONTEXT_MAJOR,
-     "note": "forge/entry.py --why default; reached the ledger on 2026-09-07",
-     "text": "picked at the command line"},
-    {"id": "argparse-default-sealed", "kind": "not_a_decision", "context": CONTEXT_MAJOR,
-     "note": "the canonical form it was sealed as, per the-positional-default.md",
-     "text": "web: picked at the command line"},
-    {"id": "empty", "kind": "not_a_decision", "context": CONTEXT_DATES,
-     "note": "picked an option, explained nothing",
-     "text": ""},
-    {"id": "echo", "kind": "not_a_decision", "context": CONTEXT_DATES,
-     "note": "the prompt read back",
-     "text": "when a picture gets a date, where does the date go"},
-
+    {
+        "id": "argparse-default",
+        "kind": "not_a_decision",
+        "context": CONTEXT_MAJOR,
+        "note": "forge/entry.py --why default; reached the ledger on 2026-09-07",
+        "text": "picked at the command line",
+    },
+    {
+        "id": "argparse-default-sealed",
+        "kind": "not_a_decision",
+        "context": CONTEXT_MAJOR,
+        "note": "the canonical form it was sealed as, per the-positional-default.md",
+        "text": "web: picked at the command line",
+    },
+    {
+        "id": "empty",
+        "kind": "not_a_decision",
+        "context": CONTEXT_DATES,
+        "note": "picked an option, explained nothing",
+        "text": "",
+    },
+    {
+        "id": "echo",
+        "kind": "not_a_decision",
+        "context": CONTEXT_DATES,
+        "note": "the prompt read back",
+        "text": "when a picture gets a date, where does the date go",
+    },
     # ── human-typed wave-throughs ───────────────────────────────────────────
-    {"id": "assent-bare", "kind": "rubber_stamp", "context": CONTEXT_DATES,
-     "text": "yes"},
-    {"id": "assent-polite", "kind": "rubber_stamp", "context": CONTEXT_DATES,
-     "text": "sounds good"},
-    {"id": "assent-deferential", "kind": "rubber_stamp", "context": CONTEXT_DATES,
-     "text": "whatever you think is best"},
-
+    {"id": "assent-bare", "kind": "rubber_stamp", "context": CONTEXT_DATES, "text": "yes"},
+    {
+        "id": "assent-polite",
+        "kind": "rubber_stamp",
+        "context": CONTEXT_DATES,
+        "text": "sounds good",
+    },
+    {
+        "id": "assent-deferential",
+        "kind": "rubber_stamp",
+        "context": CONTEXT_DATES,
+        "text": "whatever you think is best",
+    },
     # ── real reasoning ──────────────────────────────────────────────────────
-    {"id": "real-plain", "kind": "real", "context": CONTEXT_DATES,
-     "note": "substantive, names the tradeoff, uses no pushback vocabulary",
-     "text": ("the originals are already correct and a sidecar drifts the moment "
-              "anyone re-exports, so we lose nothing by writing in place and gain "
-              "one less thing to keep in sync")},
-    {"id": "real-with-cues", "kind": "real", "context": CONTEXT_DATES,
-     "note": "the same argument, rephrased with contrast markers",
-     "text": ("however, I disagree with the recommendation: the dates are already "
-              "correct, whereas a sidecar drifts on re-export")},
-    {"id": "real-question", "kind": "real", "context": CONTEXT_DATES,
-     "note": "engagement expressed as a question rather than a claim",
-     "text": "but what happens when someone re-exports? does the sidecar survive that?"},
-    {"id": "real-short", "kind": "real", "context": CONTEXT_DATES,
-     "note": "a genuine one-line reason — the case the gate's docstring says it "
-             "may misread, and names as the intended bias",
-     "text": "exif, because the date has to travel with the file"},
-
+    {
+        "id": "real-plain",
+        "kind": "real",
+        "context": CONTEXT_DATES,
+        "note": "substantive, names the tradeoff, uses no pushback vocabulary",
+        "text": (
+            "the originals are already correct and a sidecar drifts the moment "
+            "anyone re-exports, so we lose nothing by writing in place and gain "
+            "one less thing to keep in sync"
+        ),
+    },
+    {
+        "id": "real-with-cues",
+        "kind": "real",
+        "context": CONTEXT_DATES,
+        "note": "the same argument, rephrased with contrast markers",
+        "text": (
+            "however, I disagree with the recommendation: the dates are already "
+            "correct, whereas a sidecar drifts on re-export"
+        ),
+    },
+    {
+        "id": "real-question",
+        "kind": "real",
+        "context": CONTEXT_DATES,
+        "note": "engagement expressed as a question rather than a claim",
+        "text": "but what happens when someone re-exports? does the sidecar survive that?",
+    },
+    {
+        "id": "real-short",
+        "kind": "real",
+        "context": CONTEXT_DATES,
+        "note": "a genuine one-line reason — the case the gate's docstring says it "
+        "may misread, and names as the intended bias",
+        "text": "exif, because the date has to travel with the file",
+    },
     # ── the control: an off-topic non-sequitur ──────────────────────────────
-    {"id": "non-sequitur", "kind": "not_a_decision", "context": CONTEXT_DATES,
-     "note": "CONTROL — says nothing about the decision. Maximum novelty by "
-             "construction; scores what irrelevance is worth.",
-     "text": "the kettle is on and the cat needs feeding"},
+    {
+        "id": "non-sequitur",
+        "kind": "not_a_decision",
+        "context": CONTEXT_DATES,
+        "note": "CONTROL — says nothing about the decision. Maximum novelty by "
+        "construction; scores what irrelevance is worth.",
+        "text": "the kettle is on and the cat needs feeding",
+    },
 )
 
 
 # ── decomposition ───────────────────────────────────────────────────────────
+
 
 def decompose(text: str, context: str) -> dict:
     """The authoritative score, plus which of `friction_score`'s four terms
@@ -197,13 +241,13 @@ def _grade_name(score: float) -> str:
 
 # ── the probe ───────────────────────────────────────────────────────────────
 
+
 def probe(corpus: tuple[dict, ...] = CORPUS) -> list[dict]:
     """Score every corpus row. Read-only; no store, no model, no clock."""
     out = []
     for row in corpus:
         d = decompose(row["text"], row["context"])
-        d.update(id=row["id"], kind=row["kind"], text=row["text"],
-                 note=row.get("note", ""))
+        d.update(id=row["id"], kind=row["kind"], text=row["text"], note=row.get("note", ""))
         # The label's expectation, and whether the scorer met it.
         d["expected_rubber_stamp"] = row["kind"] in ("not_a_decision", "rubber_stamp")
         d["agrees_with_label"] = d["rubber_stamp"] == d["expected_rubber_stamp"]
@@ -227,6 +271,7 @@ def summary(rows: list[dict]) -> dict:
 
 
 # ── CLI ─────────────────────────────────────────────────────────────────────
+
 
 def _render(rows: list[dict], s: dict) -> str:
     w = max(len(r["id"]) for r in rows)
@@ -266,6 +311,7 @@ def _render(rows: list[dict], s: dict) -> str:
 
 # ── separability: could ANY reweighting of these four terms work? ───────────
 
+
 def _feature_vector(text: str, context: str) -> list[float]:
     """The four terms `friction_score` combines, BEFORE weighting — the raw
     feature space. `decompose` reports the weighted contributions; this reports
@@ -303,16 +349,20 @@ def separability(corpus: tuple[dict, ...] = CORPUS) -> dict:
     rows = []
     for r in corpus:
         f = _feature_vector(r["text"], r["context"])
-        rows.append({"id": r["id"], "kind": r["kind"], "features": f,
-                     "should_pass": r["kind"] == "real"})
+        rows.append(
+            {"id": r["id"], "kind": r["kind"], "features": f, "should_pass": r["kind"] == "real"}
+        )
 
     # ── collisions ──────────────────────────────────────────────────────────
     by_vec: dict[tuple, list[dict]] = {}
     for r in rows:
         by_vec.setdefault(tuple(r["features"]), []).append(r)
     collisions = [
-        {"features": list(v), "ids": [x["id"] for x in group],
-         "labels": sorted({x["kind"] for x in group})}
+        {
+            "features": list(v),
+            "ids": [x["id"] for x in group],
+            "labels": sorted({x["kind"] for x in group}),
+        }
         for v, group in by_vec.items()
         if len({x["should_pass"] for x in group}) > 1
     ]
@@ -347,8 +397,8 @@ def separability(corpus: tuple[dict, ...] = CORPUS) -> dict:
             "reweighting cannot fix this: the classes are not linearly separable "
             "in friction_score's four features, so no choice of coefficients "
             "separates them"
-            if not separable else
-            "the classes ARE linearly separable — a reweighting exists; "
+            if not separable
+            else "the classes ARE linearly separable — a reweighting exists; "
             "revisit remedy 2 in the-forge-engagement-defect.md"
         ),
     }
@@ -364,13 +414,20 @@ _FEATURE_NAMES = ("pushback", "grounding", "novelty", "question")
 
 def _render_separability(s: dict) -> str:
     w = max(len(r["id"]) for r in s["rows"])
-    out = ["could any reweighting of friction_score's terms separate these?", "",
-           f"{'id':<{w}}  {'label':<14} " + " ".join(f"{n:>9}" for n in _FEATURE_NAMES) + "  should_pass",
-           f"{'-' * w}  {'-' * 14} " + " ".join("-" * 9 for _ in _FEATURE_NAMES) + "  -----------"]
+    out = [
+        "could any reweighting of friction_score's terms separate these?",
+        "",
+        f"{'id':<{w}}  {'label':<14} "
+        + " ".join(f"{n:>9}" for n in _FEATURE_NAMES)
+        + "  should_pass",
+        f"{'-' * w}  {'-' * 14} " + " ".join("-" * 9 for _ in _FEATURE_NAMES) + "  -----------",
+    ]
     for r in s["rows"]:
-        out.append(f"{r['id']:<{w}}  {r['kind']:<14} "
-                   + " ".join(f"{v:>9.2f}" for v in r["features"])
-                   + f"  {r['should_pass']}")
+        out.append(
+            f"{r['id']:<{w}}  {r['kind']:<14} "
+            + " ".join(f"{v:>9.2f}" for v in r["features"])
+            + f"  {r['should_pass']}"
+        )
     out.append("")
     if s["collisions"]:
         out.append("IDENTICAL FEATURE VECTORS, OPPOSITE LABELS — no function of")
@@ -380,8 +437,7 @@ def _render_separability(s: dict) -> str:
             out.append(f"  [{vec}]")
             out.append(f"    {', '.join(c['ids'])}   ({' vs '.join(c['labels'])})")
         out.append("")
-    out.append(f"linearly separable : {s['linearly_separable']} "
-               f"(perceptron, {s['epochs']} epochs)")
+    out.append(f"linearly separable : {s['linearly_separable']} (perceptron, {s['epochs']} epochs)")
     out.append("")
     out.append(s["verdict"])
     return "\n".join(out)
@@ -390,10 +446,14 @@ def _render_separability(s: dict) -> str:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="engagement_probe.py",
-        description="what the engagement gate actually rewards — read-only")
-    p.add_argument("--separability", action="store_true",
-                   help="ask whether ANY reweighting of the four terms could "
-                        "separate the corpus (remedy 2 in the defect paper)")
+        description="what the engagement gate actually rewards — read-only",
+    )
+    p.add_argument(
+        "--separability",
+        action="store_true",
+        help="ask whether ANY reweighting of the four terms could "
+        "separate the corpus (remedy 2 in the defect paper)",
+    )
     p.add_argument("--json", action="store_true")
     return p
 
@@ -402,8 +462,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.separability:
         sep = separability()
-        print(json.dumps(sep, indent=2, sort_keys=True) if args.json
-              else _render_separability(sep))
+        print(json.dumps(sep, indent=2, sort_keys=True) if args.json else _render_separability(sep))
         # Exit 1 while reweighting cannot rescue the scorer — the same
         # gateable-rather-than-remembered posture as the default mode.
         return 0 if sep["linearly_separable"] else 1

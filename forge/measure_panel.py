@@ -43,6 +43,7 @@ itself and mark its own homework.
 Usage:
     python -m forge.measure_panel measure <build_dir>
 """
+
 from __future__ import annotations
 
 import argparse
@@ -51,7 +52,6 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Protocol, runtime_checkable
-
 
 from . import checkpoint_governance
 
@@ -120,7 +120,9 @@ class PanelReport:
         note = f"panel coverage: ran [{ran}]"
         if self.unavailable:
             gaps = "; ".join(f"{n} ({why})" for n, why in self.unavailable)
-            note += f" — COULD NOT RUN [{gaps}]"  # InstrumentUnavailable OR errored (reason says which)
+            note += (
+                f" — COULD NOT RUN [{gaps}]"  # InstrumentUnavailable OR errored (reason says which)
+            )
         if self.not_covered:
             missing = "; ".join(f"{cls} <- {tool}" for cls, tool in self.not_covered)
             note += f" — NOT COVERED AT ALL [{missing}]"
@@ -171,13 +173,23 @@ class Instrument(Protocol):
 # about nothing. Running the panel on willow-mcp's tree returned a findings
 # list dominated by `.mypy_cache`. A named set, not a heuristic: anything not
 # listed here IS walked, so an unusual cache shows up rather than vanishing.
-PRUNED_DIRS: frozenset[str] = frozenset({
-    ".git",            # history, not the tree
-    ".mypy_cache", ".pytest_cache", ".ruff_cache", ".hypothesis",  # tool caches
-    "__pycache__",     # bytecode
-    ".venv", "venv", "node_modules", ".tox", ".nox",  # installed dependencies
-    "dist", "build",   # packager output (the artifact is what it was built FROM)
-})
+PRUNED_DIRS: frozenset[str] = frozenset(
+    {
+        ".git",  # history, not the tree
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".hypothesis",  # tool caches
+        "__pycache__",  # bytecode
+        ".venv",
+        "venv",
+        "node_modules",
+        ".tox",
+        ".nox",  # installed dependencies
+        "dist",
+        "build",  # packager output (the artifact is what it was built FROM)
+    }
+)
 _PRUNED_SUFFIXES: tuple[str, ...] = (".egg-info",)
 
 
@@ -220,11 +232,14 @@ def canonical_artifact(artifact: str, build_dir: Path) -> str:
                 p = p.relative_to(Path(build_dir))
             except ValueError:
                 return PurePosixPath(s).as_posix()  # genuinely outside — keep, normalized
-    parts = [part for part in PurePosixPath(str(p).replace("\\", "/")).parts if part not in (".", "")]
+    parts = [
+        part for part in PurePosixPath(str(p).replace("\\", "/")).parts if part not in (".", "")
+    ]
     return PurePosixPath(*parts).as_posix() if parts else ""
 
 
 # ── the panel ────────────────────────────────────────────────────────────────
+
 
 def run_panel(build_dir: Path, instruments: list[Instrument]) -> PanelReport:
     """Run each instrument across `build_dir`, collect findings, compute
@@ -268,18 +283,28 @@ def run_panel(build_dir: Path, instruments: list[Instrument]) -> PanelReport:
     for artifact, fs in by_artifact.items():
         names = sorted({f.instrument for f in fs})
         if len(names) >= 2:
-            convergent.append(ConvergentFinding(artifact=artifact, instruments=tuple(names), findings=tuple(fs)))
+            convergent.append(
+                ConvergentFinding(artifact=artifact, instruments=tuple(names), findings=tuple(fs))
+            )
     convergent.sort(key=lambda c: (-len(c.instruments), c.artifact))
 
     # honest coverage: which aspirational classes had an instrument that RAN.
     # A class covered only by an instrument that declared itself unavailable is
     # NOT covered — that is the whole point.
-    covered_classes = {getattr(inst, "covers", inst.name) for inst in instruments if inst.name in ran}
-    not_covered = [(cls, tool) for cls, tool in ASPIRATIONAL_CLASSES.items() if cls not in covered_classes]
+    covered_classes = {
+        getattr(inst, "covers", inst.name) for inst in instruments if inst.name in ran
+    }
+    not_covered = [
+        (cls, tool) for cls, tool in ASPIRATIONAL_CLASSES.items() if cls not in covered_classes
+    ]
 
     return PanelReport(
-        findings=findings, convergent=convergent, ran=ran,
-        unavailable=unavailable, not_covered=not_covered, ran_empty=ran_empty,
+        findings=findings,
+        convergent=convergent,
+        ran=ran,
+        unavailable=unavailable,
+        not_covered=not_covered,
+        ran_empty=ran_empty,
     )
 
 
@@ -298,7 +323,9 @@ def route(report: PanelReport, *, builder_id: str, root: Path) -> int:
             title=f"convergent finding on {c.artifact} ({len(c.instruments)} instruments)",
             summary=(
                 f"{', '.join(c.instruments)} independently flagged {c.artifact}. "
-                + " | ".join(f"[{f.instrument}] {f.metric}={f.value}: {f.detail}" for f in c.findings)
+                + " | ".join(
+                    f"[{f.instrument}] {f.metric}={f.value}: {f.detail}" for f in c.findings
+                )
             ),
             source_ref=f"converge:{c.artifact}",
             priority="high",
@@ -310,6 +337,7 @@ def route(report: PanelReport, *, builder_id: str, root: Path) -> int:
 
 
 # ── instrument 1: census (size share — the committed-log class) ──────────────
+
 
 class CensusInstrument:
     """Flags any single file that is a disproportionate share of the build's
@@ -345,15 +373,21 @@ class CensusInstrument:
             others_max = max((s for q, s in sizes.items() if q != p), default=0)
             if share >= self.dominance and sz >= 2 * others_max:
                 rel = p.relative_to(build_dir).as_posix()
-                out.append(Finding(
-                    instrument=self.name, artifact=rel, metric="byte_share", value=round(share, 3),
-                    severity="high" if share >= 0.6 else "med",
-                    detail=f"{sz} bytes — {share:.0%} of the build, dwarfing every other file; one file dominating the repo is the box's headline pathology",
-                ))
+                out.append(
+                    Finding(
+                        instrument=self.name,
+                        artifact=rel,
+                        metric="byte_share",
+                        value=round(share, 3),
+                        severity="high" if share >= 0.6 else "med",
+                        detail=f"{sz} bytes — {share:.0%} of the build, dwarfing every other file; one file dominating the repo is the box's headline pathology",
+                    )
+                )
         return out
 
 
 # ── instrument 2: hygiene (committed-by-accident smells) ─────────────────────
+
 
 class HygieneInstrument:
     """Flags artifacts that look committed by accident — logs, backups, nested
@@ -364,8 +398,25 @@ class HygieneInstrument:
     name = "hygiene"
     covers = "hygiene"
 
-    _SUFFIXES = {".log", ".bak", ".old", ".tmp", ".swp", ".orig", ".tar", ".tgz",
-                 ".gz", ".bz2", ".xz", ".7z", ".rar", ".zip", ".mdb", ".ldb", ".db"}
+    _SUFFIXES = {
+        ".log",
+        ".bak",
+        ".old",
+        ".tmp",
+        ".swp",
+        ".orig",
+        ".tar",
+        ".tgz",
+        ".gz",
+        ".bz2",
+        ".xz",
+        ".7z",
+        ".rar",
+        ".zip",
+        ".mdb",
+        ".ldb",
+        ".db",
+    }
     _NAMES = {"error_log", "thumbs.db", ".ds_store", "do_not_delete.txt", "npdblock.net"}
     _NAME_CONTAINS = ("do_not_delete", "final_v2", "_backup", "copy of ")
 
@@ -380,11 +431,16 @@ class HygieneInstrument:
             )
             if hit:
                 rel = p.relative_to(build_dir).as_posix()
-                out.append(Finding(
-                    instrument=self.name, artifact=rel, metric="smell", value=p.suffix or name,
-                    severity="med",
-                    detail="looks committed by accident (log/backup/junk/sentinel) — the class that should never be in version control",
-                ))
+                out.append(
+                    Finding(
+                        instrument=self.name,
+                        artifact=rel,
+                        metric="smell",
+                        value=p.suffix or name,
+                        severity="med",
+                        detail="looks committed by accident (log/backup/junk/sentinel) — the class that should never be in version control",
+                    )
+                )
         return out
 
 
@@ -392,6 +448,7 @@ DEFAULT_INSTRUMENTS: list[Instrument] = [CensusInstrument(), HygieneInstrument()
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
+
 
 def _cmd_measure(args: argparse.Namespace) -> int:
     # When this file runs as __main__ (CLI), it is registered under "__main__",
@@ -406,9 +463,11 @@ def _cmd_measure(args: argparse.Namespace) -> int:
         # at module scope would cycle. It is opt-in because it needs the
         # external codebase-memory-mcp binary (the panel's DEFAULT stays pure).
         from . import instrument_callgraph as icg
+
         instruments.append(icg.CallGraphInstrument())
     if args.with_execution:
         from . import instrument_execution as iex
+
         instruments.append(iex.ExecutionInstrument(require_isolation=not args.no_require_isolation))
     report = run_panel(Path(args.build_dir), instruments)
 
@@ -423,18 +482,30 @@ def _cmd_measure(args: argparse.Namespace) -> int:
         root = Path(args.root) if getattr(args, "root", None) else Path(args.build_dir)
         routed = route(report, builder_id=builder_id, root=root)
 
-    print(json.dumps({
-        "convergent": [
-            {"artifact": c.artifact, "instruments": list(c.instruments)} for c in report.convergent
-        ],
-        "findings": [
-            {"instrument": f.instrument, "artifact": f.artifact, "metric": f.metric,
-             "value": f.value, "severity": f.severity} for f in report.findings
-        ],
-        "ran_empty": report.ran_empty,
-        "coverage": report.coverage_note(),
-        "routed": routed,
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                "convergent": [
+                    {"artifact": c.artifact, "instruments": list(c.instruments)}
+                    for c in report.convergent
+                ],
+                "findings": [
+                    {
+                        "instrument": f.instrument,
+                        "artifact": f.artifact,
+                        "metric": f.metric,
+                        "value": f.value,
+                        "severity": f.severity,
+                    }
+                    for f in report.findings
+                ],
+                "ran_empty": report.ran_empty,
+                "coverage": report.coverage_note(),
+                "routed": routed,
+            },
+            indent=2,
+        )
+    )
     # exit 1 if the panel found convergence — a CI signal, though it never blocks a build itself
     return 1 if report.convergent else 0
 
@@ -444,17 +515,32 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="command", required=True)
     m = sub.add_parser("measure", help="run the measuring panel across a build directory")
     m.add_argument("build_dir")
-    m.add_argument("--with-callgraph", action="store_true",
-                   help="also run the codebase-memory-mcp call-graph instrument (needs the binary)")
-    m.add_argument("--with-execution", action="store_true",
-                   help="also run the kartikeya per-file parse instrument (needs a sandbox)")
-    m.add_argument("--no-require-isolation", action="store_true",
-                   help="with --with-execution: accept a plain parse-only run when no sandbox is available")
-    m.add_argument("--builder-id", default=None,
-                   help="if set, route convergent findings into the human_required queue for this builder "
-                        "(checkpoint_governance.route_nudge). Omit to just print the report without routing.")
-    m.add_argument("--root", default=None,
-                   help="human_required queue root for --builder-id routing (default: build_dir)")
+    m.add_argument(
+        "--with-callgraph",
+        action="store_true",
+        help="also run the codebase-memory-mcp call-graph instrument (needs the binary)",
+    )
+    m.add_argument(
+        "--with-execution",
+        action="store_true",
+        help="also run the kartikeya per-file parse instrument (needs a sandbox)",
+    )
+    m.add_argument(
+        "--no-require-isolation",
+        action="store_true",
+        help="with --with-execution: accept a plain parse-only run when no sandbox is available",
+    )
+    m.add_argument(
+        "--builder-id",
+        default=None,
+        help="if set, route convergent findings into the human_required queue for this builder "
+        "(checkpoint_governance.route_nudge). Omit to just print the report without routing.",
+    )
+    m.add_argument(
+        "--root",
+        default=None,
+        help="human_required queue root for --builder-id routing (default: build_dir)",
+    )
     m.set_defaults(func=_cmd_measure)
     return p
 

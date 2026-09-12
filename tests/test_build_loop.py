@@ -5,6 +5,7 @@ Nestor-gated (the checkpoint router seals). The ScriptedResponder mirrors
 tests/test_checkpoint.py's; `root` is a tmp checkpoint root that the ledger
 shares.
 """
+
 from __future__ import annotations
 
 import json
@@ -17,7 +18,9 @@ from forge import calibration_ledger, checkpoint_memory
 from forge import plan_shape as ps
 from forge.checkpoint import ChoiceResult, Decision, Option
 
-_needs_nestor = pytest.mark.skipif(not checkpoint_memory.nestor_available(), reason="nestor not installed")
+_needs_nestor = pytest.mark.skipif(
+    not checkpoint_memory.nestor_available(), reason="nestor not installed"
+)
 
 FIXTURE = Path(__file__).resolve().parents[1] / "demo" / "fixtures" / "fork_plan.json"
 BUILDER = "c" * 32
@@ -36,7 +39,10 @@ class ScriptedResponder:
     def choose(self, d):
         self.choose_calls.append(d)
         label = self._picks[d.decision_type]
-        return ChoiceResult(chosen_label=label, rationale="the originals must never change; the club has been burned before")
+        return ChoiceResult(
+            chosen_label=label,
+            rationale="the originals must never change; the club has been burned before",
+        )
 
 
 def test_label_from_chosen_reads_both_shapes_and_refuses_the_rest():
@@ -48,8 +54,19 @@ def test_label_from_chosen_reads_both_shapes_and_refuses_the_rest():
 
 
 def test_a_refused_extraction_cannot_be_resolved(tmp_path):
-    plan = ps.validate({"app_name": "x", "entries": [{
-        "kind": "fork", "decision_type": "one", "surface": "?", "options": [{"label": "only"}]}]})
+    plan = ps.validate(
+        {
+            "app_name": "x",
+            "entries": [
+                {
+                    "kind": "fork",
+                    "decision_type": "one",
+                    "surface": "?",
+                    "options": [{"label": "only"}],
+                }
+            ],
+        }
+    )
     with pytest.raises(bl.BuildLoopError) as e:
         bl.resolve(plan, builder_id=BUILDER, responder=ScriptedResponder(), root=tmp_path / "cp")
     assert "at least two" in str(e.value)
@@ -57,8 +74,12 @@ def test_a_refused_extraction_cannot_be_resolved(tmp_path):
 
 @_needs_nestor
 def test_the_stub_plan_resolves_to_itself_with_no_asks(tmp_path):
-    plan = ps.validate({"app_name": "hello", "entries": [
-        {"kind": "file_write", "dest_path": "README.md", "content": "# hello\n"}]})
+    plan = ps.validate(
+        {
+            "app_name": "hello",
+            "entries": [{"kind": "file_write", "dest_path": "README.md", "content": "# hello\n"}],
+        }
+    )
     r = ScriptedResponder()
     res = bl.resolve(plan, builder_id=BUILDER, responder=r, root=tmp_path / "cp")
     assert res.plan == plan and res.outcomes == [] and res.predictions == []
@@ -69,7 +90,7 @@ def test_the_stub_plan_resolves_to_itself_with_no_asks(tmp_path):
 def test_a_fork_is_asked_answered_substituted_and_the_prediction_settled(tmp_path):
     root = tmp_path / "cp"
     plan = ps.load(FIXTURE)
-    r = ScriptedResponder({"where-the-dates-live": "exif in place"})   # NOT the recommended
+    r = ScriptedResponder({"where-the-dates-live": "exif in place"})  # NOT the recommended
     res = bl.resolve(plan, builder_id=BUILDER, responder=r, root=root)
 
     assert len(r.choose_calls) == 1
@@ -95,7 +116,12 @@ def test_a_fork_is_asked_answered_substituted_and_the_prediction_settled(tmp_pat
 def test_second_run_confirms_without_asking_and_does_not_reopen_the_prediction(tmp_path):
     root = tmp_path / "cp"
     plan = ps.load(FIXTURE)
-    bl.resolve(plan, builder_id=BUILDER, responder=ScriptedResponder({"where-the-dates-live": "sidecar json"}), root=root)
+    bl.resolve(
+        plan,
+        builder_id=BUILDER,
+        responder=ScriptedResponder({"where-the-dates-live": "sidecar json"}),
+        root=root,
+    )
 
     r2 = ScriptedResponder()  # would KeyError if asked to choose
     res2 = bl.resolve(plan, builder_id=BUILDER, responder=r2, root=root)
@@ -111,8 +137,12 @@ def test_second_run_confirms_without_asking_and_does_not_reopen_the_prediction(t
 @_needs_nestor
 def test_picking_the_recommendation_resolves_true(tmp_path):
     root = tmp_path / "cp"
-    res = bl.resolve(ps.load(FIXTURE), builder_id=BUILDER,
-                     responder=ScriptedResponder({"where-the-dates-live": "sidecar json"}), root=root)
+    res = bl.resolve(
+        ps.load(FIXTURE),
+        builder_id=BUILDER,
+        responder=ScriptedResponder({"where-the-dates-live": "sidecar json"}),
+        root=root,
+    )
     assert res.predictions[0]["outcome"] is True
     assert calibration_ledger.scorecard(BUILDER, root=root)["summary"]["hit_rate"] == 1.0
 
@@ -122,28 +152,51 @@ def test_a_fork_without_confidence_records_nothing(tmp_path):
     root = tmp_path / "cp"
     raw = json.loads(FIXTURE.read_text())
     raw["entries"][1]["confidence"] = None
-    res = bl.resolve(ps.validate(raw), builder_id=BUILDER,
-                     responder=ScriptedResponder({"where-the-dates-live": "sidecar json"}), root=root)
+    res = bl.resolve(
+        ps.validate(raw),
+        builder_id=BUILDER,
+        responder=ScriptedResponder({"where-the-dates-live": "sidecar json"}),
+        root=root,
+    )
     assert res.predictions == []
     assert calibration_ledger.scorecard(BUILDER, root=root)["resolved"] == 0
 
 
 @_needs_nestor
 def test_conflicting_writes_keep_the_chosen_entry(tmp_path):
-    plan = ps.validate({"app_name": "demo", "entries": [
-        {"kind": "file_write", "dest_path": "app.py", "content": "print('a')\n"},
-        {"kind": "file_write", "dest_path": "app.py", "content": "print('b')\n"},
-    ]})
-    res = bl.resolve(plan, builder_id=BUILDER, responder=ScriptedResponder({"conflicting-write": "entry 1"}),
-                     root=tmp_path / "cp")
+    plan = ps.validate(
+        {
+            "app_name": "demo",
+            "entries": [
+                {"kind": "file_write", "dest_path": "app.py", "content": "print('a')\n"},
+                {"kind": "file_write", "dest_path": "app.py", "content": "print('b')\n"},
+            ],
+        }
+    )
+    res = bl.resolve(
+        plan,
+        builder_id=BUILDER,
+        responder=ScriptedResponder({"conflicting-write": "entry 1"}),
+        root=tmp_path / "cp",
+    )
     assert [e.content for e in res.plan.entries] == ["print('b')\n"]
 
 
 @_needs_nestor
 def test_cli_resolves_and_prints_a_scorecard(tmp_path, capsys):
     root = str(tmp_path / "cp")
-    rc = bl.main([str(FIXTURE), "--builder", BUILDER, "--root", root,
-                  "--choose", "where-the-dates-live=exif in place", "--json"])
+    rc = bl.main(
+        [
+            str(FIXTURE),
+            "--builder",
+            BUILDER,
+            "--root",
+            root,
+            "--choose",
+            "where-the-dates-live=exif in place",
+            "--json",
+        ]
+    )
     assert rc == 0
     d = json.loads(capsys.readouterr().out)
     assert d["chosen"] == {"where-the-dates-live": "exif in place"}
@@ -152,6 +205,7 @@ def test_cli_resolves_and_prints_a_scorecard(tmp_path, capsys):
 
 
 # ── the positional default, refused on this side too ────────────────────────
+
 
 def test_a_fork_with_no_choose_refuses_rather_than_taking_index_zero():
     """build_loop's CLI responder had the same `or d.options[0].label` the
@@ -162,26 +216,31 @@ def test_a_fork_with_no_choose_refuses_rather_than_taking_index_zero():
     d = Decision(
         decision_type="where-the-dates-live",
         surface="When a picture gets a date, where does the date go?",
-        options=[Option("sidecar json", "the pictures stay untouched"),
-                 Option("exif in place", "the date travels with the picture")])
+        options=[
+            Option("sidecar json", "the pictures stay untouched"),
+            Option("exif in place", "the date travels with the picture"),
+        ],
+    )
     with pytest.raises(bl.BuildLoopError) as e:
         r.choose(d)
     assert "list position is not a decision" in str(e.value)
-    assert "--choose 'where-the-dates-live=sidecar json'" in str(e.value), \
+    assert "--choose 'where-the-dates-live=sidecar json'" in str(e.value), (
         "a refusal must say how to proceed"
+    )
 
 
 def test_a_named_pick_is_honoured():
     r = bl._PickResponder(picks={"where-the-dates-live": "exif in place"}, why=None)
     d = Decision(
-        decision_type="where-the-dates-live", surface="where?",
-        options=[Option("sidecar json", "a"), Option("exif in place", "b")])
+        decision_type="where-the-dates-live",
+        surface="where?",
+        options=[Option("sidecar json", "a"), Option("exif in place", "b")],
+    )
     assert r.choose(d).chosen_label == "exif in place"
 
 
 def test_a_single_option_needs_no_pick():
     """The refusal is about ambiguity, not about --choose being mandatory."""
     r = bl._PickResponder(picks={}, why=None)
-    d = Decision(decision_type="t", surface="s",
-                            options=[Option("only", "the one option")])
+    d = Decision(decision_type="t", surface="s", options=[Option("only", "the one option")])
     assert r.choose(d).chosen_label == "only"

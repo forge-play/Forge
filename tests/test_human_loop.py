@@ -15,9 +15,10 @@ change to this contract is a recorded decision the consumers hear about, not
 a drift. Callers must check for the error dict; only invalid *status* values
 raise HumanLoopError.
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 import pytest
 
@@ -33,6 +34,7 @@ def store(tmp_path):
 
 
 # ── enqueue() ────────────────────────────────────────────────────────────────
+
 
 def test_enqueue_creates_an_item_with_the_expected_fields(store):
     item = human_loop.enqueue(
@@ -88,6 +90,7 @@ def test_enqueue_rejects_an_unknown_priority(store):
 
 # ── resolve() ────────────────────────────────────────────────────────────────
 
+
 def test_resolve_updates_status_resolved_by_and_resolved_at(store):
     item = human_loop.enqueue(store, kind="review", title="t", source_agent="a")
     assert item["resolved_by"] == ""
@@ -142,7 +145,7 @@ def test_resolve_returns_error_dict_when_queue_has_other_items(store):
 
 def test_queue_stats_counts_by_status(store):
     a = human_loop.enqueue(store, kind="review", title="a", source_agent="x")
-    b = human_loop.enqueue(store, kind="review", title="b", source_agent="x")
+    human_loop.enqueue(store, kind="review", title="b", source_agent="x")
     human_loop.resolve(store, a["id"], resolved_by="rudi", status="dismissed")
     stats = human_loop.queue_stats(store)
     assert stats.get(human_loop.QUEUE_OPEN, 0) == 1
@@ -151,6 +154,7 @@ def test_queue_stats_counts_by_status(store):
 
 
 # ── list_queue() ─────────────────────────────────────────────────────────────
+
 
 def test_list_queue_defaults_to_open_only(store):
     open_item = human_loop.enqueue(store, kind="review", title="open one", source_agent="a")
@@ -189,7 +193,9 @@ def test_list_queue_filters_by_kind(store):
 def test_list_queue_combines_status_and_kind_filters(store):
     target = human_loop.enqueue(store, kind="consent", title="target", source_agent="x")
     other_kind = human_loop.enqueue(store, kind="review", title="other kind", source_agent="x")
-    same_kind_resolved = human_loop.enqueue(store, kind="consent", title="resolved", source_agent="x")
+    same_kind_resolved = human_loop.enqueue(
+        store, kind="consent", title="resolved", source_agent="x"
+    )
     human_loop.resolve(store, same_kind_resolved["id"], resolved_by="rudi")
 
     matched = human_loop.list_queue(store, status=human_loop.QUEUE_OPEN, kind="consent")
@@ -222,6 +228,7 @@ def test_list_queue_newest_first(store):
 
 # ── create_attestation() ─────────────────────────────────────────────────────
 
+
 def test_create_attestation_has_the_expected_fields(store):
     rec = human_loop.create_attestation(
         store,
@@ -250,14 +257,19 @@ def test_create_attestation_by_human_is_not_forgeable_as_free_text(store):
     fields, not from anything the store or a subject_id could inject —
     the anti-forgery property the module docstring names."""
     rec = human_loop.create_attestation(
-        store, subject_id="p1", attested_by="an-agent", by_human=False,
+        store,
+        subject_id="p1",
+        attested_by="an-agent",
+        by_human=False,
     )
     assert rec["by_human"] is False
     assert rec["attested_by"] == "an-agent"
 
 
 def test_create_attestation_persists_to_the_store(store):
-    rec = human_loop.create_attestation(store, subject_id="p1", attested_by=BUILDER_A, by_human=True)
+    rec = human_loop.create_attestation(
+        store, subject_id="p1", attested_by=BUILDER_A, by_human=True
+    )
     assert store.get(human_loop.ATTEST_COLLECTION, rec["id"]) == rec
 
 
@@ -269,18 +281,27 @@ def test_create_attestation_rejects_empty_subject_id(store):
 def test_create_attestation_rejects_unknown_subject_type(store):
     with pytest.raises(human_loop.HumanLoopError):
         human_loop.create_attestation(
-            store, subject_id="p1", attested_by=BUILDER_A, by_human=True, subject_type="not-a-type",
+            store,
+            subject_id="p1",
+            attested_by=BUILDER_A,
+            by_human=True,
+            subject_type="not-a-type",
         )
 
 
 def test_create_attestation_rejects_unknown_status(store):
     with pytest.raises(human_loop.HumanLoopError):
         human_loop.create_attestation(
-            store, subject_id="p1", attested_by=BUILDER_A, by_human=True, status="not-a-status",
+            store,
+            subject_id="p1",
+            attested_by=BUILDER_A,
+            by_human=True,
+            status="not-a-status",
         )
 
 
 # ── has_attestation() / list_attestations() — the require_human gate ────────
+
 
 def test_has_attestation_requires_human_when_asked(store):
     human_loop.create_attestation(store, subject_id="p1", attested_by="agent", by_human=False)
@@ -297,6 +318,10 @@ def test_has_attestation_false_for_unknown_subject(store):
 
 def test_has_attestation_false_when_only_rejected(store):
     human_loop.create_attestation(
-        store, subject_id="p1", attested_by="rudi", by_human=True, status="rejected",
+        store,
+        subject_id="p1",
+        attested_by="rudi",
+        by_human=True,
+        status="rejected",
     )
     assert human_loop.has_attestation(store, subject_id="p1") is False

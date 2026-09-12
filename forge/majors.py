@@ -22,6 +22,7 @@ missing lane from one component.
 Refusals: a table that does not parse, or a row missing `keyword`/`major`/
 `reason`, raises `MajorsError` at load — a broken table is not an empty one.
 """
+
 from __future__ import annotations
 
 import re
@@ -30,8 +31,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-__all__ = ["Hit", "Row", "MajorsError", "DEFAULT_TABLE", "load_table", "scan",
-           "majors_for", "ambiguous_majors"]
+__all__ = [
+    "Hit",
+    "Row",
+    "MajorsError",
+    "DEFAULT_TABLE",
+    "load_table",
+    "scan",
+    "majors_for",
+    "ambiguous_majors",
+]
 
 DEFAULT_TABLE = Path(__file__).with_name("keywords.toml")
 
@@ -92,9 +101,15 @@ def load_table(path: Path | str | None = None) -> list[Row]:
             raise MajorsError(f"{p}: row {i} is missing {missing}")
         aliases = tuple(str(a) for a in (r.get("aliases") or []))
         caps = tuple(str(c) for c in (r.get("caps") or []))
-        rows.append(Row(keyword=r["keyword"].strip().lower(), major=r["major"].strip(),
-                        reason=r["reason"].strip(), aliases=tuple(a.strip().lower() for a in aliases),
-                        caps=caps))
+        rows.append(
+            Row(
+                keyword=r["keyword"].strip().lower(),
+                major=r["major"].strip(),
+                reason=r["reason"].strip(),
+                aliases=tuple(a.strip().lower() for a in aliases),
+                caps=caps,
+            )
+        )
     return rows
 
 
@@ -103,8 +118,9 @@ def _pattern(spellings: Iterable[str]) -> re.Pattern[str]:
     return re.compile(r"(?<![\w-])(" + "|".join(alts) + r")(?![\w-])", re.IGNORECASE)
 
 
-def scan(text: str, *, path: str = "", anchor: str = "",
-         table: list[Row] | None = None) -> list[Hit]:
+def scan(
+    text: str, *, path: str = "", anchor: str = "", table: list[Row] | None = None
+) -> list[Hit]:
     """Every keyword in `text`, mapped to every major its row names. Order is
     by position in the text, then table order — deterministic for a given
     text and table. A span with no keyword yields `[]`, which is an honest
@@ -115,9 +131,21 @@ def scan(text: str, *, path: str = "", anchor: str = "",
         m = _pattern(row.spellings).search(text)
         if not m:
             continue
-        found.append((m.start(), ti, Hit(
-            source=row.keyword, target=row.major, reason=row.reason,
-            path=path, anchor=anchor, matched=m.group(1).lower(), caps=row.caps)))
+        found.append(
+            (
+                m.start(),
+                ti,
+                Hit(
+                    source=row.keyword,
+                    target=row.major,
+                    reason=row.reason,
+                    path=path,
+                    anchor=anchor,
+                    matched=m.group(1).lower(),
+                    caps=row.caps,
+                ),
+            )
+        )
     found.sort(key=lambda t: (t[0], t[1]))
     return [h for _, _, h in found]
 
@@ -141,15 +169,25 @@ def ambiguous_majors(hits: Iterable[Hit]) -> list[str]:
 if __name__ == "__main__":
     import argparse
     import json
-    p = argparse.ArgumentParser(prog="majors.py", description="scan a span of text for keywords → majors")
+
+    p = argparse.ArgumentParser(
+        prog="majors.py", description="scan a span of text for keywords → majors"
+    )
     p.add_argument("text")
     p.add_argument("--table", default=None)
     p.add_argument("--path", default="")
     p.add_argument("--anchor", default="")
     a = p.parse_args()
-    hits = scan(a.text, path=a.path, anchor=a.anchor, table=load_table(a.table) if a.table else None)
-    print(json.dumps({
-        "hits": [h.__dict__ for h in hits],
-        "majors": {m: [h.source for h in hs] for m, hs in majors_for(hits).items()},
-        "ask": ambiguous_majors(hits),
-    }, indent=2))
+    hits = scan(
+        a.text, path=a.path, anchor=a.anchor, table=load_table(a.table) if a.table else None
+    )
+    print(
+        json.dumps(
+            {
+                "hits": [h.__dict__ for h in hits],
+                "majors": {m: [h.source for h in hs] for m, hs in majors_for(hits).items()},
+                "ask": ambiguous_majors(hits),
+            },
+            indent=2,
+        )
+    )

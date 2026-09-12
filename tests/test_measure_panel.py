@@ -11,14 +11,10 @@ Pure — the framework + the two dependency-free instruments (census, hygiene)
 need no Nestor/fsrs/fleet tools; routing loads checkpoint_governance (soil +
 human_loop, also pure). Written test-first.
 """
+
 from __future__ import annotations
 
-import importlib.util
-import sys
 from pathlib import Path
-
-import pytest
-
 
 from forge import measure_panel
 
@@ -39,6 +35,7 @@ def _box(tmp_path) -> Path:
 
 # ── the census instrument (size share — the error_log class) ─────────────────
 
+
 def test_census_flags_a_file_that_dominates_the_repo(tmp_path):
     d = _box(tmp_path)
     findings = measure_panel.CensusInstrument().measure(d)
@@ -57,6 +54,7 @@ def test_census_says_nothing_about_a_balanced_tree(tmp_path):
 
 # ── the hygiene instrument (committed-by-accident smells) ────────────────────
 
+
 def test_hygiene_flags_a_log_and_a_backup(tmp_path):
     d = tmp_path / "build"
     d.mkdir()
@@ -71,9 +69,12 @@ def test_hygiene_flags_a_log_and_a_backup(tmp_path):
 
 # ── convergence: the alarm ───────────────────────────────────────────────────
 
+
 def test_two_instruments_naming_the_same_artifact_converge(tmp_path):
     d = _box(tmp_path)
-    report = measure_panel.run_panel(d, [measure_panel.CensusInstrument(), measure_panel.HygieneInstrument()])
+    report = measure_panel.run_panel(
+        d, [measure_panel.CensusInstrument(), measure_panel.HygieneInstrument()]
+    )
     # census (biggest) and hygiene (it's a log) both name error_log -> convergent
     conv = [c for c in report.convergent if "error_log" in c.artifact]
     assert conv, "error_log should be a convergent finding (>=2 instruments)"
@@ -86,39 +87,54 @@ def test_a_single_instrument_finding_is_not_convergence(tmp_path):
     d.mkdir()
     (d / "app.py").write_text("x = 1\n" * 100)
     (d / "notes.bak").write_text("tiny\n")
-    report = measure_panel.run_panel(d, [measure_panel.CensusInstrument(), measure_panel.HygieneInstrument()])
-    assert report.convergent == []          # one witness is not the alarm
+    report = measure_panel.run_panel(
+        d, [measure_panel.CensusInstrument(), measure_panel.HygieneInstrument()]
+    )
+    assert report.convergent == []  # one witness is not the alarm
     assert any("notes.bak" in f.artifact for f in report.findings)  # still recorded
 
 
 def test_convergence_frame_is_instrument_agnostic():
     """The convergence logic itself, tested with fake instruments that return
     known findings — independent of census/hygiene specifics."""
+
     class _Fake(measure_panel.Instrument):
         def __init__(self, name, arts):
             self._n, self._a = name, arts
+
         @property
         def name(self):
             return self._n
+
         def measure(self, build_dir):
-            return [Finding(instrument=self._n, artifact=a, metric="m", value=1, severity="med", detail="") for a in self._a]
+            return [
+                Finding(
+                    instrument=self._n, artifact=a, metric="m", value=1, severity="med", detail=""
+                )
+                for a in self._a
+            ]
 
     report = measure_panel.run_panel(
         Path("/nonexistent"),
         [_Fake("i1", ["x.py", "y.py"]), _Fake("i2", ["y.py", "z.py"]), _Fake("i3", ["y.py"])],
     )
     conv = {c.artifact: set(c.instruments) for c in report.convergent}
-    assert conv == {"y.py": {"i1", "i2", "i3"}}   # only y.py named by >=2
+    assert conv == {"y.py": {"i1", "i2", "i3"}}  # only y.py named by >=2
 
 
 class _Fake(measure_panel.Instrument):
     def __init__(self, name, arts):
         self._n, self._a = name, arts
+
     @property
     def name(self):
         return self._n
+
     def measure(self, build_dir):
-        return [Finding(instrument=self._n, artifact=a, metric="m", value=1, severity="med", detail="") for a in self._a]
+        return [
+            Finding(instrument=self._n, artifact=a, metric="m", value=1, severity="med", detail="")
+            for a in self._a
+        ]
 
 
 def test_convergence_survives_differently_spelled_paths(tmp_path):
@@ -129,14 +145,17 @@ def test_convergence_survives_differently_spelled_paths(tmp_path):
     build = tmp_path / "build"
     (build / "src").mkdir(parents=True)
     abs_path = (build / "src" / "x.py").as_posix()
-    report = measure_panel.run_panel(build, [
-        _Fake("census", ["src/x.py"]),
-        _Fake("call-graph", ["./src/x.py"]),
-        _Fake("execution", [abs_path]),          # absolute, under build
-    ])
+    report = measure_panel.run_panel(
+        build,
+        [
+            _Fake("census", ["src/x.py"]),
+            _Fake("call-graph", ["./src/x.py"]),
+            _Fake("execution", [abs_path]),  # absolute, under build
+        ],
+    )
     assert len(report.convergent) == 1
     c = report.convergent[0]
-    assert c.artifact == "src/x.py"              # canonicalized key
+    assert c.artifact == "src/x.py"  # canonicalized key
     assert set(c.instruments) == {"census", "call-graph", "execution"}
 
 
@@ -149,9 +168,9 @@ def test_a_symlink_alias_cannot_mask_the_census_alarm(tmp_path):
     (build / "a.py").write_text("x = 1\n")
     (build / "b.py").write_text("y = 2\n")
     (build / "error_log").write_text("scan\n" * 5000)
-    (build / "error_log.alias").symlink_to(build / "error_log")   # the mask
+    (build / "error_log.alias").symlink_to(build / "error_log")  # the mask
     findings = measure_panel.CensusInstrument().measure(build)
-    assert any("error_log" == f.artifact for f in findings)       # still flagged
+    assert any("error_log" == f.artifact for f in findings)  # still flagged
     # hygiene does not double-flag the alias either
     hyg = {f.artifact for f in measure_panel.HygieneInstrument().measure(build)}
     assert "error_log" in hyg
@@ -160,15 +179,18 @@ def test_a_symlink_alias_cannot_mask_the_census_alarm(tmp_path):
 
 # ── honest coverage (the sigmap health-vs-coverage lesson) ───────────────────
 
+
 def test_report_names_the_instruments_that_ran(tmp_path):
     d = _box(tmp_path)
-    report = measure_panel.run_panel(d, [measure_panel.CensusInstrument(), measure_panel.HygieneInstrument()])
+    report = measure_panel.run_panel(
+        d, [measure_panel.CensusInstrument(), measure_panel.HygieneInstrument()]
+    )
     assert set(report.ran) == {"census", "hygiene"}
     # even a run WITH findings states what it did NOT look at — by name, with
     # the fleet tool for each (the sigmap health-vs-coverage lesson)
     note = report.coverage_note()
     assert "census" in note and "hygiene" in note
-    assert "call-graph" in note and "codebase-memory" in note   # named as uncovered
+    assert "call-graph" in note and "codebase-memory" in note  # named as uncovered
     assert "execution" in note and "kartikeya" in note
     covered = {cls for cls, _ in report.not_covered}
     assert {"call-graph", "execution", "calibration"} <= covered  # not run this bite
@@ -177,6 +199,7 @@ def test_report_names_the_instruments_that_ran(tmp_path):
 def test_an_unavailable_instrument_is_a_coverage_gap_not_a_crash(tmp_path):
     class _Down(measure_panel.Instrument):
         name = "call-graph"
+
         def measure(self, build_dir):
             raise measure_panel.InstrumentUnavailable("codebase-memory binary not installed")
 
@@ -190,10 +213,13 @@ def test_an_unavailable_instrument_is_a_coverage_gap_not_a_crash(tmp_path):
 
 # ── routing convergent findings into the human_loop queue (reuse) ────────────
 
+
 def test_convergent_findings_route_to_the_governance_queue_deduped(tmp_path):
     root = tmp_path / "checkpoints"
     d = _box(tmp_path)
-    report = measure_panel.run_panel(d, [measure_panel.CensusInstrument(), measure_panel.HygieneInstrument()])
+    report = measure_panel.run_panel(
+        d, [measure_panel.CensusInstrument(), measure_panel.HygieneInstrument()]
+    )
     n = measure_panel.route(report, builder_id=BUILDER_A, root=root)
     assert n >= 1
     gov = measure_panel.checkpoint_governance

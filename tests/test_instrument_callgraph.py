@@ -10,6 +10,7 @@ rudi193-cmd/Forge#9: the reader must never turn "could not read" into "found not
 The old text-table fixtures are kept below as the thing the reader now
 REFUSES, not the thing it parses.
 """
+
 from __future__ import annotations
 
 import json
@@ -19,27 +20,32 @@ from pathlib import Path
 
 import pytest
 
-
 from forge import instrument_callgraph as icg
 
-
 # ── captured output, no binary ───────────────────────────────────────────────
+
 
 # The CLI's compact-JSON envelope for a 3-function project
 # (used<-main, dead_function uncalled, main entry-point), as the tool emits it now.
 def _envelope(columns, rows):
     result = {"columns": columns, "rows": rows, "total": len(rows)}
-    return {"content": [{"type": "text", "text": json.dumps(result, separators=(",", ":"))}],
-            "structuredContent": result, "isError": False}
+    return {
+        "content": [{"type": "text", "text": json.dumps(result, separators=(",", ":"))}],
+        "structuredContent": result,
+        "isError": False,
+    }
 
 
-_ALL = _envelope(["qn", "entry", "file"], [
-    ["tmp-cbm-probe.app.used", "false", "app.py"],
-    ["tmp-cbm-probe.app.dead_function", "false", "app.py"],
-    ["tmp-cbm-probe.app.main", "true", "app.py"],
-    ["builtins.len", "false", "<python-builtins>"],
-    ["builtins.print", "false", "<python-builtins>"],
-])
+_ALL = _envelope(
+    ["qn", "entry", "file"],
+    [
+        ["tmp-cbm-probe.app.used", "false", "app.py"],
+        ["tmp-cbm-probe.app.dead_function", "false", "app.py"],
+        ["tmp-cbm-probe.app.main", "true", "app.py"],
+        ["builtins.len", "false", "<python-builtins>"],
+        ["builtins.print", "false", "<python-builtins>"],
+    ],
+)
 _CALLED = _envelope(["qn"], [["tmp-cbm-probe.app.used"]])
 
 # What the tool USED to print — the format the first cut parsed. Kept as the
@@ -55,8 +61,8 @@ def test_dead_functions_is_the_set_difference():
     dead = icg._dead_functions(icg._rows(_ALL), icg._rows(_CALLED))
     assert dead == [("tmp-cbm-probe.app.dead_function", "app.py")]
     qns = {qn for qn, _ in dead}
-    assert "tmp-cbm-probe.app.used" not in qns     # called
-    assert "tmp-cbm-probe.app.main" not in qns     # entry point
+    assert "tmp-cbm-probe.app.used" not in qns  # called
+    assert "tmp-cbm-probe.app.main" not in qns  # entry point
     assert not any(f.startswith("<") for _, f in dead)  # builtins excluded
 
 
@@ -78,7 +84,9 @@ def test_a_file_path_with_spaces_survives():
 
 
 def test_python_style_booleans_are_accepted_for_entry():
-    env = _envelope(["qn", "entry", "file"], [["pkg.mod.root", True, "x.py"], ["pkg.mod.leaf", False, "x.py"]])
+    env = _envelope(
+        ["qn", "entry", "file"], [["pkg.mod.root", True, "x.py"], ["pkg.mod.leaf", False, "x.py"]]
+    )
     assert icg._dead_functions(icg._rows(env), []) == [("pkg.mod.leaf", "x.py")]
 
 
@@ -88,6 +96,7 @@ def test_empty_results_yield_no_dead():
 
 
 # ── rudi193-cmd/Forge#9: could-not-read is never found-nothing ──────────────────────────
+
 
 def test_the_old_text_table_is_refused_not_parsed_to_zero_rows():
     with pytest.raises(icg.UnreadableResult):
@@ -133,6 +142,7 @@ def test_unreadable_output_becomes_a_coverage_gap_not_a_clean_report(tmp_path, m
 
 # ── unavailable path (always runs) ───────────────────────────────────────────
 
+
 def test_missing_binary_is_instrument_unavailable(tmp_path):
     inst = icg.CallGraphInstrument(binary="/no/such/codebase-memory-mcp-binary")
     with pytest.raises(icg.InstrumentUnavailable):
@@ -140,6 +150,7 @@ def test_missing_binary_is_instrument_unavailable(tmp_path):
 
 
 # ── real end-to-end drive (skipped if the binary can't run) ──────────────────
+
 
 def _binary():
     exe = shutil.which("codebase-memory-mcp") or "/tmp/forge-audit-venv/bin/codebase-memory-mcp"
@@ -155,7 +166,9 @@ def _binary():
 _BIN = _binary()
 
 
-@pytest.mark.skipif(_BIN is None, reason="codebase-memory-mcp binary not runnable in this environment")
+@pytest.mark.skipif(
+    _BIN is None, reason="codebase-memory-mcp binary not runnable in this environment"
+)
 def test_drives_the_real_tool_and_flags_dead_code(tmp_path):
     d = tmp_path / "proj"
     d.mkdir()
@@ -172,14 +185,14 @@ def test_drives_the_real_tool_and_flags_dead_code(tmp_path):
     assert all(f.metric == "fan_in" and f.value == 0 for f in findings)
 
 
-@pytest.mark.skipif(_BIN is None, reason="codebase-memory-mcp binary not runnable in this environment")
+@pytest.mark.skipif(
+    _BIN is None, reason="codebase-memory-mcp binary not runnable in this environment"
+)
 def test_a_fully_wired_program_has_no_dead_code(tmp_path):
     d = tmp_path / "proj"
     d.mkdir()
     (d / "app.py").write_text(
-        "def a():\n    return 1\n\n"
-        "def b():\n    return a()\n\n"
-        "def main():\n    return b()\n"
+        "def a():\n    return 1\n\ndef b():\n    return a()\n\ndef main():\n    return b()\n"
     )
     # a<-b<-main, main is entry -> nothing is dead
     findings = icg.CallGraphInstrument(binary=_BIN).measure(d)

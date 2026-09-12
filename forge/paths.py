@@ -8,6 +8,7 @@ is exactly the leak that discipline exists to prevent. No fixed-location default
 `FORGE_HOME` exists for tests and for an operator who deliberately moves the root,
 not as a convenience override (homestead's I-19).
 """
+
 from __future__ import annotations
 
 import os
@@ -41,6 +42,7 @@ def project_nestor(project_id: str) -> Path:
     `project_id` is a path component and gets the same charset rule as
     `builder_id` (forge/_ids.py) — imported, not re-implemented."""
     from . import _ids  # local: paths.py must stay import-light
+
     pid = _ids._check_builder_id(project_id)
     return home() / _PROJECTS / pid / "nestor" / "keep" / "nestor.db"
 

@@ -40,6 +40,7 @@ Two deliberate departures from the willow-2.0 original:
      yourself; `has_attestation(require_human=True)` is the gate for the strong
      "a human signed this" case.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -79,6 +80,7 @@ def _clean(record: dict) -> dict:
 
 
 # ── attestation ─────────────────────────────────────────────────────────────────
+
 
 def create_attestation(
     store,
@@ -133,8 +135,7 @@ def list_attestations(
     limit: int = 50,
 ) -> list[dict]:
     """Newest-first attestation records, optionally filtered."""
-    rows = [_clean(r) for r in store.all(ATTEST_COLLECTION)
-            if isinstance(r, dict) and "id" in r]
+    rows = [_clean(r) for r in store.all(ATTEST_COLLECTION) if isinstance(r, dict) and "id" in r]
     if subject_id:
         rows = [r for r in rows if r.get("subject_id") == subject_id]
     if subject_type:
@@ -142,7 +143,7 @@ def list_attestations(
     if status:
         rows = [r for r in rows if r.get("status") == status.strip().lower()]
     rows.sort(key=lambda r: r.get("created_at", ""), reverse=True)
-    return rows[:max(0, limit)]
+    return rows[: max(0, limit)]
 
 
 def has_attestation(
@@ -165,6 +166,7 @@ def has_attestation(
 
 
 # ── the human-required queue ─────────────────────────────────────────────────────
+
 
 def enqueue(
     store,
@@ -206,7 +208,9 @@ def enqueue(
     return item
 
 
-def resolve(store, item_id: str, *, resolved_by: str, status: str = "resolved", note: str = "") -> dict:
+def resolve(
+    store, item_id: str, *, resolved_by: str, status: str = "resolved", note: str = ""
+) -> dict:
     """Resolve / dismiss / acknowledge a queue item. States-not-deletions: the row
     is updated in place with who/when/note, never removed."""
     st = (status or "resolved").strip().lower()
@@ -223,14 +227,13 @@ def resolve(store, item_id: str, *, resolved_by: str, status: str = "resolved", 
 
 def list_queue(store, *, status: str = QUEUE_OPEN, kind: str = "", limit: int = 20) -> list[dict]:
     """Newest-first queue items. `status` defaults to 'open'; pass '' for all."""
-    rows = [_clean(r) for r in store.all(QUEUE_COLLECTION)
-            if isinstance(r, dict) and "id" in r]
+    rows = [_clean(r) for r in store.all(QUEUE_COLLECTION) if isinstance(r, dict) and "id" in r]
     if status:
         rows = [r for r in rows if r.get("status") == status.strip().lower()]
     if kind:
         rows = [r for r in rows if r.get("kind") == kind.strip().lower()]
     rows.sort(key=lambda r: r.get("created_at", ""), reverse=True)
-    return rows[:max(0, limit)]
+    return rows[: max(0, limit)]
 
 
 def queue_stats(store) -> dict[str, int]:

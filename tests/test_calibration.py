@@ -5,13 +5,10 @@ These guard the copy the calibration ledger grades against, AND assert it stays
 byte-identical to the playground source from `from __future__` onward, so a
 drift in either is caught rather than silently diverging.
 """
+
 from __future__ import annotations
 
-import importlib.util
 import math
-import sys
-from pathlib import Path
-
 
 from forge import calibration as cal
 
@@ -39,11 +36,9 @@ def test_bins_cover_range_and_group():
 
 
 def test_summary_overconfidence_sign():
-    overconfident = [(0.9, False), (0.9, True)]   # says 90%, hits 50%
+    overconfident = [(0.9, False), (0.9, True)]  # says 90%, hits 50%
     s = cal.summary(overconfident)
     assert s["overconfidence"] > 0
     assert s["n"] == 2
     empty = cal.summary([])
     assert empty["n"] == 0 and empty["brier"] is None
-
-

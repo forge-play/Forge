@@ -111,6 +111,7 @@ Usage (dev CLI, mirroring `forge_build.py`'s shape):
     python -m forge.checkpoint demo <builder_id> <decision_type> \\
         [--root DIR] [--recognize-threshold 0.6]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -119,7 +120,6 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal, Protocol
 
-
 # checkpoint_memory.py has no relative imports of its own — same
 # spec_from_file_location pattern seam.py already uses to load sap_gate.py,
 # and forge_build.py reuses seam.py's own loaded copy rather than loading it
@@ -127,20 +127,16 @@ from typing import Literal, Protocol
 # checkpoint_memory.py (forge_build.py/seam.py never touch it — D9/D12's
 # memory is a separate axis from D3/D4/D5's build pipeline), so it loads its
 # own copy here, the same way seam.py loads its own copy of sap_gate.py.
-from . import checkpoint_memory
-
 # The engagement gate (bite 3) — the seal-time "did they actually decide vs
 # rubber-stamp" signal, reusing willow-mcp's #66 sycophancy scorer. Pure and
 # model-free (no Nestor, no network), so loading it here adds no dependency the
 # soft-Nestor gate has to worry about. Loaded the same spec way.
-from . import checkpoint_engagement
-
 # The governance layer (human_loop adoption, docs/design/the-forge-human-loop.md):
 # the non-forgeable attestation that rides alongside the Nestor seal on every
 # committed checkpoint, plus the park/resume async seam. Loaded spec-style; it
 # imports soil_store + the vendored human_loop, never checkpoint (this module
 # imports IT), so there is no cycle.
-from . import checkpoint_governance
+from . import checkpoint_engagement, checkpoint_governance, checkpoint_memory
 
 DEFAULT_RECOGNIZE_THRESHOLD = 0.6
 
@@ -158,6 +154,7 @@ class CheckpointError(Exception):
 
 
 # ── the D7-stub input shape ─────────────────────────────────────────────────
+
 
 @dataclass(frozen=True)
 class Option:
@@ -251,6 +248,7 @@ class Responder(Protocol):
 
 
 # ── the outcome ──────────────────────────────────────────────────────────────
+
 
 @dataclass(frozen=True)
 class CheckpointOutcome:
@@ -346,6 +344,7 @@ class CheckpointOutcome:
 
 # ── the flow ─────────────────────────────────────────────────────────────────
 
+
 def _full_socratic(decision: Decision, responder: Responder) -> tuple[str, str, bool]:
     """Present options+tradeoffs (the caller's job — a real UI later; this
     function's own job is just calling `responder.choose`), get the
@@ -365,8 +364,7 @@ def _full_socratic(decision: Decision, responder: Responder) -> tuple[str, str, 
         return chosen_label, "", True
     if not choice.chosen_label:
         raise CheckpointError(
-            "Responder.choose returned deferred=False with an empty chosen_label — "
-            "nothing to seal"
+            "Responder.choose returned deferred=False with an empty chosen_label — nothing to seal"
         )
     return choice.chosen_label, choice.rationale, False
 
@@ -393,7 +391,9 @@ def _deferred_canonical(chosen_label: str) -> str:
     sites that can reach a deferral (fresh socratic, auto's "not this"
     escape, recognize's "it's different" escape) all produce the identical
     wording rather than three near-copies drifting apart."""
-    return f"[deferred] {chosen_label} — maker reviewed the tradeoff and handed the call to the Forge"
+    return (
+        f"[deferred] {chosen_label} — maker reviewed the tradeoff and handed the call to the Forge"
+    )
 
 
 def _attest(builder_id: str, pair_id: str | None, chosen: str, root: Path, by_human: bool) -> str:
@@ -541,7 +541,9 @@ def run_checkpoint(
             rubber_stamp=rubber_stamp,
         )
 
-    with checkpoint_memory.open_checkpoint_memory(builder_id, decision.decision_type, root=root) as cm:
+    with checkpoint_memory.open_checkpoint_memory(
+        builder_id, decision.decision_type, root=root
+    ) as cm:
         result = cm.check(decision.surface)
 
         # ── auto band: a genuine Nestor tier-1 hit ──────────────────────
@@ -556,7 +558,11 @@ def run_checkpoint(
                 # needed, but "on this date the maker re-affirmed X" is a real
                 # attestation) — keyed by the tier-1 hit's own pair_id.
                 attestation_id = _attest(
-                    builder_id, result.get("provenance", {}).get("pair_id"), canonical, root, by_human
+                    builder_id,
+                    result.get("provenance", {}).get("pair_id"),
+                    canonical,
+                    root,
+                    by_human,
                 )
                 return CheckpointOutcome(
                     decision_type=decision.decision_type,
@@ -581,8 +587,17 @@ def run_checkpoint(
                 pair_id=pair_id,
                 reason="maker said this was not the same call as the prior sealed answer",
             )
-            return _seal_socratic_answer(cm, decision, responder, builder_id=builder_id, root=root, by_human=by_human, project=project,
-                                         matched_band="auto", match_confidence=result["confidence"])
+            return _seal_socratic_answer(
+                cm,
+                decision,
+                responder,
+                builder_id=builder_id,
+                root=root,
+                by_human=by_human,
+                project=project,
+                matched_band="auto",
+                match_confidence=result["confidence"],
+            )
 
         # ── recognize band: a real, sub-threshold hit ───────────────────
         # `canonical` is always None below Nestor's own seal threshold (see
@@ -625,17 +640,35 @@ def run_checkpoint(
                 target_text=prior_canonical,
                 reason="maker said this was not the same call as the recognized prior seal",
             )
-            return _seal_socratic_answer(cm, decision, responder, builder_id=builder_id, root=root, by_human=by_human, project=project,
-                                         matched_band="recognize", match_confidence=result["confidence"])
+            return _seal_socratic_answer(
+                cm,
+                decision,
+                responder,
+                builder_id=builder_id,
+                root=root,
+                by_human=by_human,
+                project=project,
+                matched_band="recognize",
+                match_confidence=result["confidence"],
+            )
 
         # ── socratic band: low confidence, or nothing sealed yet at all ──
         # Memory proposed nothing, so `matched_band` stays None — a genuinely
         # fresh decision, distinguishable from the two rejections above.
-        return _seal_socratic_answer(cm, decision, responder, builder_id=builder_id, root=root, by_human=by_human, project=project,
-                                     match_confidence=result["confidence"])
+        return _seal_socratic_answer(
+            cm,
+            decision,
+            responder,
+            builder_id=builder_id,
+            root=root,
+            by_human=by_human,
+            project=project,
+            match_confidence=result["confidence"],
+        )
 
 
 # ── the async pause seam (D-HL-5) ──────────────────────────────────────────────
+
 
 def park_checkpoint(
     decision: Decision,
@@ -691,9 +724,7 @@ def resume_checkpoint(
     (`the-two-stores.md`)."""
     parked = checkpoint_governance.get_parked_decision(builder_id, item_id, root=root)
     if parked is None:
-        raise CheckpointError(
-            f"no parked decision for item_id={item_id!r} — never parked"
-        )
+        raise CheckpointError(f"no parked decision for item_id={item_id!r} — never parked")
     # Single-use (D-HL-5): the queue item's own status is the source of truth
     # for "already acted on." A resolved/dismissed item must not be resumed a
     # second time — that would re-seal and re-attest a decision the record
@@ -708,12 +739,18 @@ def resume_checkpoint(
     decision = Decision(
         decision_type=parked["decision_type"],
         surface=parked["surface"],
-        options=tuple(Option(label=label, tradeoff=tradeoff) for label, tradeoff in parked["options"]),
+        options=tuple(
+            Option(label=label, tradeoff=tradeoff) for label, tradeoff in parked["options"]
+        ),
         recommended=parked.get("recommended"),
     )
     outcome = run_checkpoint(
-        decision, builder_id=builder_id, responder=responder, root=root,
-        by_human=by_human, project=project,
+        decision,
+        builder_id=builder_id,
+        responder=responder,
+        root=root,
+        by_human=by_human,
+        project=project,
     )
     # Only CONSUME the parked item if the decision actually committed. If
     # run_checkpoint took its soft-Nestor path (sealed=False, no attestation),
@@ -724,7 +761,10 @@ def resume_checkpoint(
     # once memory is back. (Found by the adversarial audit of the first cut.)
     if outcome.sealed:
         checkpoint_governance.resolve_item(
-            builder_id, item_id, resolved_by=builder_id, status="resolved",
+            builder_id,
+            item_id,
+            resolved_by=builder_id,
+            status="resolved",
             note=f"resumed; attestation {outcome.attestation_id or '(none)'}",
             root=root,
         )
@@ -732,6 +772,7 @@ def resume_checkpoint(
 
 
 # ── CLI (optional; a scripted demo, mirroring forge_build.py's shape) ──────
+
 
 class _ScriptedResponder:
     """A tiny, fully-deterministic `Responder` for the CLI demo — prints

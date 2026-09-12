@@ -6,6 +6,7 @@ under both real FSRS and the fixed-interval fallback (mirroring the soft-Nestor
 technique `tests/test_checkpoint_calibration.py` uses for `nestor`, applied here
 to `fsrs`), `is_due`/`due_at`, and the `review`/`due` CLI subcommands.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -29,10 +30,12 @@ _needs_fsrs = pytest.mark.skipif(not _HAS_FSRS, reason="fsrs not installed in th
 #    own "Caches SUCCESS only" note: the module-level `_fsrs_cache` must be
 #    reset to None too, or a prior successful import just gets replayed. ──
 
+
 @contextlib.contextmanager
 def _fsrs_blocked():
-    saved_modules = {name: mod for name, mod in sys.modules.items()
-                      if name == "fsrs" or name.startswith("fsrs.")}
+    saved_modules = {
+        name: mod for name, mod in sys.modules.items() if name == "fsrs" or name.startswith("fsrs.")
+    }
     for name in saved_modules:
         del sys.modules[name]
     saved_cache = sched._fsrs_cache
@@ -55,6 +58,7 @@ def _fsrs_blocked():
 
 
 # ── grade() — pure, does not touch fsrs at all ───────────────────────────────
+
 
 def test_grade_held_with_no_engagement_is_good():
     assert sched.grade(sched.OUTCOME_HELD) == sched._RATING_GOOD
@@ -103,6 +107,7 @@ def test_grade_is_independent_of_fsrs_availability():
 
 # ── fsrs_available() ─────────────────────────────────────────────────────────
 
+
 def test_fsrs_available_is_a_bool():
     assert isinstance(sched.fsrs_available(), bool)
 
@@ -118,6 +123,7 @@ def test_fsrs_available_is_false_when_blocked():
 
 
 # ── record_review(): the fixed-interval fallback (deterministic, no fsrs) ───
+
 
 def test_fallback_first_held_review_uses_base_interval():
     with _fsrs_blocked():
@@ -139,7 +145,11 @@ def test_fallback_second_held_review_doubles_the_interval():
 def test_fallback_interval_is_capped_at_the_max():
     with _fsrs_blocked():
         now = datetime(2026, 1, 1, tzinfo=timezone.utc)
-        card = {"kind": "fixed", "interval_days": sched.FIXED_MAX_INTERVAL_DAYS, "due": now.isoformat()}
+        card = {
+            "kind": "fixed",
+            "interval_days": sched.FIXED_MAX_INTERVAL_DAYS,
+            "due": now.isoformat(),
+        }
         grown = sched.record_review(card, sched.OUTCOME_HELD, now)
     assert grown["interval_days"] == sched.FIXED_MAX_INTERVAL_DAYS
 
@@ -170,6 +180,7 @@ def test_fallback_raises_on_bad_outcome_before_producing_a_card():
 
 
 # ── record_review(): real fsrs ───────────────────────────────────────────────
+
 
 @_needs_fsrs
 def test_real_fsrs_first_held_review_produces_an_fsrs_card():
@@ -212,6 +223,7 @@ def test_real_fsrs_an_unparseable_prior_card_starts_fresh_not_crashing():
 
 # ── is_due() / due_at() ──────────────────────────────────────────────────────
 
+
 def test_is_due_true_when_now_is_past_due():
     card = {"due": datetime(2026, 1, 1, tzinfo=timezone.utc).isoformat()}
     now = datetime(2026, 1, 2, tzinfo=timezone.utc)
@@ -248,6 +260,7 @@ def test_due_at_raises_on_unparseable_due_field():
 
 # ── save_card / load_card sidecar round trip (fixture for the CLI tests) ────
 
+
 def test_save_and_load_card_round_trips(tmp_path):
     card = {"kind": "fixed", "interval_days": 1.0, "due": "2026-01-02T00:00:00+00:00"}
     sched.save_card(BUILDER_A, PAIR_1, card, root=tmp_path)
@@ -270,10 +283,9 @@ def test_schedule_path_rejects_a_bad_builder_id(tmp_path):
 
 # ── CLI: argument parsing ────────────────────────────────────────────────────
 
+
 def test_build_parser_parses_review_subcommand():
-    args = sched.build_parser().parse_args(
-        ["review", BUILDER_A, PAIR_1, "--outcome", "held"]
-    )
+    args = sched.build_parser().parse_args(["review", BUILDER_A, PAIR_1, "--outcome", "held"])
     assert args.command == "review"
     assert args.builder_id == BUILDER_A
     assert args.pair_id == PAIR_1
@@ -292,9 +304,7 @@ def test_build_parser_parses_due_subcommand():
 
 def test_build_parser_review_requires_a_valid_outcome_choice():
     with pytest.raises(SystemExit):
-        sched.build_parser().parse_args(
-            ["review", BUILDER_A, PAIR_1, "--outcome", "sideways"]
-        )
+        sched.build_parser().parse_args(["review", BUILDER_A, PAIR_1, "--outcome", "sideways"])
 
 
 def test_build_parser_requires_a_subcommand():
@@ -312,6 +322,7 @@ def test_build_parser_root_is_overridable():
 
 
 # ── CLI: end-to-end (fixed fallback, so timing is deterministic) ────────────
+
 
 def test_cli_review_then_due_reports_not_yet_due(tmp_path, capsys):
     with _fsrs_blocked():

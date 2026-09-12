@@ -34,16 +34,14 @@ Three capabilities:
     "nudges aren't persisted" gap. The monitors still only signal; routing is a
     separate opt-in step, so they stay pure.
 """
+
 from __future__ import annotations
 
 import argparse
 import json
 from pathlib import Path
 
-
-
-from . import soil_store
-from . import human_loop
+from . import human_loop, soil_store
 
 # A decision is a "queue_item"-adjacent subject; human_loop's attestation
 # subject vocabulary doesn't have a dedicated "decision", so use "other" (its
@@ -71,6 +69,7 @@ def _store(builder_id: str, root: Path) -> "soil_store.FilesystemSoilStore":
 
 
 # ── attestation under a decision (D-HL-4) ────────────────────────────────────
+
 
 def attest_decision(
     builder_id: str,
@@ -111,6 +110,7 @@ def has_decision_attestation(
 
 
 # ── the park half of the async seam (D-HL-5) ─────────────────────────────────
+
 
 def park_decision(
     builder_id: str,
@@ -188,7 +188,13 @@ def open_items(builder_id: str, *, root: Path, kind: str = "", limit: int = 50) 
 
 
 def resolve_item(
-    builder_id: str, item_id: str, *, resolved_by: str, status: str = "resolved", note: str = "", root: Path
+    builder_id: str,
+    item_id: str,
+    *,
+    resolved_by: str,
+    status: str = "resolved",
+    note: str = "",
+    root: Path,
 ) -> dict:
     """Resolve/dismiss/acknowledge a queue item in place (states-not-deletions)."""
     return human_loop.resolve(
@@ -197,6 +203,7 @@ def resolve_item(
 
 
 # ── the nudge outbox (D-HL-6) ────────────────────────────────────────────────
+
 
 def route_nudge(
     builder_id: str,
@@ -229,19 +236,30 @@ def route_nudge(
         if existing.get("source_ref") == source_ref:
             return None  # already an open item for this episode — dedupe
     return human_loop.enqueue(
-        store, kind=k, title=title, summary=summary, source_agent=SOURCE_AGENT,
-        priority=priority, source_ref=source_ref,
+        store,
+        kind=k,
+        title=title,
+        summary=summary,
+        source_agent=SOURCE_AGENT,
+        priority=priority,
+        source_ref=source_ref,
     )
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
+
 def _cmd_queue(args: argparse.Namespace) -> int:
     items = open_items(args.builder_id, root=Path(args.root), kind=args.kind or "")
-    print(json.dumps(
-        [{"id": i["id"], "kind": i["kind"], "title": i["title"], "priority": i["priority"]} for i in items],
-        indent=2,
-    ))
+    print(
+        json.dumps(
+            [
+                {"id": i["id"], "kind": i["kind"], "title": i["title"], "priority": i["priority"]}
+                for i in items
+            ],
+            indent=2,
+        )
+    )
     return 0
 
 

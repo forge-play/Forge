@@ -139,6 +139,7 @@ Usage (dev CLI, mirroring `checkpoint.py`'s own `demo` shape):
     python -m forge.checkpoint_calibration resurface <builder_id> \\
         <decision_type> --surface "..." [--root DIR] [--regress]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -147,7 +148,6 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-
 
 from . import checkpoint
 
@@ -164,7 +164,8 @@ checkpoint_memory = checkpoint.checkpoint_memory
 # checkpoint_memory object across this whole load chain, same "reuse the
 # sibling's loaded copy" discipline this module already applies to
 # checkpoint_memory itself.
-from . import checkpoint_schedule
+from . import checkpoint_schedule  # noqa: E402  deliberately late: see the paragraph above
+
 checkpoint_schedule.checkpoint_memory = checkpoint_memory
 
 # The engagement gate (bite 3) — reuse checkpoint.py's OWN already-loaded copy
@@ -187,6 +188,7 @@ class CalibrationError(Exception):
 
 
 # ── the outcome ──────────────────────────────────────────────────────────────
+
 
 @dataclass(frozen=True)
 class ResurfaceOutcome:
@@ -228,6 +230,7 @@ class ResurfaceOutcome:
 
 
 # ── the flow ─────────────────────────────────────────────────────────────────
+
 
 def resurface(
     *,
@@ -461,6 +464,7 @@ def contradictions(
 
 # ── CLI (optional; a scripted demo, mirroring checkpoint.py's own shape) ────
 
+
 class _ScriptedResumeResponder:
     """A tiny, fully-deterministic `Responder` for the CLI demo. Confirms
     "still holds" unless `--regress` is passed, in which case it answers
@@ -501,25 +505,29 @@ def _cmd_resurface(args: argparse.Namespace) -> int:
             builder_id=args.builder_id,
             decision_type=args.decision_type,
             surface=args.surface,
-            responder=_ScriptedResumeResponder(regress=args.regress, justification=args.justification),
+            responder=_ScriptedResumeResponder(
+                regress=args.regress, justification=args.justification
+            ),
             root=Path(args.root),
         )
     except CalibrationError as e:
         print(f"refused: {e}", file=sys.stderr)
         return 1
-    print(json.dumps(
-        {
-            "decision_type": outcome.decision_type,
-            "held": outcome.held,
-            "regressed": outcome.regressed,
-            "prior": outcome.prior,
-            "new": outcome.new,
-            "resealed": outcome.resealed,
-            "next_due": outcome.next_due,
-            "engagement": outcome.engagement,
-        },
-        indent=2,
-    ))
+    print(
+        json.dumps(
+            {
+                "decision_type": outcome.decision_type,
+                "held": outcome.held,
+                "regressed": outcome.regressed,
+                "prior": outcome.prior,
+                "new": outcome.new,
+                "resealed": outcome.resealed,
+                "next_due": outcome.next_due,
+                "engagement": outcome.engagement,
+            },
+            indent=2,
+        )
+    )
     return 0
 
 
@@ -535,7 +543,11 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("decision_type")
     r.add_argument("--surface", required=True)
     r.add_argument("--root", default=str(checkpoint_memory.DEFAULT_CHECKPOINT_ROOT))
-    r.add_argument("--regress", action="store_true", help="script the maker as no longer holding the prior seal")
+    r.add_argument(
+        "--regress",
+        action="store_true",
+        help="script the maker as no longer holding the prior seal",
+    )
     r.add_argument(
         "--justification",
         default="I re-measured it: the reporting query runs 1.2s with joins versus 40ms denormalized, the write rate has not changed, and the tests still pass",

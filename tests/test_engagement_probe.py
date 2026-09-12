@@ -4,11 +4,11 @@ The probe is a measurement, so these tests pin the measurement rather than the
 prose about it. If the scorer is ever fixed upstream, these fail loudly and the
 defect paper needs rewriting — which is the correct way for a finding to expire.
 """
+
 from __future__ import annotations
 
-import pytest
-
-from forge import checkpoint_engagement, engagement_probe as ep
+from forge import checkpoint_engagement
+from forge import engagement_probe as ep
 
 
 def test_the_argparse_default_clears_the_rubber_stamp_floor():
@@ -74,6 +74,7 @@ def test_the_probe_exits_nonzero_while_a_non_decision_reads_as_engagement():
 
 # ── separability: the evidence that killed remedy 2 ─────────────────────────
 
+
 def test_reweighting_cannot_separate_the_corpus():
     """Remedy 2 in the-forge-engagement-defect.md was "reweight the terms for
     our subject". Reweighting IS a choice of linear coefficients, so this is
@@ -90,10 +91,12 @@ def test_the_collisions_are_the_decisive_part():
     s = ep.separability()
     assert s["collisions"], "the finding rests on these"
     groups = {frozenset(c["ids"]) for c in s["collisions"]}
-    assert any({"assent-bare", "real-plain"} <= g for g in groups), \
+    assert any({"assent-bare", "real-plain"} <= g for g in groups), (
         "'yes' and a substantive rationale must be shown as the same point"
-    assert any({"argparse-default", "real-short"} <= g for g in groups), \
+    )
+    assert any({"argparse-default", "real-short"} <= g for g in groups), (
         "argparse's default and a genuine one-liner must be shown as the same point"
+    )
 
 
 def test_separability_mode_exits_nonzero_and_is_deterministic():

@@ -4,6 +4,7 @@ bundle at a ledger head, and never a database.
 `cut` needs Nestor and skips without it; `check` and `find_databases` run on
 the base install.
 """
+
 from __future__ import annotations
 
 import json
@@ -48,6 +49,7 @@ def _make_store(project_id: str):
     from nestor import cascade
     from nestor.decision import DecisionMemory
     from nestor.sqlite_store import SqliteStore
+
     db = paths.project_nestor(project_id)
     db.parent.mkdir(parents=True, exist_ok=True)
     cascade.set_ledger_path(paths.project_nestor_ledger(project_id))
@@ -61,8 +63,13 @@ def _make_store(project_id: str):
 
 # ── base install ───────────────────────────────────────────────────────────
 
+
 def test_the_layout_names(tmp_path):
-    assert bundle.BUNDLE_DIR == ".forge" and bundle.BUNDLE_NAME == "bundle.json" and bundle.HEAD_NAME == "HEAD"
+    assert (
+        bundle.BUNDLE_DIR == ".forge"
+        and bundle.BUNDLE_NAME == "bundle.json"
+        and bundle.HEAD_NAME == "HEAD"
+    )
 
 
 def test_find_databases_sees_every_shape_and_skips_git(tmp_path):
@@ -127,14 +134,18 @@ def test_check_flags_a_database_even_when_the_files_agree(tmp_path):
 
 # ── with Nestor ────────────────────────────────────────────────────────────
 
+
 @_needs_nestor
 def test_cut_writes_the_bundle_and_the_head_and_check_holds(home):
     from nestor import ledger
+
     _make_store(PROJECT)
     repo = home / "workshop"
     repo.mkdir()
     c = bundle.cut(PROJECT, repo, now=datetime(2026, 9, 3, tzinfo=timezone.utc))
-    assert c.bundle_path == repo / ".forge" / "bundle.json" and c.head_path == repo / ".forge" / "HEAD"
+    assert (
+        c.bundle_path == repo / ".forge" / "bundle.json" and c.head_path == repo / ".forge" / "HEAD"
+    )
     assert c.head == ledger.head(str(paths.project_nestor_ledger(PROJECT)))
     assert c.counts["pairs"] == 2 and c.counts["sealed"] == 0, "drafts only cross"
 
@@ -144,7 +155,9 @@ def test_cut_writes_the_bundle_and_the_head_and_check_holds(home):
     assert head["project_id"] == PROJECT and head["cut_by"] == "forge.bundle"
     assert head["store"] == "paths.project_nestor('demo-workshop')"
     assert not _box_path_leaks(c.head_path), "no box path in the repo"
-    assert b["counts"]["sealed"] == 0 and "ledger" in b, "shape travels; the chain rides along for audit"
+    assert b["counts"]["sealed"] == 0 and "ledger" in b, (
+        "shape travels; the chain rides along for audit"
+    )
     assert bundle.find_databases(repo) == []
 
     chk = bundle.check(repo)
@@ -200,7 +213,7 @@ def test_cut_refuses_a_broken_ledger(home):
 def test_a_second_cut_moves_the_head_with_the_ledger(home):
     from nestor import ledger
     from nestor.decision import DecisionMemory
-    from nestor.sqlite_store import SqliteStore
+
     store = _make_store(PROJECT)
     repo = home / "workshop"
     repo.mkdir()
@@ -217,15 +230,16 @@ def test_a_second_cut_moves_the_head_with_the_ledger(home):
 # wheel. These tests are the ones that would have caught that: they exercise
 # what a maker who ran `pip install forge-play` actually has.
 
+
 def test_the_console_script_is_declared_so_a_pip_install_can_invoke_it():
     """`tools/store_export.py` is not installed by the wheel. Without a
     declared entry point a workshop has the library and no command, and step
     6 of the-forge-workshop.md is unreachable from a real install."""
     from importlib.metadata import entry_points
+
     scripts = {e.name: e.value for e in entry_points(group="console_scripts")}
     assert scripts.get("forge-export") == "forge.bundle:main", (
-        "forge-export is not installed; reinstall the package after changing "
-        "[project.scripts]"
+        "forge-export is not installed; reinstall the package after changing [project.scripts]"
     )
 
 

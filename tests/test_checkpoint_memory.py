@@ -31,12 +31,8 @@ own docstring says it does with no key configured, not a defect in this
 module or these tests, and no test here relies on the signature check
 actually rejecting anything.
 """
-from __future__ import annotations
 
-import importlib.util
-import sys
-import warnings
-from pathlib import Path
+from __future__ import annotations
 
 import pytest
 
@@ -44,9 +40,7 @@ from forge import checkpoint_memory
 
 principal = checkpoint_memory.principal  # the same principal.py checkpoint_memory.py itself loaded
 
-pytestmark = pytest.mark.filterwarnings(
-    "ignore:NESTOR_SEAL_KEY not set.*:RuntimeWarning"
-)
+pytestmark = pytest.mark.filterwarnings("ignore:NESTOR_SEAL_KEY not set.*:RuntimeWarning")
 
 # Nestor is a SOFT dependency of the Forge (see checkpoint_memory.py's own
 # module docstring) — this file's tests that go through `_open` (below) hit
@@ -54,7 +48,9 @@ pytestmark = pytest.mark.filterwarnings(
 # isn't installed. Mirrors the `_needs_fsrs` pattern in
 # tests/test_checkpoint_calibration.py / tests/test_checkpoint_schedule.py.
 _HAS_NESTOR = checkpoint_memory.nestor_available()
-_needs_nestor = pytest.mark.skipif(not _HAS_NESTOR, reason="nestor not installed in this environment")
+_needs_nestor = pytest.mark.skipif(
+    not _HAS_NESTOR, reason="nestor not installed in this environment"
+)
 
 BUILDER_A = "a" * 32  # path-safe under principal.py's _check_builder_id
 BUILDER_B = "b" * 32
@@ -79,6 +75,7 @@ def _open(tmp_path, builder_id=BUILDER_A, decision_type=DECISION_TYPE):
 
 
 # ── two builders, genuinely separate files (D12's core promise) ────────────
+
 
 def test_two_builders_get_different_db_files(tmp_path):
     root = tmp_path / "checkpoints"
@@ -140,6 +137,7 @@ def test_reopening_the_same_builder_sees_its_own_prior_seal(tmp_path):
 
 # ── has_sealed reflects a seal ──────────────────────────────────────────────
 
+
 @_needs_nestor
 def test_has_sealed_is_false_before_and_true_after_a_seal(tmp_path):
     with _open(tmp_path) as cm:
@@ -167,6 +165,7 @@ def test_has_sealed_is_scoped_to_its_own_decision_type_not_global(tmp_path):
 
 # ── reject_match: this application wrong, pattern still holds ──────────────
 
+
 @_needs_nestor
 def test_reject_match_suppresses_only_the_rejected_query_not_the_sealed_pair(tmp_path):
     with _open(tmp_path) as cm:
@@ -181,7 +180,9 @@ def test_reject_match_suppresses_only_the_rejected_query_not_the_sealed_pair(tmp
         assert before["provenance"]["pair_id"] == pair_id
 
         cm.reject_match(
-            DECISION_TEXT_VARIANT, pair_id=pair_id, verifier=BUILDER_A,
+            DECISION_TEXT_VARIANT,
+            pair_id=pair_id,
+            verifier=BUILDER_A,
             reason="this variant means something slightly different here",
         )
 
@@ -212,6 +213,7 @@ def test_reject_match_requires_pair_id_or_target_text(tmp_path):
 
 # ── reject_pair: the pattern itself was wrong, unseal everywhere ───────────
 
+
 @_needs_nestor
 def test_reject_pair_retracts_the_seal_so_has_sealed_reflects_it(tmp_path):
     with _open(tmp_path) as cm:
@@ -237,7 +239,10 @@ def test_reject_pair_is_a_stronger_retraction_than_reject_match(tmp_path):
         pair_id = sealed["pair_id"]
 
         cm.reject_match(
-            DECISION_TEXT_VARIANT, pair_id=pair_id, verifier=BUILDER_A, reason="wrong for this variant",
+            DECISION_TEXT_VARIANT,
+            pair_id=pair_id,
+            verifier=BUILDER_A,
+            reason="wrong for this variant",
         )
         # reject_match alone: the pair is still sealed and reachable via its
         # own original wording.
@@ -255,6 +260,7 @@ def test_reject_pair_is_a_stronger_retraction_than_reject_match(tmp_path):
 # Same "no file left behind on hostile input" discipline
 # apps/the-forge/src/the_forge/mount_policy.py's write_scoped_policy and
 # stores/session.py's own validation already follow.
+
 
 @pytest.mark.parametrize(
     "bad_builder_id",
@@ -302,6 +308,7 @@ def test_malformed_decision_type_is_refused_before_any_file_is_created(tmp_path,
 
 # ── adversarial: try to prove checkpoint_db_path CAN collide, and fail ─────
 
+
 def test_checkpoint_db_path_is_injective_over_many_builder_ids(tmp_path):
     """Not a proof by construction alone (the module docstring gives that) —
     this generates a large, varied set of valid builder_ids, including
@@ -338,6 +345,7 @@ def test_checkpoint_db_path_never_produces_a_path_outside_root(tmp_path):
 
 # ── close/cleanup semantics ─────────────────────────────────────────────────
 
+
 @_needs_nestor
 def test_using_a_closed_checkpoint_memory_raises_the_module_own_exception_type(tmp_path):
     cm = _open(tmp_path)
@@ -368,6 +376,7 @@ def test_close_is_idempotent(tmp_path):
 
 
 # ── conflict / rejection Nestor exceptions surface as this module's own ────
+
 
 @_needs_nestor
 def test_conflicting_seal_by_a_different_verifier_raises_checkpoint_conflict(tmp_path):
@@ -402,6 +411,7 @@ def test_resealing_a_rejected_pair_raises_checkpoint_rejected(tmp_path):
 # `nestor_available()` comes back — only that the import-without-crashing
 # path and the public function exist and behave, covering the code path
 # structurally without needing to fake Nestor's absence here.
+
 
 def test_module_imports_and_nestor_available_returns_a_bool_without_asserting_nestor_presence():
     assert isinstance(checkpoint_memory.nestor_available(), bool)

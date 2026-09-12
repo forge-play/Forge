@@ -16,6 +16,7 @@ would have tagged `willow-mcp-v2.2.0` while the publish workflow listened for
 package name swapped; these tests are what make that copy checkable rather than
 trusted. Like kartikeya, this repo has no second version file to keep in step.
 """
+
 from __future__ import annotations
 
 import ast
@@ -54,8 +55,11 @@ def test_the_tag_release_please_creates_matches_what_release_yml_listens_for():
     and nothing publishes, with no error anywhere. Observed on willow-mcp#256."""
     cfg = _package_config()
     version = _json(_MANIFEST)["."]
-    tag = (f"{cfg['package-name']}-v{version}"
-           if cfg.get("include-component-in-tag", True) else f"v{version}")
+    tag = (
+        f"{cfg['package-name']}-v{version}"
+        if cfg.get("include-component-in-tag", True)
+        else f"v{version}"
+    )
 
     # `on:` parses as the boolean True — PyYAML applies the YAML 1.1 rule.
     patterns = list(_yaml(_RELEASE_WF)[True]["push"]["tags"])
@@ -72,11 +76,13 @@ def test_the_version_has_exactly_one_source():
     here is a second copy, and a second copy is what drifts."""
     pyproject = tomllib.loads((_REPO / "pyproject.toml").read_text())
     assert "version" in (pyproject["project"].get("dynamic") or [])
-    assert "version" not in pyproject["project"], \
+    assert "version" not in pyproject["project"], (
         "a literal project.version is exactly what broke v0.0.8"
+    )
     assert pyproject["tool"]["hatch"]["version"]["source"] == "vcs"
-    assert not _package_config().get("extra-files"), \
+    assert not _package_config().get("extra-files"), (
         "nothing in this repo stores a version, so nothing needs bumping"
+    )
 
 
 # A credential whose events actually trigger workflows. Either form is
@@ -90,8 +96,8 @@ def test_the_version_has_exactly_one_source():
 # unchanged. Widening this to accept GITHUB_TOKEN would give back the three
 # releases jeles lost.
 NON_SUPPRESSED_CREDENTIALS = (
-    "RELEASE_PLEASE_TOKEN",              # fine-grained PAT (being retired)
-    "steps.app-token.outputs.token",     # willow-ci App installation token
+    "RELEASE_PLEASE_TOKEN",  # fine-grained PAT (being retired)
+    "steps.app-token.outputs.token",  # willow-ci App installation token
 )
 
 
@@ -119,14 +125,17 @@ def test_release_automation_uses_a_non_suppressed_credential_everywhere():
     used: set[str] = set()
     values: list[str] = []
     for step in steps:
-        for value in list((step.get("env") or {}).values()) + \
-                     list((step.get("with") or {}).values()):
+        for value in list((step.get("env") or {}).values()) + list(
+            (step.get("with") or {}).values()
+        ):
             values.append(str(value))
             used.update(re.findall(r"secrets\.([A-Z_]+)", str(value)))
-    assert any(_names_a_non_suppressed_credential(v) for v in values), \
+    assert any(_names_a_non_suppressed_credential(v) for v in values), (
         f"no non-suppressed credential anywhere in the job; secrets seen: {used}"
-    assert "GITHUB_TOKEN" not in used, \
+    )
+    assert "GITHUB_TOKEN" not in used, (
         f"GITHUB_TOKEN's events do not trigger workflows; found {used}"
+    )
 
 
 def test_auto_merge_waits_for_ci_rather_than_merging_directly():
@@ -163,11 +172,14 @@ def test_the_changelog_is_rebuilt_before_auto_merge_is_armed():
         assert hits, f"no step matching {needle!r} in {names}"
         return hits[0]
 
-    assert (index_of("actions/checkout") < index_of("release-please-action")
-            < index_of("Rebuild the changelog") < index_of("Arm auto-merge")), names
+    assert (
+        index_of("actions/checkout")
+        < index_of("release-please-action")
+        < index_of("Rebuild the changelog")
+        < index_of("Arm auto-merge")
+    ), names
 
-    checkout = next(s for s in steps
-                    if str(s.get("uses", "")).startswith("actions/checkout"))
+    checkout = next(s for s in steps if str(s.get("uses", "")).startswith("actions/checkout"))
     assert checkout["with"]["fetch-depth"] == 0, "needs full history for the range"
     assert checkout["with"]["fetch-tags"] is True, "needs tags to find the previous release"
 
@@ -183,8 +195,9 @@ def test_a_changelog_bail_does_not_block_the_release():
     assert 'status" = "2"' in step["run"], "exit 2 must be handled, not left to set -e"
     assert _names_a_non_suppressed_credential(step.get("env"))
     assert "GITHUB_TOKEN" not in str(step.get("env"))
-    assert (_REPO / "tools" / "changelog_dedup.py").exists(), \
+    assert (_REPO / "tools" / "changelog_dedup.py").exists(), (
         "the workflow calls a script this repo does not ship"
+    )
 
 
 def _assigned_literal(source: str, name: str):
@@ -192,9 +205,11 @@ def _assigned_literal(source: str, name: str):
     AST rather than the text, so a comment that spells the same assignment
     for another repo is not what gets returned. StopIteration if unbound."""
     tree = ast.parse(source)
-    return next(ast.literal_eval(n.value) for n in ast.walk(tree)
-                if isinstance(n, ast.Assign)
-                and getattr(n.targets[0], "id", "") == name)
+    return next(
+        ast.literal_eval(n.value)
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == name
+    )
 
 
 def test_the_assignment_reader_catches_the_value_and_not_the_comment():
@@ -204,9 +219,11 @@ def test_the_assignment_reader_catches_the_value_and_not_the_comment():
     other name's value. Factored out of the test below on 2026-09-12 when
     the meta-scan (tests/test_scans_fire.py) reported the inline AST walk as
     a scan with nothing to plant."""
-    body = ("# willow-mcp: PACKAGED = ('src/willow_mcp/', 'pyproject.toml')\n"
-            "OTHER = 1\n"
-            "PACKAGED = ('forge/', 'pyproject.toml')\n")
+    body = (
+        "# willow-mcp: PACKAGED = ('src/willow_mcp/', 'pyproject.toml')\n"
+        "OTHER = 1\n"
+        "PACKAGED = ('forge/', 'pyproject.toml')\n"
+    )
     assert _assigned_literal(body, "PACKAGED") == ("forge/", "pyproject.toml")
     assert _assigned_literal(body, "OTHER") == 1
     with pytest.raises(StopIteration):
@@ -230,8 +247,7 @@ def test_the_pr_title_check_guards_both_directions():
     assert packaged == ("forge/", "pyproject.toml"), packaged
     pyproject = tomllib.loads((_REPO / "pyproject.toml").read_text())
     wheel = pyproject["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"]
-    assert wheel == ["forge"], \
-        f"packaged path disagrees with what the wheel ships: {wheel}"
+    assert wheel == ["forge"], f"packaged path disagrees with what the wheel ships: {wheel}"
 
 
 def test_the_release_body_is_synced_after_the_release_is_created():
@@ -252,8 +268,11 @@ def test_the_release_body_is_synced_after_the_release_is_created():
         assert hits, f"no step matching {needle!r} in {names}"
         return hits[0]
 
-    assert (index_of("release-please-action") < index_of("Make the GitHub Release body")
-            < index_of("Arm auto-merge")), names
+    assert (
+        index_of("release-please-action")
+        < index_of("Make the GitHub Release body")
+        < index_of("Arm auto-merge")
+    ), names
 
     step = steps[index_of("Make the GitHub Release body")]
     run = step["run"]
@@ -277,8 +296,12 @@ def test_print_section_refuses_when_there_is_no_changelog():
     tool = _REPO / "tools" / "changelog_dedup.py"
     if (_REPO / "CHANGELOG.md").exists():
         pytest.skip("a changelog exists now — this guards the no-changelog state")
-    r = subprocess.run([sys.executable, str(tool), "--print-section", "0.0.9"],
-                       capture_output=True, text=True, cwd=str(_REPO))
+    r = subprocess.run(
+        [sys.executable, str(tool), "--print-section", "0.0.9"],
+        capture_output=True,
+        text=True,
+        cwd=str(_REPO),
+    )
     assert r.returncode == 2, (r.returncode, r.stdout, r.stderr)
     assert r.stdout.strip() == "", f"printed something usable as a body: {r.stdout!r}"
 
@@ -300,14 +323,16 @@ def test_print_section_refuses_while_only_hand_written_history_exists():
     changelog = _REPO / "CHANGELOG.md"
     if not changelog.exists():
         pytest.skip("no changelog — the earlier guard covers that state")
-    generated = [ln for ln in changelog.read_text().splitlines()
-                 if ln.startswith("## [")]
+    generated = [ln for ln in changelog.read_text().splitlines() if ln.startswith("## [")]
     if generated:
         pytest.skip("release-please has written a section — this guard is spent")
 
-    r = subprocess.run([sys.executable, str(_REPO / "tools" / "changelog_dedup.py"),
-                        "--print-section", "0.0.9"],
-                       capture_output=True, text=True, cwd=str(_REPO))
+    r = subprocess.run(
+        [sys.executable, str(_REPO / "tools" / "changelog_dedup.py"), "--print-section", "0.0.9"],
+        capture_output=True,
+        text=True,
+        cwd=str(_REPO),
+    )
     assert r.returncode == 2, (r.returncode, r.stdout, r.stderr)
     assert r.stdout.strip() == "", f"printed something publishable: {r.stdout!r}"
 
@@ -320,13 +345,18 @@ def test_a_rebuild_leaves_the_hand_written_history_alone():
     import sys
 
     changelog = _REPO / "CHANGELOG.md"
-    if not changelog.exists() or [ln for ln in changelog.read_text().splitlines()
-                                  if ln.startswith("## [")]:
+    if not changelog.exists() or [
+        ln for ln in changelog.read_text().splitlines() if ln.startswith("## [")
+    ]:
         pytest.skip("only meaningful while the file is hand-written history alone")
 
     before = changelog.read_text()
-    r = subprocess.run([sys.executable, str(_REPO / "tools" / "changelog_dedup.py")],
-                       capture_output=True, text=True, cwd=str(_REPO))
+    r = subprocess.run(
+        [sys.executable, str(_REPO / "tools" / "changelog_dedup.py")],
+        capture_output=True,
+        text=True,
+        cwd=str(_REPO),
+    )
     assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
     assert changelog.read_text() == before, "the hand-written history was modified"
 
@@ -337,8 +367,7 @@ def test_only_types_that_change_the_installed_package_cut_a_release():
     the release PR, not once auto-merge does."""
     sections = _package_config()["changelog-sections"]
     visible = {s["type"] for s in sections if not s.get("hidden")}
-    assert visible == {"feat", "fix", "security", "perf", "refactor",
-                       "build", "deps"}, visible
+    assert visible == {"feat", "fix", "security", "perf", "refactor", "build", "deps"}, visible
     for t in ("docs", "test", "ci", "chore"):
         assert next(s for s in sections if s["type"] == t).get("hidden") is True
 
@@ -361,11 +390,14 @@ def test_a_breaking_change_below_1_0_cuts_1_0_0_rather_than_a_minor():
     cfg = _package_config()
     assert cfg.get("bump-minor-pre-major") is False, (
         "true caps a breaking change at a minor, which makes a downstream "
-        "`<1.0.0` cap meaningless. See willow-mcp docs/design/fleet-versioning.md")
-    assert cfg.get("bump-patch-for-minor-pre-major") is False, \
+        "`<1.0.0` cap meaningless. See willow-mcp docs/design/fleet-versioning.md"
+    )
+    assert cfg.get("bump-patch-for-minor-pre-major") is False, (
         "with this true, a feat would bump the patch instead of the minor"
-    assert _json(_MANIFEST)["."].startswith("0."), \
+    )
+    assert _json(_MANIFEST)["."].startswith("0."), (
         "past 1.0 both flags are dead weight — `isPreMajor` gates them. Remove."
+    )
 
 
 def test_the_publish_job_uses_oidc_with_attestations():
@@ -375,15 +407,17 @@ def test_the_publish_job_uses_oidc_with_attestations():
     job = _yaml(_RELEASE_WF)["jobs"]["publish"]
     perms = job.get("permissions") or {}
     assert perms.get("id-token") == "write", (
-        "the publish job must request id-token: write for Trusted Publishing")
+        "the publish job must request id-token: write for Trusted Publishing"
+    )
     publish = job["steps"]
     step = next(s for s in publish if "pypi-publish" in str(s.get("uses", "")))
     with_ = step.get("with") or {}
     assert "password" not in with_, (
-        "a stored token is not needed with Trusted Publishing — drop the "
-        "password line")
+        "a stored token is not needed with Trusted Publishing — drop the password line"
+    )
     assert with_.get("attestations") is not False, (
-        "attestations are available with OIDC — do not disable them")
+        "attestations are available with OIDC — do not disable them"
+    )
 
 
 def test_the_checkout_uses_a_non_suppressed_credential_so_pushes_are_not_gated():
@@ -400,13 +434,13 @@ def test_the_checkout_uses_a_non_suppressed_credential_so_pushes_are_not_gated()
     This is the fourth way this fleet has been bitten by token attribution, so
     it gets a test rather than a comment."""
     steps = _yaml(_RP_WF)["jobs"]["release-please"]["steps"]
-    checkout = next(s for s in steps
-                    if str(s.get("uses", "")).startswith("actions/checkout"))
+    checkout = next(s for s in steps if str(s.get("uses", "")).startswith("actions/checkout"))
     token = str((checkout.get("with") or {}).get("token", ""))
     assert _names_a_non_suppressed_credential(token), (
         "checkout must carry a credential whose events trigger workflows — its "
         "credential is what the changelog step pushes with. "
-        f"Got: {token!r}")
+        f"Got: {token!r}"
+    )
     assert "GITHUB_TOKEN" not in token
 
 
@@ -444,12 +478,13 @@ def test_trailers_yml_exists_wherever_the_pile_does():
     run = "\n".join(str(s.get("run", "")) for s in steps)
     assert "reconciler verify" in run and "docs/ideas.md" in run, run
     # `on:` parses as the boolean True — PyYAML applies the YAML 1.1 rule.
-    assert wf[True]["pull_request"]["branches"] == ["master"], \
+    assert wf[True]["pull_request"]["branches"] == ["master"], (
         "the gate must run on every PR to the default branch, which is master here"
-    checkout = next(s for s in steps
-                    if str(s.get("uses", "")).startswith("actions/checkout"))
-    assert checkout["with"]["fetch-depth"] == 0, \
+    )
+    checkout = next(s for s in steps if str(s.get("uses", "")).startswith("actions/checkout"))
+    assert checkout["with"]["fetch-depth"] == 0, (
         "verify walks the whole history; a shallow clone verifies only what it fetched"
+    )
 
 
 def test_the_pile_gate_check_fires_on_a_planted_pile_with_no_workflow(tmp_path):
@@ -466,7 +501,9 @@ def test_the_pile_gate_check_fires_on_a_planted_pile_with_no_workflow(tmp_path):
     (gated / "docs").mkdir(parents=True)
     (gated / "docs" / "ideas.md").write_text("1. an idea\n", encoding="utf-8")
     (gated / ".github" / "workflows").mkdir(parents=True)
-    (gated / ".github" / "workflows" / "trailers.yml").write_text("name: Trailers\n", encoding="utf-8")
+    (gated / ".github" / "workflows" / "trailers.yml").write_text(
+        "name: Trailers\n", encoding="utf-8"
+    )
     assert not _pile_without_its_gate(gated)
 
     no_pile = tmp_path / "no_pile"

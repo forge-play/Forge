@@ -1,4 +1,5 @@
 """forge/majors.py — the keyword → major scan over forge/keywords.toml."""
+
 from __future__ import annotations
 
 import pytest

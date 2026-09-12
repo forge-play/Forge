@@ -40,6 +40,7 @@ binary (downloaded on first use, runs a daemon), so a caller opts in
 explicitly). When it is NOT included, the panel names `call-graph` as an
 uncovered class — the sigmap honesty.
 """
+
 from __future__ import annotations
 
 import json
@@ -48,7 +49,6 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-
 
 # Reuse the ONE already-loaded measure_panel if present — a second spec-load
 # would give a DISTINCT InstrumentUnavailable class, so run_panel would catch
@@ -69,6 +69,7 @@ _Q_CALLED = "MATCH (a)-[:CALLS]->(f:Function) RETURN f.qualified_name AS qn"
 
 # ── the pure core (unit-tested without the binary) ──────────────────────────
 
+
 class UnreadableResult(ValueError):
     """The tool answered, but not in a shape this reader can turn into rows.
     Distinct from an empty result: raised so the caller can name a coverage
@@ -87,7 +88,9 @@ def _rows(payload: dict | str) -> list[list[str]]:
     if isinstance(obj, str):
         s = obj.strip()
         if not s.startswith("{"):
-            raise UnreadableResult("query result is not JSON (the text-table format is no longer read)")
+            raise UnreadableResult(
+                "query result is not JSON (the text-table format is no longer read)"
+            )
         try:
             obj = json.loads(s)
         except json.JSONDecodeError as e:
@@ -99,7 +102,11 @@ def _rows(payload: dict | str) -> list[list[str]]:
         content = obj.get("content")
         if isinstance(content, list) and content and isinstance(content[0], dict):
             text = content[0].get("text", "")
-            return _rows(text) if isinstance(text, str) and text.strip().startswith("{") else _fail_content()
+            return (
+                _rows(text)
+                if isinstance(text, str) and text.strip().startswith("{")
+                else _fail_content()
+            )
         result = obj  # a bare result object
     rows = result.get("rows")
     if not isinstance(rows, list):
@@ -116,10 +123,14 @@ def _rows(payload: dict | str) -> list[list[str]]:
 
 
 def _fail_content() -> list[list[str]]:
-    raise UnreadableResult("query result carries neither structuredContent.rows nor JSON text content")
+    raise UnreadableResult(
+        "query result carries neither structuredContent.rows nor JSON text content"
+    )
 
 
-def _dead_functions(all_rows: list[list[str]], called_rows: list[list[str]]) -> list[tuple[str, str]]:
+def _dead_functions(
+    all_rows: list[list[str]], called_rows: list[list[str]]
+) -> list[tuple[str, str]]:
     """`(qualified_name, file_path)` for every function with no caller — the
     set difference `all_functions - called - entry_points - builtins`. Pure:
     takes the two query results as rows, returns the dead set. `entry` is the
@@ -129,19 +140,22 @@ def _dead_functions(all_rows: list[list[str]], called_rows: list[list[str]]) -> 
     dead: list[tuple[str, str]] = []
     for row in all_rows:
         if len(row) < 3:
-            raise UnreadableResult(f"function row has {len(row)} columns, expected qn/entry/file: {row!r}")
+            raise UnreadableResult(
+                f"function row has {len(row)} columns, expected qn/entry/file: {row!r}"
+            )
         qn, entry, file = row[0], row[1].strip('"').lower(), row[2]
         if qn in called:
-            continue                    # it has a caller — not dead
+            continue  # it has a caller — not dead
         if entry == "true":
-            continue                    # a genuine entry point is not "dead"
+            continue  # a genuine entry point is not "dead"
         if qn.startswith("builtins.") or file.startswith("<"):
-            continue                    # language builtins, not the build's code
+            continue  # language builtins, not the build's code
         dead.append((qn, file))
     return dead
 
 
 # ── the instrument ──────────────────────────────────────────────────────────
+
 
 class CallGraphInstrument:
     """Drives `codebase-memory-mcp` to flag dead code (`fan_in=0`). `covers` the
@@ -177,17 +191,25 @@ class CallGraphInstrument:
         except UnreadableResult as e:
             raise InstrumentUnavailable(f"could not read codebase-memory-mcp's output: {e}") from e
         except Exception as e:  # noqa: BLE001 — any drive failure is a coverage gap, not a crash
-            raise InstrumentUnavailable(f"codebase-memory-mcp drive failed: {type(e).__name__}: {e}") from e
+            raise InstrumentUnavailable(
+                f"codebase-memory-mcp drive failed: {type(e).__name__}: {e}"
+            ) from e
         finally:
             if project:
                 self._call(exe, "delete_project", {"project": project}, tolerant=True)
 
         out: list[Finding] = []
         for qn, file in dead:
-            out.append(Finding(
-                instrument=self.name, artifact=file, metric="fan_in", value=0, severity="med",
-                detail=f"{qn} has no callers (fan_in=0) — dead code the ranker would still 'find'; the box's decoy",
-            ))
+            out.append(
+                Finding(
+                    instrument=self.name,
+                    artifact=file,
+                    metric="fan_in",
+                    value=0,
+                    severity="med",
+                    detail=f"{qn} has no callers (fan_in=0) — dead code the ranker would still 'find'; the box's decoy",
+                )
+            )
         return out
 
     # -- subprocess plumbing --------------------------------------------------
@@ -202,7 +224,9 @@ class CallGraphInstrument:
             try:
                 proc = subprocess.run(
                     [exe, "cli", "--json", tool, "--args-file", path],
-                    capture_output=True, text=True, timeout=self.timeout,
+                    capture_output=True,
+                    text=True,
+                    timeout=self.timeout,
                 )
             except (subprocess.TimeoutExpired, OSError) as e:
                 if tolerant:
@@ -221,7 +245,9 @@ class CallGraphInstrument:
                 except json.JSONDecodeError:
                     break
                 if d.get("isError") and not tolerant:
-                    raise InstrumentUnavailable(f"{tool} error: {d.get('structuredContent') or d.get('content')}")
+                    raise InstrumentUnavailable(
+                        f"{tool} error: {d.get('structuredContent') or d.get('content')}"
+                    )
                 return d
         if tolerant:
             return {}
@@ -233,6 +259,7 @@ class CallGraphInstrument:
 
 if __name__ == "__main__":
     import argparse
+
     p = argparse.ArgumentParser(prog="instrument_callgraph.py")
     p.add_argument("build_dir")
     p.add_argument("--binary", default=_DEFAULT_BINARY)

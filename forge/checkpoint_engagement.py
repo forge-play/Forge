@@ -72,12 +72,12 @@ stops there rather than half-shipping the timing.
 Usage (dev CLI):
     python -m forge.checkpoint_engagement score --rationale "..." --surface "..."
 """
+
 from __future__ import annotations
 
 import argparse
 import json
 import sys
-
 
 # The vendored, pure-stdlib scorer — loaded spec-style like every other
 # store-side sibling loads its dependency, and for the same reason (stores/ is
@@ -130,20 +130,23 @@ def is_rubber_stamp(rationale: str, context: str, *, floor: float = RUBBER_STAMP
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
+
 def _cmd_score(args: argparse.Namespace) -> int:
     try:
         score = engagement_score(args.rationale, args.surface)
     except EngagementError as e:
         print(f"refused: {e}", file=sys.stderr)
         return 1
-    print(json.dumps(
-        {
-            "engagement": round(score, 3),
-            "rubber_stamp": score < args.floor,
-            "floor": args.floor,
-        },
-        indent=2,
-    ))
+    print(
+        json.dumps(
+            {
+                "engagement": round(score, 3),
+                "rubber_stamp": score < args.floor,
+                "floor": args.floor,
+            },
+            indent=2,
+        )
+    )
     return 0
 
 

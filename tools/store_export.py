@@ -12,6 +12,7 @@ habits keeps working.
     python tools/store_export.py --project-id my-workshop --repo-root .   # cut
     python tools/store_export.py --repo-root . --check                    # check
 """
+
 from __future__ import annotations
 
 import sys

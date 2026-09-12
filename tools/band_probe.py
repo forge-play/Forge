@@ -12,6 +12,7 @@ more than the operator-sealed harness-spread floor.
 Writes only into a temporary FORGE_HOME it creates and removes. The logic lives
 in `forge/band_probe.py` (tools/ is not in the wheel).
 """
+
 from __future__ import annotations
 
 import sys

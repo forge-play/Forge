@@ -62,6 +62,7 @@ Usage (dev CLI):
         --outcome held|regressed [--root DIR]
     python -m forge.checkpoint_schedule due <builder_id> <pair_id> [--root DIR]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -72,15 +73,12 @@ import types
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-
 # Reuse checkpoint_memory's own already-validated pieces — its DEFAULT root and
 # its `_check_builder_id` (which itself delegates to principal.py). Loaded the
 # same spec_from_file_location way checkpoint_calibration loads checkpoint, so
 # there is one source for the builder-id charset and the checkpoint root, not a
 # second copy that could drift. checkpoint_memory is soft-Nestor at import, so
 # importing it here does NOT pull in Nestor.
-from . import checkpoint_memory
-
 # The engagement gate (bite 3) OWNS the "thin engagement" line — its
 # RUBBER_STAMP_FLOOR. grade()'s Hard cutoff below is not a second copy of that
 # number; it IS that constant, imported here, so the two can never drift (the
@@ -88,7 +86,7 @@ from . import checkpoint_memory
 # tying them together — this closes that). checkpoint_engagement is pure/
 # model-free (it only pulls the vendored friction_floor), so importing it adds
 # no Nestor/fsrs weight, and there is no cycle: engagement never imports this.
-from . import checkpoint_engagement
+from . import checkpoint_engagement, checkpoint_memory
 
 DEFAULT_CHECKPOINT_ROOT = checkpoint_memory.DEFAULT_CHECKPOINT_ROOT
 
@@ -171,6 +169,7 @@ def fsrs_available() -> bool:
 
 # ── the grade map (D-FSRS-2) ────────────────────────────────────────────────
 
+
 def grade(outcome: str, engagement: float | None = None) -> int:
     """Map a resurface outcome to an FSRS rating integer (Again=1 .. Easy=4).
 
@@ -218,6 +217,7 @@ def grade(outcome: str, engagement: float | None = None) -> int:
 
 # ── record a review -> a new card blob ──────────────────────────────────────
 
+
 def record_review(
     prior_card: dict | None,
     outcome: str,
@@ -238,7 +238,11 @@ def record_review(
     if fsrs_available():
         fsrs = _fsrs()
         card = None
-        if prior_card and prior_card.get("kind") == "fsrs" and isinstance(prior_card.get("card"), dict):
+        if (
+            prior_card
+            and prior_card.get("kind") == "fsrs"
+            and isinstance(prior_card.get("card"), dict)
+        ):
             try:
                 card = fsrs.Card.from_dict(prior_card["card"])
             except Exception:  # noqa: BLE001 — a blob we can't parse is a fresh start, not a crash
@@ -258,7 +262,11 @@ def record_review(
             prev_interval = 0.0
     if outcome == OUTCOME_HELD:
         # first hold from nothing -> base; each subsequent hold doubles, capped
-        interval = FIXED_BASE_INTERVAL_DAYS if prev_interval <= 0 else min(prev_interval * 2, FIXED_MAX_INTERVAL_DAYS)
+        interval = (
+            FIXED_BASE_INTERVAL_DAYS
+            if prev_interval <= 0
+            else min(prev_interval * 2, FIXED_MAX_INTERVAL_DAYS)
+        )
     else:  # regressed
         interval = FIXED_BASE_INTERVAL_DAYS
     due = now + timedelta(days=interval)
@@ -271,6 +279,7 @@ def record_review(
 
 
 # ── read the schedule ────────────────────────────────────────────────────────
+
 
 def due_at(card_dict: dict) -> datetime:
     """The next review time this card is due, parsed from its `due` field —
@@ -291,6 +300,7 @@ def is_due(card_dict: dict, now: datetime) -> bool:
 
 
 # ── the sidecar: one JSON file per builder, keyed by pair_id ─────────────────
+
 
 def schedule_path(builder_id: str, root: Path = DEFAULT_CHECKPOINT_ROOT) -> Path:
     """`builder_id`'s own schedule file — `<root>/<builder_id>.schedule.json`.
@@ -350,6 +360,7 @@ def save_card(
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
+
 def _cmd_review(args: argparse.Namespace) -> int:
     now = datetime.now(timezone.utc)
     try:
@@ -359,7 +370,9 @@ def _cmd_review(args: argparse.Namespace) -> int:
     except ScheduleError as e:
         print(f"refused: {e}", file=sys.stderr)
         return 1
-    print(json.dumps({"kind": card["kind"], "due": card["due"], "fsrs": fsrs_available()}, indent=2))
+    print(
+        json.dumps({"kind": card["kind"], "due": card["due"], "fsrs": fsrs_available()}, indent=2)
+    )
     return 0
 
 

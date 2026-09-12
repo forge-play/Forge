@@ -26,6 +26,7 @@ Write-free. Nothing here proposes, seals, imports or edges; bringing seals
 home is the separate act that needs the keyring, and this is what says
 whether it is worth doing.
 """
+
 from __future__ import annotations
 
 import json
@@ -60,10 +61,16 @@ class Diff:
 
     def to_dict(self) -> dict:
         return {
-            "domain": self.domain, "project_live": self.project_live, "main_live": self.main_live,
-            "agreed": self.agreed, "behind": self.behind, "ahead": self.ahead,
-            "verified_upstream": list(self.verified_upstream), "proposed_here": list(self.proposed_here),
-            "conflicts": list(self.conflicts), "retired_here_sealed_there": list(self.retired_here_sealed_there),
+            "domain": self.domain,
+            "project_live": self.project_live,
+            "main_live": self.main_live,
+            "agreed": self.agreed,
+            "behind": self.behind,
+            "ahead": self.ahead,
+            "verified_upstream": list(self.verified_upstream),
+            "proposed_here": list(self.proposed_here),
+            "conflicts": list(self.conflicts),
+            "retired_here_sealed_there": list(self.retired_here_sealed_there),
             "main_source": self.main_source,
         }
 
@@ -150,30 +157,47 @@ def load_main(main: Any, *, forbid_under: str | Path | None = None) -> tuple[lis
             except ValueError:
                 pass
             else:
-                raise MainUnreadable(f"main store {p} is inside the checkout {root}; a checkout never holds "
-                                     f"a Nestor database (docs/design/the-forge-workshop.md)")
+                raise MainUnreadable(
+                    f"main store {p} is inside the checkout {root}; a checkout never holds "
+                    f"a Nestor database (docs/design/the-forge-workshop.md)"
+                )
         if not p.is_file():
-            raise MainUnreadable(f"main store not found: {p} (nothing was created; refusing to diff against an "
-                                 f"empty store that did not exist)")
+            raise MainUnreadable(
+                f"main store not found: {p} (nothing was created; refusing to diff against an "
+                f"empty store that did not exist)"
+            )
         if p.suffix.lower() == ".json":
             b = json.loads(p.read_text(encoding="utf-8"))
-            return list(b.get("pairs") or []), f"bundle {p.name} (digest {str(b.get('digest', ''))[:12]})"
+            return list(
+                b.get("pairs") or []
+            ), f"bundle {p.name} (digest {str(b.get('digest', ''))[:12]})"
         try:
             from nestor.sqlite_store import SqliteStore  # type: ignore[import-not-found]
         except ImportError as e:
-            raise RuntimeError("Nestor is unavailable; pass the main store as a bundle instead") from e
+            raise RuntimeError(
+                "Nestor is unavailable; pass the main store as a bundle instead"
+            ) from e
         return _history(SqliteStore(str(p))), f"store {p.name}"
     # a store object
     return _history(main), "store"
 
 
 def _ref(r: dict) -> dict:
-    return {"id": r.get("id", ""), "question": r.get("source_text", ""), "status": r.get("status", ""),
-            "verifier": r.get("verifier", "")}
+    return {
+        "id": r.get("id", ""),
+        "question": r.get("source_text", ""),
+        "status": r.get("status", ""),
+        "verifier": r.get("verifier", ""),
+    }
 
 
-def diff(project_store: Any, main: Any, domain: str = DEFAULT_DOMAIN,
-         *, forbid_under: str | Path | None = None) -> Diff:
+def diff(
+    project_store: Any,
+    main: Any,
+    domain: str = DEFAULT_DOMAIN,
+    *,
+    forbid_under: str | Path | None = None,
+) -> Diff:
     """Compare the project store's live rows in `domain` with the main store's.
     `forbid_under` names a checkout the main path may not lie inside."""
     all_rows = _project_rows(project_store)
@@ -182,7 +206,9 @@ def diff(project_store: Any, main: Any, domain: str = DEFAULT_DOMAIN,
     main_rows, main_desc = load_main(main, forbid_under=forbid_under)
     mn = _live(main_rows, domain)
 
-    d = Diff(domain=domain, project_live=len(proj), main_live=len(mn), agreed=0, main_source=main_desc)
+    d = Diff(
+        domain=domain, project_live=len(proj), main_live=len(mn), agreed=0, main_source=main_desc
+    )
     for norm, p in proj.items():
         if norm in retired:
             # A question this project retired by edge is still a live row, but
@@ -197,25 +223,44 @@ def diff(project_store: Any, main: Any, domain: str = DEFAULT_DOMAIN,
         p_sealed, m_sealed = p.get("status") == "sealed", m.get("status") == "sealed"
         if same:
             if m_sealed and not p_sealed:
-                d.verified_upstream.append({**_ref(p), "main_id": m.get("id", ""), "main_verifier": m.get("verifier", "")})
+                d.verified_upstream.append(
+                    {**_ref(p), "main_id": m.get("id", ""), "main_verifier": m.get("verifier", "")}
+                )
             else:
                 d.agreed += 1
         else:
-            d.conflicts.append({"question": p.get("source_text", ""), "here": _ref(p) | {"answer": p.get("target_text", "")},
-                                "there": _ref(m) | {"answer": m.get("target_text", "")},
-                                "kind": ("sealed_both" if p_sealed and m_sealed else "sealed_there" if m_sealed
-                                         else "sealed_here" if p_sealed else "drafts_diverged")})
+            d.conflicts.append(
+                {
+                    "question": p.get("source_text", ""),
+                    "here": _ref(p) | {"answer": p.get("target_text", "")},
+                    "there": _ref(m) | {"answer": m.get("target_text", "")},
+                    "kind": (
+                        "sealed_both"
+                        if p_sealed and m_sealed
+                        else "sealed_there"
+                        if m_sealed
+                        else "sealed_here"
+                        if p_sealed
+                        else "drafts_diverged"
+                    ),
+                }
+            )
     for norm, r in retired.items():
         m = mn.get(norm)
         if m is not None and m.get("status") == "sealed":
-            d.retired_here_sealed_there.append({**_ref(r), "main_id": m.get("id", ""), "main_verifier": m.get("verifier", "")})
+            d.retired_here_sealed_there.append(
+                {**_ref(r), "main_id": m.get("id", ""), "main_verifier": m.get("verifier", "")}
+            )
     return d
 
 
 def summary(d: Diff) -> str:
     """One line for a tier: counts, in the order a build should read them."""
-    parts = [f"behind {d.behind} (sealed upstream)", f"ahead {d.ahead} (proposed here)",
-             f"{len(d.conflicts)} conflict(s)"]
+    parts = [
+        f"behind {d.behind} (sealed upstream)",
+        f"ahead {d.ahead} (proposed here)",
+        f"{len(d.conflicts)} conflict(s)",
+    ]
     if d.retired_here_sealed_there:
         parts.append(f"{len(d.retired_here_sealed_there)} retired here but sealed there")
     return ", ".join(parts) + f"; {d.agreed} agreed; main: {d.main_source}"

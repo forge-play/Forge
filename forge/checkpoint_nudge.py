@@ -54,6 +54,7 @@ Usage (dev CLI):
     python -m forge.checkpoint_nudge mirror --transcript turns.json
     python -m forge.checkpoint_nudge engagement-run --scores 0.1 0.2 0.05
 """
+
 from __future__ import annotations
 
 import argparse
@@ -62,13 +63,10 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-
 # The vendored scorer/detector (#66 friction_score + #67 FrictionFloor) and the
 # engagement gate (for the shared rubber-stamp floor). Both pure/model-free, so
 # this module stays pure too — loaded spec-style like every store-side sibling.
-from . import friction_floor
-
-from . import checkpoint_engagement
+from . import checkpoint_engagement, friction_floor
 
 
 @dataclass(frozen=True)
@@ -91,6 +89,7 @@ class Nudge:
 
 
 # ── the literal #67: the mirror detector, wired for mid-session ──────────────
+
 
 class SessionMirrorMonitor:
     """Mid-session wrapper around the vendored `FrictionFloor`. Accumulate the
@@ -127,21 +126,24 @@ class SessionMirrorMonitor:
             if flag.at_turn in self._surfaced:
                 continue
             self._surfaced.add(flag.at_turn)
-            out.append(Nudge(
-                kind="mirror",
-                message=flag.message,
-                at=flag.at_turn,
-                detail={
-                    "streak": flag.streak,
-                    "mean_friction": flag.mean_friction,
-                    "escalation": flag.escalation,
-                    "low_turns": list(flag.low_turns),
-                },
-            ))
+            out.append(
+                Nudge(
+                    kind="mirror",
+                    message=flag.message,
+                    at=flag.at_turn,
+                    detail={
+                        "streak": flag.streak,
+                        "mean_friction": flag.mean_friction,
+                        "escalation": flag.escalation,
+                        "low_turns": list(flag.low_turns),
+                    },
+                )
+            )
         return out
 
 
 # ── the checkpoint-level companion: a run of rubber-stamps ───────────────────
+
 
 class EngagementRunMonitor:
     """Watches the per-checkpoint engagement stream and nudges on a run of
@@ -194,7 +196,7 @@ class EngagementRunMonitor:
         self._measured.append(engagement)
         if len(self._measured) < self.window:
             return None
-        mean = sum(self._measured[-self.window:]) / self.window
+        mean = sum(self._measured[-self.window :]) / self.window
         if mean < self.floor:
             if self._alarmed:
                 return None  # one nudge per episode
@@ -208,7 +210,11 @@ class EngagementRunMonitor:
                     f"rubber-stamping them?"
                 ),
                 at=self._index,
-                detail={"mean_engagement": round(mean, 3), "window": self.window, "floor": self.floor},
+                detail={
+                    "mean_engagement": round(mean, 3),
+                    "window": self.window,
+                    "floor": self.floor,
+                },
             )
         # mean back at/above the floor — episode over, re-arm for the next run
         self._alarmed = False
@@ -216,6 +222,7 @@ class EngagementRunMonitor:
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
+
 
 def _cmd_mirror(args: argparse.Namespace) -> int:
     try:
@@ -227,7 +234,15 @@ def _cmd_mirror(args: argparse.Namespace) -> int:
     for t in turns:
         m.add_turn(t.get("role"), t.get("text", ""), t.get("ts"))
     nudges = m.check()
-    print(json.dumps([{"kind": n.kind, "at": n.at, "message": n.message, "detail": n.detail} for n in nudges], indent=2))
+    print(
+        json.dumps(
+            [
+                {"kind": n.kind, "at": n.at, "message": n.message, "detail": n.detail}
+                for n in nudges
+            ],
+            indent=2,
+        )
+    )
     return 0
 
 
@@ -251,8 +266,15 @@ def build_parser() -> argparse.ArgumentParser:
     mir.add_argument("--transcript", required=True, help="JSON: [{role, text, ts?}, ...]")
     mir.set_defaults(func=_cmd_mirror)
 
-    run = sub.add_parser("engagement-run", help="feed a sequence of engagement scores; nudge on a run of rubber-stamps")
-    run.add_argument("scores", nargs="+", help="engagement scores in [0,1], or 'none' for an unmeasured checkpoint")
+    run = sub.add_parser(
+        "engagement-run",
+        help="feed a sequence of engagement scores; nudge on a run of rubber-stamps",
+    )
+    run.add_argument(
+        "scores",
+        nargs="+",
+        help="engagement scores in [0,1], or 'none' for an unmeasured checkpoint",
+    )
     run.add_argument("--window", type=int, default=3)
     run.set_defaults(func=_cmd_engagement_run)
 

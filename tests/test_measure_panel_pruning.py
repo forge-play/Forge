@@ -7,6 +7,7 @@ instruments at once — byte-share dominator (census) and a `.db` smell
 (hygiene) — which is precisely the independent-agreement condition convergence
 exists to detect, raised about a file no maker wrote.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

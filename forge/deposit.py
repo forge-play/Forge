@@ -26,6 +26,7 @@ inside, restated so a reader does not have to open the paper:
 Nestor is imported lazily and its absence is a `DepositError`, the same
 discipline as `forge/checkpoint_memory.py`: the base install runs without it.
 """
+
 from __future__ import annotations
 
 import json
@@ -36,9 +37,19 @@ from pathlib import Path
 from typing import Any, Iterable
 
 __all__ = [
-    "DOMAIN", "STATES", "DepositError", "Run", "ProposeOnly", "outcome_state",
-    "extract_decision_refs", "deposit_ci", "link_decisions", "read_inbox",
-    "newest_deposit", "deposit_age", "human_age",
+    "DOMAIN",
+    "STATES",
+    "DepositError",
+    "Run",
+    "ProposeOnly",
+    "outcome_state",
+    "extract_decision_refs",
+    "deposit_ci",
+    "link_decisions",
+    "read_inbox",
+    "newest_deposit",
+    "deposit_age",
+    "human_age",
 ]
 
 #: The Nestor domain CI rows live in. Never `decision`.
@@ -73,6 +84,7 @@ class Run:
     databaseId from `gh run list` or the check-run id from a webhook; `url`
     is the html_url. Both are strings so a webhook item and a `gh` row read
     the same."""
+
     name: str
     status: str
     conclusion: str
@@ -107,6 +119,7 @@ def extract_decision_refs(text: str) -> list[str]:
 
 # ── the store ──────────────────────────────────────────────────────────────
 
+
 class ProposeOnly:
     """The only Nestor surface this module holds: `propose`, `propose_edge`,
     `revise_draft`. Nothing else is reachable through it — not `seal`, not
@@ -131,15 +144,21 @@ class ProposeOnly:
         # Bound methods only. The DecisionMemory itself is not kept on self.
         self._propose = mem.propose
         self._propose_edge = mem.propose_edge
-        self._revise = lambda q, c, **kw: memory.revise_draft(q, c, domain, domain, store=store, **kw)
+        self._revise = lambda q, c, **kw: memory.revise_draft(
+            q, c, domain, domain, store=store, **kw
+        )
 
-    def propose(self, question: str, commitment: str, rationale: str = "", origin: str = "") -> dict:
+    def propose(
+        self, question: str, commitment: str, rationale: str = "", origin: str = ""
+    ) -> dict:
         return self._propose(question, commitment, rationale=rationale, origin=origin)
 
     def propose_edge(self, src_id: str, dst_id: str, kind: str, reason: str = "") -> dict:
         return self._propose_edge(src_id, dst_id, kind, reason=reason)
 
-    def revise_draft(self, question: str, commitment: str, reason: str = "", origin: str = "") -> dict:
+    def revise_draft(
+        self, question: str, commitment: str, reason: str = "", origin: str = ""
+    ) -> dict:
         return self._revise(question, commitment, reason=reason, origin=origin)
 
 
@@ -184,20 +203,34 @@ class Deposit:
     the id of the row this one revised (a re-run at the same sha with a
     different outcome), if any; `unchanged` means the same outcome was already
     the live row and nothing was written; `states` counts the runs by state."""
+
     row: dict
     superseded: str | None
     states: dict[str, int] = field(default_factory=dict)
     unchanged: bool = False
 
     def to_dict(self) -> dict:
-        return {"id": self.row["id"], "question": self.row["source_text"],
-                "commitment": self.row["target_text"], "superseded": self.superseded,
-                "unchanged": self.unchanged, "states": dict(self.states)}
+        return {
+            "id": self.row["id"],
+            "question": self.row["source_text"],
+            "commitment": self.row["target_text"],
+            "superseded": self.superseded,
+            "unchanged": self.unchanged,
+            "states": dict(self.states),
+        }
 
 
-def deposit_ci(store: Any, *, repo: str, sha: str, runs: Iterable[Run],
-               pr: dict | None = None, actor_type: str, via: str,
-               now: datetime | None = None) -> Deposit:
+def deposit_ci(
+    store: Any,
+    *,
+    repo: str,
+    sha: str,
+    runs: Iterable[Run],
+    pr: dict | None = None,
+    actor_type: str,
+    via: str,
+    now: datetime | None = None,
+) -> Deposit:
     """Propose one `ci` row for `repo@sha` from `runs`. A re-run with a
     different outcome revises the live draft (`nestor.memory.revise_draft`),
     keeping the old row as history; the same outcome again writes nothing.
@@ -217,8 +250,10 @@ def deposit_ci(store: Any, *, repo: str, sha: str, runs: Iterable[Run],
         raise DepositError(f"actor_type must be one of {_ACTOR_TYPES}, got {actor_type!r}")
     pending = [r.name for r in runs if r.state == "pending"]
     if pending:
-        raise DepositError(f"{len(pending)} run(s) still pending at {repo}@{sha}: "
-                           f"{', '.join(sorted(pending))}; deposit when they are done")
+        raise DepositError(
+            f"{len(pending)} run(s) still pending at {repo}@{sha}: "
+            f"{', '.join(sorted(pending))}; deposit when they are done"
+        )
     if not repo or not sha:
         raise DepositError("repo and sha are required")
 
@@ -228,9 +263,13 @@ def deposit_ci(store: Any, *, repo: str, sha: str, runs: Iterable[Run],
 
     question = _question(repo, sha)
     commitment = _commitment(runs)
-    live = [r for r in _rows(store)
-            if r.get("source_lang") == DOMAIN and r.get("source_text") == question
-            and not r.get("superseded_by")]
+    live = [
+        r
+        for r in _rows(store)
+        if r.get("source_lang") == DOMAIN
+        and r.get("source_text") == question
+        and not r.get("superseded_by")
+    ]
 
     reason = ""
     if pr:
@@ -251,9 +290,12 @@ def deposit_ci(store: Any, *, repo: str, sha: str, runs: Iterable[Run],
     # verb. The old row keeps its text and reason and gains `superseded_by`;
     # `memory_lineage` walks the chain. No edge is proposed for this — an
     # edge relates two decisions, and this is one question answered again.
-    row = mem.revise_draft(question, commitment,
-                           reason=(reason + " " if reason else "") + f"re-run via {via}",
-                           origin=origin)
+    row = mem.revise_draft(
+        question,
+        commitment,
+        reason=(reason + " " if reason else "") + f"re-run via {via}",
+        origin=origin,
+    )
     return Deposit(row=row, superseded=old["id"], states=states)
 
 
@@ -264,8 +306,11 @@ class Links:
     ambiguous: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
-        return {"linked": list(self.linked), "unmatched": list(self.unmatched),
-                "ambiguous": list(self.ambiguous)}
+        return {
+            "linked": list(self.linked),
+            "unmatched": list(self.unmatched),
+            "ambiguous": list(self.ambiguous),
+        }
 
 
 def link_decisions(store: Any, row_id: str, refs: Iterable[str]) -> Links:
@@ -286,10 +331,17 @@ def link_decisions(store: Any, row_id: str, refs: Iterable[str]) -> Links:
             out.ambiguous.append({"ref": ref, "candidates": sorted(h["id"] for h in hits)})
             continue
         target = hits[0]
-        edge = mem.propose_edge(row_id, target["id"], "refines",
-                                reason=f"named by a Decision: trailer ({ref})")
-        out.linked.append({"ref": ref, "decision": target["id"], "question": target["source_text"],
-                           "edge": edge["id"]})
+        edge = mem.propose_edge(
+            row_id, target["id"], "refines", reason=f"named by a Decision: trailer ({ref})"
+        )
+        out.linked.append(
+            {
+                "ref": ref,
+                "decision": target["id"],
+                "question": target["source_text"],
+                "edge": edge["id"],
+            }
+        )
     return out
 
 
@@ -299,9 +351,13 @@ def newest_deposit(store: Any, repo: str | None = None) -> dict | None:
     knowledge. Rows revised into history (`superseded_by` set) do not count;
     the live row is the store's current knowledge."""
     prefix = f"How did CI go for {repo}@" if repo else "How did CI go for "
-    rows = [r for r in _rows(store)
-            if r.get("source_lang") == DOMAIN and r.get("source_text", "").startswith(prefix)
-            and not r.get("superseded_by")]
+    rows = [
+        r
+        for r in _rows(store)
+        if r.get("source_lang") == DOMAIN
+        and r.get("source_text", "").startswith(prefix)
+        and not r.get("superseded_by")
+    ]
     if not rows:
         return None
     return max(rows, key=lambda r: r.get("created_at", ""))
@@ -318,8 +374,7 @@ def _parse_when(s: str) -> datetime | None:
     return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
 
 
-def deposit_age(store: Any, repo: str | None = None,
-                now: datetime | None = None) -> dict | None:
+def deposit_age(store: Any, repo: str | None = None, now: datetime | None = None) -> dict | None:
     """Rule 3, second question: *was the answer current?* Returns None when
     the store holds no `ci` row, else `{"repo", "sha", "at", "age_seconds",
     "states"}` for the newest live row, where `states` counts the run states
@@ -339,8 +394,13 @@ def deposit_age(store: Any, repo: str | None = None,
         state = part.strip().split(":", 1)[0].strip()
         if state in STATES:
             states[state] = states.get(state, 0) + 1
-    return {"repo": m.group("repo") if m else "", "sha": m.group("sha") if m else "",
-            "at": row.get("created_at", ""), "age_seconds": age, "states": states}
+    return {
+        "repo": m.group("repo") if m else "",
+        "sha": m.group("sha") if m else "",
+        "at": row.get("created_at", ""),
+        "age_seconds": age,
+        "states": states,
+    }
 
 
 def human_age(seconds: float | None) -> str:
@@ -361,12 +421,14 @@ def human_age(seconds: float | None) -> str:
 
 # ── the bot's inbox (shape C) ──────────────────────────────────────────────
 
+
 @dataclass
 class InboxRead:
     """What `read_inbox` found. `keyed` maps a head sha to its runs; `unkeyed`
     holds check-run items that carry no sha and so cannot be deposited under
     any question — reported, never guessed at. `skipped` counts items that
     were not check runs."""
+
     keyed: dict[str, list[Run]] = field(default_factory=dict)
     unkeyed: list[dict] = field(default_factory=list)
     skipped: int = 0
@@ -400,13 +462,22 @@ def read_inbox(inbox: str | Path) -> InboxRead:
             continue
         sha = (item.get("head_sha") or "").strip()
         if not sha:
-            out.unkeyed.append({"file": path.name, "why": "no head_sha",
-                                "name": item.get("name"), "conclusion": item.get("conclusion")})
+            out.unkeyed.append(
+                {
+                    "file": path.name,
+                    "why": "no head_sha",
+                    "name": item.get("name"),
+                    "conclusion": item.get("conclusion"),
+                }
+            )
             continue
-        run = Run(name=str(item.get("name") or ""), status=str(item.get("status") or "completed"),
-                  conclusion=str(item.get("conclusion") or ""),
-                  run_id=str(item.get("check_id") or item.get("id") or ""),
-                  url=str(item.get("html_url") or ""))
+        run = Run(
+            name=str(item.get("name") or ""),
+            status=str(item.get("status") or "completed"),
+            conclusion=str(item.get("conclusion") or ""),
+            run_id=str(item.get("check_id") or item.get("id") or ""),
+            url=str(item.get("html_url") or ""),
+        )
         out.keyed.setdefault(sha, []).append(run)
         if item.get("repo"):
             out.repo[sha] = str(item["repo"])

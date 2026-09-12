@@ -7,14 +7,10 @@ oakenscrolls calibration math, and routes ONE deduped `review` nudge when the
 model is measurably overconfident — never blocking. Pure: soil_store +
 vendored calibration + governance's route_nudge, no Nestor/fsrs.
 """
+
 from __future__ import annotations
 
-import importlib.util
-import sys
-from pathlib import Path
-
 import pytest
-
 
 from forge import calibration_ledger as led
 
@@ -23,6 +19,7 @@ BUILDER = "b" * 32
 
 
 # ── record → resolve → score lifecycle ───────────────────────────────────────
+
 
 def test_record_then_resolve_then_scorecard(tmp_path):
     root = tmp_path / "checkpoints"
@@ -60,6 +57,7 @@ def test_explicit_ids_keep_two_same_text_claims_separate(tmp_path):
 
 
 # ── the guards an adversarial audit looks for ────────────────────────────────
+
 
 def test_confidence_below_half_is_rejected_not_clamped(tmp_path):
     # a claim believed FALSE is a true-claim restated, not a weak 'true' (D3)
@@ -99,6 +97,7 @@ def test_resolving_an_unknown_prediction_is_refused(tmp_path):
 
 # ── the overconfidence signal ────────────────────────────────────────────────
 
+
 def _seed(root, pairs, builder=BUILDER):
     for i, (conf, outcome) in enumerate(pairs):
         rec = led.record_prediction(builder, f"claim {i}", conf, prediction_id=f"p{i}", root=root)
@@ -109,7 +108,7 @@ def test_thin_record_does_not_route(tmp_path):
     root = tmp_path / "checkpoints"
     _seed(root, [(0.95, False), (0.95, False)])  # wildly overconfident but only n=2
     assert led.overconfidence_signal(BUILDER, root=root) is None
-    assert len(governance.open_items(BUILDER, root=root, kind='review')) == 0
+    assert len(governance.open_items(BUILDER, root=root, kind="review")) == 0
 
 
 def test_well_calibrated_model_does_not_route(tmp_path):
@@ -130,14 +129,14 @@ def test_sustained_overconfidence_routes_one_deduped_review(tmp_path):
     assert first is not None and first["kind"] == "review"
     # deduped: a second call while the flag is open does not pile up a row
     assert led.overconfidence_signal(BUILDER, root=root) is None
-    assert len(governance.open_items(BUILDER, root=root, kind='review')) == 1
+    assert len(governance.open_items(BUILDER, root=root, kind="review")) == 1
 
 
 def test_signal_never_blocks_and_is_isolated_per_builder(tmp_path):
     root = tmp_path / "checkpoints"
     other = "c" * 32
     _seed(root, [(0.99, False)] * 5, builder=BUILDER)  # overconfident builder
-    _seed(root, [(0.8, True)] * 5, builder=other)      # calibrated builder
+    _seed(root, [(0.8, True)] * 5, builder=other)  # calibrated builder
     assert led.overconfidence_signal(BUILDER, root=root) is not None
     assert led.overconfidence_signal(other, root=root) is None
     # each builder's records live in its own file — the calibrated one is clean
@@ -150,25 +149,39 @@ def test_signal_never_blocks_and_is_isolated_per_builder(tmp_path):
 # fields and no key of any kind, so "for decisions that took band X, what was
 # the calibration outcome?" had no answer at any sample size.
 
+
 class _FakeOutcome:
     """Duck-typed stand-in for checkpoint.CheckpointOutcome — resolve_prediction
     reads it with getattr precisely so calibration stays free of a checkpoint
     import (calibration is the lower layer)."""
+
     def __init__(self, **kw):
         self.__dict__.update(kw)
 
 
 def test_resolving_with_a_decision_stamps_the_join(tmp_path):
     led.record_prediction(
-        BUILDER, "where-the-dates-live: maker picks sidecar json", 0.8,
-        kind="fork", decision_type="where-the-dates-live", root=tmp_path)
+        BUILDER,
+        "where-the-dates-live: maker picks sidecar json",
+        0.8,
+        kind="fork",
+        decision_type="where-the-dates-live",
+        root=tmp_path,
+    )
     rec = led.resolve_prediction(
-        BUILDER, led._prediction_id("where-the-dates-live: maker picks sidecar json"),
+        BUILDER,
+        led._prediction_id("where-the-dates-live: maker picks sidecar json"),
         False,
-        decision=_FakeOutcome(pair_id="abc-123", band="socratic", matched_band="auto",
-                              match_confidence=0.95, engagement=0.0,
-                              decision_type="where-the-dates-live"),
-        root=tmp_path)
+        decision=_FakeOutcome(
+            pair_id="abc-123",
+            band="socratic",
+            matched_band="auto",
+            match_confidence=0.95,
+            engagement=0.0,
+            decision_type="where-the-dates-live",
+        ),
+        root=tmp_path,
+    )
     assert rec["decision_ref"] == "abc-123"
     assert rec["band"] == "socratic" and rec["matched_band"] == "auto"
     assert rec["match_confidence"] == 0.95 and rec["engagement"] == 0.0
@@ -177,8 +190,7 @@ def test_resolving_with_a_decision_stamps_the_join(tmp_path):
 def test_resolving_without_a_decision_leaves_the_row_honestly_unjoined(tmp_path):
     """A caller with no decision to point at must not get a fabricated key."""
     led.record_prediction(BUILDER, "a claim", 0.7, root=tmp_path)
-    rec = led.resolve_prediction(
-        BUILDER, led._prediction_id("a claim"), True, root=tmp_path)
+    rec = led.resolve_prediction(BUILDER, led._prediction_id("a claim"), True, root=tmp_path)
     assert rec["decision_ref"] == "" and rec["band"] == ""
 
 
@@ -190,10 +202,19 @@ def test_scorecard_groups_without_changing_the_maths(tmp_path):
         claim = f"claim {i}"
         led.record_prediction(BUILDER, claim, 0.9, root=tmp_path)
         led.resolve_prediction(
-            BUILDER, led._prediction_id(claim), hit,
-            decision=_FakeOutcome(pair_id=f"p{i}", band=band, matched_band=band,
-                                  match_confidence=0.9, engagement=None, decision_type="t"),
-            root=tmp_path)
+            BUILDER,
+            led._prediction_id(claim),
+            hit,
+            decision=_FakeOutcome(
+                pair_id=f"p{i}",
+                band=band,
+                matched_band=band,
+                match_confidence=0.9,
+                engagement=None,
+                decision_type="t",
+            ),
+            root=tmp_path,
+        )
     card = led.scorecard(BUILDER, group_by="band", root=tmp_path)
     assert card["resolved"] == 3, "the ungrouped header survives grouping"
     assert card["groups"]["auto"]["n"] == 2 and card["groups"]["socratic"]["n"] == 1
@@ -204,9 +225,8 @@ def test_scorecard_groups_without_changing_the_maths(tmp_path):
 
 
 def test_rows_written_before_the_field_existed_group_as_unset(tmp_path):
-    """"We did not record this" is not a band."""
+    """ "We did not record this" is not a band."""
     led.record_prediction(BUILDER, "old row", 0.8, root=tmp_path)
-    led.resolve_prediction(
-        BUILDER, led._prediction_id("old row"), True, root=tmp_path)
+    led.resolve_prediction(BUILDER, led._prediction_id("old row"), True, root=tmp_path)
     card = led.scorecard(BUILDER, group_by="band", root=tmp_path)
     assert list(card["groups"]) == ["(unset)"]

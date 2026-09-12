@@ -19,11 +19,11 @@ prints what would be written and writes nothing.
     python tools/pr_deposit.py --project-id forge-engine --inbox ~/.willow/upstream_steward/webhook_inbox
     python tools/pr_deposit.py --project-id forge-engine --repo forge-play/Forge --sha cc9aab1 --dry-run
 """
+
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -39,6 +39,7 @@ from forge.deposit import Run  # noqa: E402
 def _open_store(project_id: str):
     from nestor import cascade  # type: ignore[import-not-found]
     from nestor.sqlite_store import SqliteStore  # type: ignore[import-not-found]
+
     db = paths.project_nestor(project_id)
     db.parent.mkdir(parents=True, exist_ok=True)
     cascade.set_ledger_path(paths.project_nestor_ledger(project_id))
@@ -46,6 +47,7 @@ def _open_store(project_id: str):
 
 
 # ── shape A: gh ────────────────────────────────────────────────────────────
+
 
 def _gh(args: list[str]) -> list | dict:
     """One `gh` call, JSON out. An unreadable answer is a COULD NOT RUN for the
@@ -61,33 +63,78 @@ def _gh(args: list[str]) -> list | dict:
 
 
 def runs_from_gh(repo: str, sha: str) -> list[Run]:
-    rows = _gh(["run", "list", "--repo", repo, "--commit", sha,
-                "--json", "name,status,conclusion,databaseId,url", "--limit", "100"])
-    return [Run(name=str(r.get("name") or r.get("workflowName") or ""), status=str(r.get("status") or ""),
-                conclusion=str(r.get("conclusion") or ""), run_id=str(r.get("databaseId") or ""),
-                url=str(r.get("url") or "")) for r in (rows or [])]
+    rows = _gh(
+        [
+            "run",
+            "list",
+            "--repo",
+            repo,
+            "--commit",
+            sha,
+            "--json",
+            "name,status,conclusion,databaseId,url",
+            "--limit",
+            "100",
+        ]
+    )
+    return [
+        Run(
+            name=str(r.get("name") or r.get("workflowName") or ""),
+            status=str(r.get("status") or ""),
+            conclusion=str(r.get("conclusion") or ""),
+            run_id=str(r.get("databaseId") or ""),
+            url=str(r.get("url") or ""),
+        )
+        for r in (rows or [])
+    ]
 
 
 def pr_from_gh(repo: str, sha: str) -> tuple[dict | None, str, str]:
     """(pr summary or None, text to scan for Decision: trailers, actor type).
     The actor is the merging user's `type` as GitHub asserts it, never a
     login (§13)."""
-    prs = _gh(["pr", "list", "--repo", repo, "--state", "merged", "--search", sha,
-               "--json", "number,title,mergedAt,body,mergedBy", "--limit", "1"])
+    prs = _gh(
+        [
+            "pr",
+            "list",
+            "--repo",
+            repo,
+            "--state",
+            "merged",
+            "--search",
+            sha,
+            "--json",
+            "number,title,mergedAt,body,mergedBy",
+            "--limit",
+            "1",
+        ]
+    )
     if not prs:
         return None, "", "User"
     pr = prs[0]
     text = pr.get("body") or ""
     commits = _gh(["pr", "view", str(pr["number"]), "--repo", repo, "--json", "commits"]) or {}
-    for c in (commits.get("commits") or []):
+    for c in commits.get("commits") or []:
         text += "\n" + (c.get("messageHeadline") or "") + "\n" + (c.get("messageBody") or "")
     merged_by = pr.get("mergedBy") or {}
-    actor = "Bot" if str(merged_by.get("type") or "").lower() == "bot" or merged_by.get("is_bot") else "User"
-    return ({"number": pr.get("number"), "title": pr.get("title", ""),
-             "merged_at": (pr.get("mergedAt") or "")[:10]}, text, actor)
+    actor = (
+        "Bot"
+        if str(merged_by.get("type") or "").lower() == "bot" or merged_by.get("is_bot")
+        else "User"
+    )
+    return (
+        {
+            "number": pr.get("number"),
+            "title": pr.get("title", ""),
+            "merged_at": (pr.get("mergedAt") or "")[:10],
+        },
+        text,
+        actor,
+    )
 
 
 # ── the tool ───────────────────────────────────────────────────────────────
+
 
 def _emit(obj: dict, as_json: bool) -> None:
     if as_json:
@@ -99,18 +146,36 @@ def _emit(obj: dict, as_json: bool) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--project-id", required=True, help="the per-project Nestor (forge.paths.project_nestor)")
+    ap.add_argument(
+        "--project-id", required=True, help="the per-project Nestor (forge.paths.project_nestor)"
+    )
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--inbox", help="willow-bot's webhook inbox directory (shape C, no network)")
-    src.add_argument("--sha", help="a commit sha to ask GitHub about through gh (shape A, backfill)")
-    ap.add_argument("--repo", help="owner/name; required with --sha, taken from the item with --inbox")
-    ap.add_argument("--actor-type", choices=("Bot", "User"), default=None,
-                    help="override the actor type (default: the inbox item's sender_type, or gh's mergedBy.type)")
-    ap.add_argument("--dry-run", action="store_true", help="print what would be written; write nothing")
+    src.add_argument(
+        "--sha", help="a commit sha to ask GitHub about through gh (shape A, backfill)"
+    )
+    ap.add_argument(
+        "--repo", help="owner/name; required with --sha, taken from the item with --inbox"
+    )
+    ap.add_argument(
+        "--actor-type",
+        choices=("Bot", "User"),
+        default=None,
+        help="override the actor type (default: the inbox item's sender_type, or gh's mergedBy.type)",
+    )
+    ap.add_argument(
+        "--dry-run", action="store_true", help="print what would be written; write nothing"
+    )
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
 
-    report: dict = {"project_id": a.project_id, "dry_run": a.dry_run, "deposits": [], "unkeyed": [], "skipped": 0}
+    report: dict = {
+        "project_id": a.project_id,
+        "dry_run": a.dry_run,
+        "deposits": [],
+        "unkeyed": [],
+        "skipped": 0,
+    }
     store = None if a.dry_run else _open_store(a.project_id)
 
     if a.inbox:
@@ -124,14 +189,19 @@ def main(argv: list[str] | None = None) -> int:
             # from an older bridge) is not guessed at: deposit_ci refuses it
             # and the refusal is reported. --actor-type overrides by hand.
             actor = a.actor_type or read.actor.get(sha, "")
-            entry = {"repo": repo, "sha": sha, "actor_type": actor,
-                     "runs": [(r.name, r.state) for r in runs]}
+            entry = {
+                "repo": repo,
+                "sha": sha,
+                "actor_type": actor,
+                "runs": [(r.name, r.state) for r in runs],
+            }
             try:
                 if a.dry_run:
                     entry["would_write"] = deposit._commitment(runs)
                 else:
-                    d = deposit.deposit_ci(store, repo=repo, sha=sha, runs=runs,
-                                           actor_type=actor, via="webhook_inbox")
+                    d = deposit.deposit_ci(
+                        store, repo=repo, sha=sha, runs=runs, actor_type=actor, via="webhook_inbox"
+                    )
                     entry["deposit"] = d.to_dict()
             except deposit.DepositError as e:
                 entry["refused"] = str(e)
@@ -142,14 +212,29 @@ def main(argv: list[str] | None = None) -> int:
         runs = runs_from_gh(a.repo, a.sha)
         pr, text, actor = pr_from_gh(a.repo, a.sha)
         refs = deposit.extract_decision_refs(text)
-        entry = {"repo": a.repo, "sha": a.sha, "runs": [(r.name, r.state) for r in runs],
-                 "pr": pr, "decision_refs": refs, "actor_type": a.actor_type or actor}
+        entry = {
+            "repo": a.repo,
+            "sha": a.sha,
+            "runs": [(r.name, r.state) for r in runs],
+            "pr": pr,
+            "decision_refs": refs,
+            "actor_type": a.actor_type or actor,
+        }
         try:
             if a.dry_run:
-                entry["would_write"] = deposit._commitment(runs) if runs else "(nothing: no runs read)"
+                entry["would_write"] = (
+                    deposit._commitment(runs) if runs else "(nothing: no runs read)"
+                )
             else:
-                d = deposit.deposit_ci(store, repo=a.repo, sha=a.sha, runs=runs, pr=pr,
-                                       actor_type=a.actor_type or actor, via="gh")
+                d = deposit.deposit_ci(
+                    store,
+                    repo=a.repo,
+                    sha=a.sha,
+                    runs=runs,
+                    pr=pr,
+                    actor_type=a.actor_type or actor,
+                    via="gh",
+                )
                 entry["deposit"] = d.to_dict()
                 if refs:
                     entry["links"] = deposit.link_decisions(store, d.row["id"], refs).to_dict()

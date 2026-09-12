@@ -11,6 +11,7 @@ that exact mistake — a docstring claiming no CHANGELOG.md, checked against
 this repository's own, real CHANGELOG.md — and asserts the same checker used
 against the real docstring catches it.
 """
+
 from __future__ import annotations
 
 import ast
@@ -44,8 +45,7 @@ def check_changelog_claim(docstring: str, changelog_exists: bool) -> str | None:
     both the real test below and its plant call this same function."""
     claims_missing = bool(_CLAIMS_NO_CHANGELOG_RE.search(docstring))
     if claims_missing and changelog_exists:
-        return ("the docstring says 'has no CHANGELOG.md' but CHANGELOG.md "
-                "exists in this tree")
+        return "the docstring says 'has no CHANGELOG.md' but CHANGELOG.md exists in this tree"
     return None
 
 
@@ -83,8 +83,7 @@ def test_the_scan_catches_a_stale_claim_beside_a_real_changelog(tmp_path):
         "`chore(master): release` commit exists anywhere in its history."
     )
     stale_module = tmp_path / "changelog_dedup.py"
-    stale_module.write_text('"""' + stale_docstring + '\n"""\n\nimport sys\n',
-                            encoding="utf-8")
+    stale_module.write_text('"""' + stale_docstring + '\n"""\n\nimport sys\n', encoding="utf-8")
     assert _module_docstring(stale_module) == stale_docstring
     problem = check_changelog_claim(_module_docstring(stale_module), _CHANGELOG.exists())
     assert problem is not None, (

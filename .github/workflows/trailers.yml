@@ -1,0 +1,44 @@
+name: Trailers
+
+# Guards the join key the classifier trusts most. `reconciler verify` resolves
+# every Idea-Id trailer in this repo's history against docs/ideas.md and exits
+# non-zero on one that names an item the doc does not contain. A dangling
+# trailer is worse than a missing one: rule 2a asserts LANDED from it ahead of
+# every other inferred signal, and nothing else in the rule stack can tell a
+# real id from a plausible-looking dead one.
+#
+# A history with no trailers passes — the convention is prospective by design.
+#
+# Ported from willow-reconciler's own trailers.yml (E3-trailers, fleet plan
+# Wave 3): the reconciler comes from PyPI rather than a sibling checkout, the
+# default branch here is master, and `--repo ./` names this checkout. The
+# trailing slash is load-bearing in willow-reconciler 0.6.0: a bare `.` is
+# read as a repo NAME to look for beside the caller's checkout, not as a
+# path, and errors "repo '.' not found"; `./` is taken as the path it is.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  verify-trailers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # `reconciler verify` walks the whole history for trailers; a shallow
+          # clone would verify only the commits it happened to fetch.
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install the reconciler
+        run: pip install "willow-reconciler>=0.6.0"
+      - name: Verify Idea-Id trailers resolve
+        run: reconciler verify --repo ./ --doc docs/ideas.md

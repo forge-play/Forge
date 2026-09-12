@@ -211,18 +211,18 @@ def test_contributing_names_the_test_command():
     )
 
 
-def test_the_pile_rule_is_vacuous_here_because_there_is_no_pile():
-    """This repo keeps no numbered idea pile, so `required_when_pile_exists`
-    (trailers.yml, `reconciler verify` in CI) requires nothing of it yet. The
-    day a pile appears at the fleet's path, this test starts failing and
-    E3-trailers (fleet plan Wave 3) is what makes it pass — do not add the
-    pile without the gate, and do not loosen this to look the other way."""
-    assert not (REPO_ROOT / PILE).exists()
-    assert not (REPO_ROOT / "IDEAS.md").exists() and not (REPO_ROOT / "docs" / "IDEAS.md").exists(), (
-        "a pile exists under a non-fleet path; move it to docs/ideas.md so the "
-        "fleet's tooling and this rule both see it"
+def test_trailers_workflow_is_present_because_a_pile_exists():
+    """Until E3-piles (fleet plan Wave 3, 2026-09-12) this repo kept no pile
+    and this test asserted the rule was vacuous. It keeps one now at the
+    fleet's path, so `required_when_pile_exists` (trailers.yml running
+    `reconciler verify` in CI) is live: a pile whose trailers nothing
+    verifies is a pile that can carry a dangling join key forever."""
+    assert (REPO_ROOT / PILE).exists(), (
+        "docs/ideas.md is gone; " + RULES["sources"]["required_when_pile_exists"]
     )
-    assert _missing_when_pile_exists(REPO_ROOT, RULES["required_when_pile_exists"]) == []
+    assert _missing_when_pile_exists(REPO_ROOT, RULES["required_when_pile_exists"]) == [], (
+        RULES["sources"]["required_when_pile_exists"]
+    )
 
 
 # ── the plants ──────────────────────────────────────────────────────────────

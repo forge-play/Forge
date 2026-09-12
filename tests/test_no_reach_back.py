@@ -10,14 +10,16 @@ imports willow_mcp — and the reason willow-mcp can take all three cheaply.
 The three vendored modules (human_loop, friction_floor, model_egress) are
 COPIES, deliberately, not imports — vendored from willow-mcp on 2026-08-11 and
 canonical here since 2026-09-03, when willow-mcp switched to re-exporting them
-from forge-play instead. There is no tools/vendor_sync_check.py in this repo
-to keep a vendored copy honest; today's guards are willow-mcp's own
-(tests/test_forge_take.py's identity check on human_loop and model_egress,
-tests/test_stance_friction.py's EXPECTED_BODY_SHA256 hash pin on
-friction_floor). A shared checker here — for what Forge itself still copies
-from elsewhere, namely friction_floor's willow-gate original — arrives with
-the fleet plan's Wave 2 G2-vendor-pins bite. This test is what makes "the
-Forge never imports willow-mcp" a checked property rather than a comment.
+from forge-play instead. tools/vendor_sync_check.py keeps them honest — real
+since 2026-09-12 (G2-vendor-pins-forge; this docstring named it for a year
+before it existed): tools/vendor_manifest.json pins each body by SHA-256,
+friction_floor against its willow-gate origin under a recorded local override
+(the manifest note says what diverged and why the body is not touched here),
+human_loop and model_egress as canonical here, and tests/test_vendor_sync_check.py
+plus a step in tests.yml run it. willow-mcp's own guards still stand
+downstream (tests/test_forge_take.py's identity check, tests/test_stance_friction.py's
+hash pin). This test is what makes "the Forge never imports willow-mcp" a
+checked property rather than a comment.
 
 Walks the AST rather than grepping, so a comment that names willow_mcp (there
 are many — the vendor notes) is not a violation and a real import is.
@@ -57,8 +59,8 @@ def test_the_engine_never_imports_willow_mcp(path: Path):
     assert not offending, (
         f"{path.relative_to(_REPO)} imports {offending}: the Forge must never depend on "
         f"willow-mcp (Willow depends on the Forge; the reverse is a cycle). Vendor the "
-        f"piece byte-for-byte instead (no shared drift-guard script exists in this repo "
-        f"yet — see the module docstring above), or move it home."
+        f"piece byte-for-byte instead and pin its body in tools/vendor_manifest.json "
+        f"so tools/vendor_sync_check.py holds it, or move it home."
     )
 
 

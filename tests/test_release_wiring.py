@@ -133,10 +133,15 @@ def test_the_changelog_is_rebuilt_before_auto_merge_is_armed():
     """Order is the point: the correction must land on the release PR *before*
     auto-merge can take it, or the release ships wrong and is fixed afterwards.
 
-    **Not yet exercised here.** This repo has no CHANGELOG.md and no
-    `chore(master): release` commit in its history, so release-please has never
-    cut a release and the tool no-ops. The wiring is asserted; the correction is
-    not, because there is nothing here to correct yet."""
+    **Exercised for real since v0.2.0.** As written (2026-08-11) this repo had
+    no CHANGELOG.md and no `chore(master): release` commit, so the tool
+    no-opped and only the wiring could be asserted. The predicted duplication
+    then happened on schedule and this step caught it unassisted: `git log --
+    CHANGELOG.md` shows a `chore: rebuild the changelog section from the
+    commits` commit on seven of the nine release PRs (v0.2.0 through v0.7.1),
+    each dropping the merge-commit duplicate. This test still asserts the
+    wiring only; the corrections themselves are that history (corrected
+    2026-09-12, G2-vendor-pins-forge)."""
     steps = _yaml(_RP_WF)["jobs"]["release-please"]["steps"]
     names = [s.get("name") or str(s.get("uses", "")) for s in steps]
 
@@ -201,8 +206,10 @@ def test_the_release_body_is_synced_after_the_release_is_created():
     willow-mcp's v2.1.4 page and jeles' v0.5.0 page both kept their duplicate
     after the file had been corrected.
 
-    Like the changelog step, this has never run here — there is no CHANGELOG.md
-    to publish from. The wiring is what is asserted."""
+    As written (2026-08-11) this had never run here — there was no CHANGELOG.md
+    to publish from. It has run on every release since v0.5.0 (CHANGELOG.md
+    exists, tags through v0.7.2). The wiring is still what is asserted here
+    (corrected 2026-09-12, G2-vendor-pins-forge)."""
     steps = _yaml(_RP_WF)["jobs"]["release-please"]["steps"]
     names = [s.get("name") or str(s.get("uses", "")) for s in steps]
 

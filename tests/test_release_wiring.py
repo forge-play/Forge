@@ -408,3 +408,67 @@ def test_the_checkout_uses_a_non_suppressed_credential_so_pushes_are_not_gated()
         "credential is what the changelog step pushes with. "
         f"Got: {token!r}")
     assert "GITHUB_TOKEN" not in token
+
+
+# ── the pile and its gate (E3-trailers, fleet plan Wave 3, 2026-09-12) ──────
+#
+# docs/ideas.md is a numbered idea pile in willow-reconciler's form, and its
+# numbers are permanent join keys: a commit carrying `Idea-Id: willow-ideas-NNN`
+# is read as having LANDED item NNN ahead of every other signal. A pile with
+# no `reconciler verify` in CI can therefore carry a dangling id forever — a
+# confident, permanent wrong answer — so wherever the pile exists, the gate
+# must too (the fleet convention `required_when_pile_exists`;
+# tests/test_fleet_conventions.py holds the same rule from the published
+# document, and this test holds the workflow's own wiring).
+
+_PILE = _REPO / "docs" / "ideas.md"
+_TRAILERS_WF = _REPO / ".github" / "workflows" / "trailers.yml"
+
+
+def _pile_without_its_gate(root: Path) -> bool:
+    """True if `root` keeps a numbered idea pile at the fleet's path and has no
+    trailers.yml to verify the Idea-Id trailers that pile invites."""
+    pile = root / "docs" / "ideas.md"
+    gate = root / ".github" / "workflows" / "trailers.yml"
+    return pile.exists() and not gate.exists()
+
+
+def test_trailers_yml_exists_wherever_the_pile_does():
+    assert _PILE.exists(), "the pile moved; docs/ideas.md is where the fleet's tooling reads it"
+    assert not _pile_without_its_gate(_REPO), (
+        "docs/ideas.md exists with no .github/workflows/trailers.yml to verify "
+        "its Idea-Id trailers against it"
+    )
+    wf = _yaml(_TRAILERS_WF)
+    steps = wf["jobs"]["verify-trailers"]["steps"]
+    run = "\n".join(str(s.get("run", "")) for s in steps)
+    assert "reconciler verify" in run and "docs/ideas.md" in run, run
+    # `on:` parses as the boolean True — PyYAML applies the YAML 1.1 rule.
+    assert wf[True]["pull_request"]["branches"] == ["master"], \
+        "the gate must run on every PR to the default branch, which is master here"
+    checkout = next(s for s in steps
+                    if str(s.get("uses", "")).startswith("actions/checkout"))
+    assert checkout["with"]["fetch-depth"] == 0, \
+        "verify walks the whole history; a shallow clone verifies only what it fetched"
+
+
+def test_the_pile_gate_check_fires_on_a_planted_pile_with_no_workflow(tmp_path):
+    """Planted: a tree with a pile and no trailers.yml must be reported; the
+    same tree with the workflow beside it, and a tree with no pile at all,
+    must not. Without this, the check above passing on the real tree would
+    not show `_pile_without_its_gate` can ever say True."""
+    bare = tmp_path / "bare"
+    (bare / "docs").mkdir(parents=True)
+    (bare / "docs" / "ideas.md").write_text("1. an idea\n", encoding="utf-8")
+    assert _pile_without_its_gate(bare)
+
+    gated = tmp_path / "gated"
+    (gated / "docs").mkdir(parents=True)
+    (gated / "docs" / "ideas.md").write_text("1. an idea\n", encoding="utf-8")
+    (gated / ".github" / "workflows").mkdir(parents=True)
+    (gated / ".github" / "workflows" / "trailers.yml").write_text("name: Trailers\n", encoding="utf-8")
+    assert not _pile_without_its_gate(gated)
+
+    no_pile = tmp_path / "no_pile"
+    no_pile.mkdir()
+    assert not _pile_without_its_gate(no_pile), "no pile, nothing to gate"

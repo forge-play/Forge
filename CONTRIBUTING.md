@@ -37,6 +37,22 @@ verbatim as `tests/fleet_conventions.json` and pinned by hash). If it fails,
 read the document's `sources` — each rule names the release it was learned
 from — before changing either the tree or the test.
 
+## The Idea-Id commit-trailer convention
+
+A commit that lands an idea recorded in docs/ideas.md carries an
+`Idea-Id: <corpus>-ideas-<num>` git trailer (add `Idea-Status: partial` when a
+commit only partly lands it). It is the durable join key willow-reconciler
+reads; a wrong id is worse than no id, so never type one by hand:
+
+    reconciler id --repo ./ --doc docs/ideas.md --grep "words from the item"
+    reconciler install-hook --repo ./       # derives it from a branch named idea-NN
+
+(`./`, not `.`: willow-reconciler 0.6.0 reads a bare `.` as a repo name to
+find beside your checkout and errors; `./` is taken as the path it is.)
+
+`.github/workflows/trailers.yml` runs `reconciler verify` on every PR and fails
+on a trailer that names an item the doc does not contain.
+
 ## Vendored and canonical bodies
 
 `tools/vendor_manifest.json` pins the modules this repo copies from elsewhere

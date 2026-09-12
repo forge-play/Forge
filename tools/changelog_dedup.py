@@ -11,18 +11,29 @@ commit carrying its title. willow-mcp shipped three releases that way: 2.1.2 and
 collapses entries sharing a scope, so the merge commit displaced `0073767` and a
 shipped fix went undocumented. jeles 0.5.0 hit the duplicate half.
 
-**IT HAS NOT HAPPENED HERE, AND CANNOT YET.** This repository has no
-CHANGELOG.md. It carries tags v0.0.3 through v0.0.9, but no `chore(master):
-release` commit exists anywhere in its history and the changelog file has never
-been written — so release-please has never actually cut a release here, and
-there is nothing for it to have duplicated. This is installed *ahead* of the
-problem, on the reasoning that the moment release-please does produce a
-changelog, this repo's merge convention makes the duplication immediate.
+**AS WRITTEN (2026-08-11), THAT WAS TRUE HERE TOO.** This repository had no
+CHANGELOG.md, carried tags v0.0.3 through v0.0.9, and had no `chore(master):
+release` commit anywhere in its history — release-please had never actually
+cut a release here, so there was nothing for it to have duplicated. This was
+installed *ahead* of the problem, on the reasoning that the moment
+release-please did produce a changelog, this repo's merge convention would
+make the duplication immediate.
 
-Said plainly, because it is the honest status: the behaviour of this file is
-verified by its tests and by its identical twins in willow-mcp and jeles, and
-**not** by having corrected a real changelog here. Its first live run will be
-its first live run.
+**AS OF 2026-09-12, IT ISN'T.** `CHANGELOG.md` exists, this repository carries
+tags v0.1.0 through v0.7.2, and nine `chore(master): release` commits are in
+its history. The predicted duplication happened on schedule: v0.5.0's
+release-please-generated section listed its one change twice, from both the
+merge commit and the commit it merged, and was corrected by hand in #29 —
+which is what got this tool wired into `release-please.yml`'s "Rebuild the
+changelog section from the commits" step, run on every release since.
+
+One gap in that coverage, found downstream rather than here: `rebuild()`'s
+section matcher expects the `## [x.y.z](…/compare/…)` heading release-please
+writes for every release after the first, so it no-ops on a *first* release,
+which has no previous tag to diff against. corpus-lens hit exactly that on its
+own 1.0.0 (`willow-memory/corpus-lens`, `BUGS.md` #3) and is waiting on a fix
+here before re-syncing its copy of this file. Not fixed in this change — this
+paragraph is the honest status, not a promise of when.
 
 One deliberate difference from those twins: a missing CHANGELOG.md bails with a
 readable message rather than a traceback, because here that is the normal state

@@ -8,10 +8,16 @@ breaks is the install. Same invariant kartikeya and jeles hold — neither
 imports willow_mcp — and the reason willow-mcp can take all three cheaply.
 
 The three vendored modules (human_loop, friction_floor, model_egress) are
-COPIES from willow-mcp, deliberately, not imports — tools/vendor_sync_check.py
-keeps them honest until they go home the other way (engine build plan, Phase 5).
-This test is what makes "vendored, not imported" a checked property rather
-than a comment.
+COPIES, deliberately, not imports — vendored from willow-mcp on 2026-08-11 and
+canonical here since 2026-09-03, when willow-mcp switched to re-exporting them
+from forge-play instead. There is no tools/vendor_sync_check.py in this repo
+to keep a vendored copy honest; today's guards are willow-mcp's own
+(tests/test_forge_take.py's identity check on human_loop and model_egress,
+tests/test_stance_friction.py's EXPECTED_BODY_SHA256 hash pin on
+friction_floor). A shared checker here — for what Forge itself still copies
+from elsewhere, namely friction_floor's willow-gate original — arrives with
+the fleet plan's Wave 2 G2-vendor-pins bite. This test is what makes "the
+Forge never imports willow-mcp" a checked property rather than a comment.
 
 Walks the AST rather than grepping, so a comment that names willow_mcp (there
 are many — the vendor notes) is not a violation and a real import is.
@@ -51,7 +57,8 @@ def test_the_engine_never_imports_willow_mcp(path: Path):
     assert not offending, (
         f"{path.relative_to(_REPO)} imports {offending}: the Forge must never depend on "
         f"willow-mcp (Willow depends on the Forge; the reverse is a cycle). Vendor the "
-        f"piece byte-for-byte under tools/vendor_sync_check.py instead, or move it home."
+        f"piece byte-for-byte instead (no shared drift-guard script exists in this repo "
+        f"yet — see the module docstring above), or move it home."
     )
 
 

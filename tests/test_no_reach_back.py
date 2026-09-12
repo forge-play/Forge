@@ -52,10 +52,16 @@ def _imports_of(path: Path) -> list[str]:
     return names
 
 
+def _forbidden_imports(path: Path) -> list[str]:
+    """The imports in `path` that reach into a forbidden root, dotted
+    submodules included; `willow_mcp_tools` would not match `willow_mcp`."""
+    return [n for n in _imports_of(path)
+            if any(n == r or n.startswith(r + ".") for r in _FORBIDDEN_ROOTS)]
+
+
 @pytest.mark.parametrize("path", list(_py_files()), ids=lambda p: str(p.relative_to(_REPO)))
 def test_the_engine_never_imports_willow_mcp(path: Path):
-    offending = [n for n in _imports_of(path)
-                 if any(n == r or n.startswith(r + ".") for r in _FORBIDDEN_ROOTS)]
+    offending = _forbidden_imports(path)
     assert not offending, (
         f"{path.relative_to(_REPO)} imports {offending}: the Forge must never depend on "
         f"willow-mcp (Willow depends on the Forge; the reverse is a cycle). Vendor the "
@@ -68,3 +74,29 @@ def test_the_scan_actually_covered_the_engine():
     files = list(_py_files())
     assert any(p.name == "checkpoint.py" for p in files), files
     assert len(files) > 10, "the scan found almost nothing; the directories moved?"
+
+
+def test_the_scan_catches_a_planted_reach_back(tmp_path):
+    """Planted: a module that imports willow_mcp three ways — bare, dotted
+    with an alias, and `from ... import` — beside a comment and a string
+    literal that merely name it, and an import of a different root that
+    shares the prefix. Exactly the three imports must be reported: the vendor
+    notes in forge/ name willow_mcp in comments constantly, which is why this
+    walks the AST, and until 2026-09-12 nothing had ever shown `_imports_of`
+    reporting anything (the meta-scan in tests/test_scans_fire.py found it
+    unplanted; every file it scanned was clean, which is the point)."""
+    probe = tmp_path / "reach.py"
+    probe.write_text(
+        "# vendored from willow_mcp — a comment is not an import\n"
+        "NOTE = 'willow_mcp.human_loop'\n"
+        "import willow_mcp\n"
+        "import willow_mcp.human_loop as hl\n"
+        "from willow_mcp.friction_floor import score\n"
+        "import willow_mcp_tools\n"
+        "from forge import paths\n",
+        encoding="utf-8",
+    )
+    assert _forbidden_imports(probe) == [
+        "willow_mcp", "willow_mcp.human_loop", "willow_mcp.friction_floor"
+    ]
+    assert "willow_mcp_tools" in _imports_of(probe), "the reader saw it; the filter excluded it"

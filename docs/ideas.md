@@ -155,3 +155,12 @@ These are open items in this repo's own papers about the safe-app-store design (
 84. One "which audit trail answers which question" table across the D3 seam, the D4 signing-event ledger, the D12 Nestor ledger, and consent/FRANK elsewhere.
 85. Per-builder Nestor storage: document one `nestor.db` per `builder_id` versus a shared DB with domains, which is weaker if the seam mis-scopes once.
 86. terpsi-music was brought in as a worked example, not a dependency; its three-zone privacy design may be worth a closer read once D6's tenant-isolation shape firms up.
+
+## M. The workshop surface step and project home (`the-workshop-surface-and-home.md`)
+
+The paper (operator, 2026-09-12) adds two post-bite steps: a maker-visible project home at `~/Forge/workshop/<project_id>/` and a deterministic table-driven choice among Jeles, Almanac and Awesome with soft pulls. Phases 1a–6 are the landings this section will join to; the paper's own open items are carried here.
+
+90. Whether `Entry.tiers["home"]` reports the project-home path, or the host reports it without a tier; `ensure_project_home` returns the path either way.
+91. The first real rows of `forge/surfaces.toml` beyond the paper's sketch: argued from real bites that went to the wrong surface, not guessed before the first ten workshops (the same rule as item 19).
+92. Almanac discovery: an explicit configured list of `catalog.json` paths or URLs, or a well-known path under `~/.forge`.
+93. Whether pulled candidates may later be written into the project home as drafts — never machine-sealed, never into the live Nestor store (Phase 6, after the adapters are stable; converges with item 7's real `BoxLookup`).

@@ -42,7 +42,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from . import checkpoint, checkpoint_memory, deposit, majors, paths, store_diff
+from . import checkpoint, checkpoint_memory, deposit, majors, paths, project_home, store_diff
 
 __all__ = [
     "Entry",
@@ -389,12 +389,26 @@ def main(argv: list[str] | None = None) -> int:
         # traceback, and name the fix the way Nestor's own message does.
         print(f"REFUSED by memory: {err}", file=sys.stderr)
         return 2
+    # The bite succeeded, so the maker gets a folder (the host's call, after
+    # open_bite, never inside it — a refused entry above creates nothing).
+    # Reported beside the tiers rather than as one: the tiers say which
+    # source answered, and a folder answers nothing.
+    # The bite is already recorded by the time this runs, so a folder that
+    # could not be made is reported as exactly that — not a clean success,
+    # and not a refusal of the bite that happened.
+    try:
+        home = str(project_home.ensure_project_home(a.project_id))
+    except (project_home.ProjectHomeError, OSError) as err:
+        home = f"could not create: {type(err).__name__}: {str(err)[:80]}"
     if a.json:
-        print(json.dumps(e.to_dict(), indent=2, default=str))
+        d = e.to_dict()
+        d["home"] = home
+        print(json.dumps(d, indent=2, default=str))
     else:
         for tier, what in e.tiers.items():
             print(f"{tier:7} {what}")
         print(f"major   {e.major or '(none)'}")
+        print(f"home    {home}")
     return 0
 
 

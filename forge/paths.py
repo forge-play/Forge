@@ -14,11 +14,13 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-__all__ = ["home", "project_nestor", "project_nestor_ledger"]
+__all__ = ["home", "project_nestor", "project_nestor_ledger", "workshop_root", "project_home"]
 
 _ROOT_ENV = "FORGE_HOME"
 _ROOT_NAME = ".forge"
 _PROJECTS = "projects"
+_WORKSHOP_ENV = "FORGE_WORKSHOP_ROOT"
+_WORKSHOP_PARTS = ("Forge", "workshop")
 
 
 def home() -> Path:
@@ -51,3 +53,25 @@ def project_nestor_ledger(project_id: str) -> Path:
     """The audit ledger beside the project store — every seal, rejection,
     evidence and warrant append lands here, hash-chained."""
     return project_nestor(project_id).with_name("ledger.jsonl")
+
+
+def workshop_root() -> Path:
+    """The maker-visible workshop root: `$FORGE_WORKSHOP_ROOT`, else
+    `<home>/Forge/workshop`. The THIRD location, distinct from the git checkout
+    (shape + bundle) and from `home()` (engine state): a folder a person opens
+    to keep notes, experiments and pulled candidates
+    (docs/design/the-workshop-surface-and-home.md). Same spirit as
+    `FORGE_HOME` — the override is for tests and deliberate moves."""
+    override = os.environ.get(_WORKSHOP_ENV)
+    if override:
+        return Path(override)
+    return Path.home().joinpath(*_WORKSHOP_PARTS)
+
+
+def project_home(project_id: str) -> Path:
+    """`<workshop_root>/<project_id>` — computed, never created here. The id
+    gets the same charset rule as `project_nestor`, so the two folders that
+    share a name can never disagree about it."""
+    from . import _ids  # local: paths.py must stay import-light
+
+    return workshop_root() / _ids._check_builder_id(project_id)

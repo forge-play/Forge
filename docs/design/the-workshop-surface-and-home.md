@@ -199,7 +199,7 @@ class SurfaceChoice:
     reason: str
     query: str
     signals: tuple[str, ...]
-    confidence: float          # derived from priority / match strength
+    confidence: float  # derived from priority / match strength
 ```
 
 ## Pull adapters
@@ -212,13 +212,13 @@ message. Never raise into the entry path.
 ```python
 @dataclass(frozen=True)
 class PulledItem:
-    kind: str                  # "nugget" | "catalog_entry" | "tool"
+    kind: str  # "nugget" | "catalog_entry" | "tool"
     title: str
     summary: str
     url_or_path: str
     provenance: str
-    verification: str | None   # Jeles ladder; None for others
-    extra: dict                # surface-specific, never required by the engine core
+    verification: str | None  # Jeles ladder; None for others
+    extra: dict  # surface-specific, never required by the engine core
 ```
 
 ### Jeles adapter (first to implement)

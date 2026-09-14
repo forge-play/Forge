@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.0](https://github.com/forge-play/Forge/compare/v0.7.3...v0.8.0) (2026-09-14)
+
+
+### Added
+
+* **workshop:** the project home — a maker's folder, made once, after a successful bite ([8319ee7](https://github.com/forge-play/Forge/commit/8319ee70582f35df6582b1cb5cb631440fd51933))
+* **workshop:** the project home — a maker's folder, made once, after a successful bite ([04fc2a4](https://github.com/forge-play/Forge/commit/04fc2a4b31e93702daa1d377faf8f231b1b68195))
+
 ## [0.7.3](https://github.com/forge-play/Forge/compare/v0.7.2...v0.7.3) (2026-09-12)
 
 

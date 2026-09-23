@@ -165,10 +165,13 @@ Phase 3 waits until both are closed, not until one is.
 
 ## Open
 
-| # | Question | Waiting on |
-|---|---|---|
-| 1 | **Where do next bites live?** A Nestor pair is question → answer, and a next bite is an open task, not an answer. willow-mcp's gaps (`gap_log` / `gap_resolve`) already have an open → resolved lifecycle, and commitments do not fit (they are calendar events). Candidates: gaps; a `session` domain in the project store, blind to decision verbs like `ci`; or both, with a gap per bite and a pair only when a bite is decided. | operator |
-| 2 | **Project name ↔ project id.** A session's project is `Forge`, and the Forge's own project store is `forge-engine`. A workshop derives its id from the repo name. Nothing maps one to the other today. | operator |
-| 3 | **Which SOIL?** `forge.human_loop` writes its own SOIL under `~/.forge`, and Willow has its own. If session deposits reach `human_loop`, one of the two has to be the source of truth. | design, before Phase 2 |
-| 4 | **Seat vs project scope.** Handoffs are keyed by seat and project. Should a next bite written by one seat surface to another seat entering the same project? | operator |
-| 5 | Phase 1's change from swallowed exceptions to `unreachable` could surface noise that was silent before. Measure on one seat first. | Phase 1 |
+Settled rows are kept, struck: a question closed by an answer is evidence of
+how it was answered.
+
+| # | Question | State | Answer / waiting on |
+|---|---|---|---|
+| 1 | ~~**Where do next bites live?** A Nestor pair is question → answer, and a next bite is an open task, not an answer. willow-mcp's gaps (`gap_log` / `gap_resolve`) already have an open → resolved lifecycle, and commitments do not fit (they are calendar events).~~ | settled | Operator, 2026-09-23: "both, with a gap per bite and a pair only when a bite is decided." Phase 2 writes a gap per next bite; a pair is proposed only when a bite turns into a decision. |
+| 2 | **Project name ↔ project id.** Three identities that do not meet. A willow session's project is an explicit name (`Forge`), or else the workspace basename plus an 8-hex digest of the resolved path (`project_context`, `dispatch.py`). The engine's own store is `forge-engine`, chosen by hand. A workshop derives its id from the repo name. | in discussion | operator |
+| 3 | **Which SOIL?** `forge.human_loop` writes its own SOIL under `~/.forge`, and Willow has its own. | direction given, shape open | Operator, 2026-09-23: "~/.forge should be for the session, and then it gets promoted to the willow soil (or kb) still uncertain about this shape." So `~/.forge` is the working layer and Willow's SOIL or KB is where it is promoted to. Still open: what triggers the promotion, and SOIL vs KB. |
+| 4 | ~~**Seat vs project scope.** Should a next bite written by one seat surface to another seat entering the same project?~~ | settled | Operator, 2026-09-23: yes. The `next_bites` tier is keyed by project, not by seat; each row still names the seat that wrote it. |
+| 5 | ~~Phase 1's change from swallowed exceptions to `unreachable` could surface noise that was silent before.~~ | settled | Operator, 2026-09-23: agreed, "not really a question." A Phase 1 step, not an open item: measure on one seat before it applies everywhere. |

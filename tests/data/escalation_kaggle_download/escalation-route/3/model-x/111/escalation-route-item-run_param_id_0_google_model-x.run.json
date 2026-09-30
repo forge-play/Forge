@@ -1,0 +1,24 @@
+{
+  "taskVersion": {
+    "versionNumber": 1,
+    "name": "escalation-route-item"
+  },
+  "modelVersion": {
+    "slug": "google/model-x"
+  },
+  "state": "BENCHMARK_TASK_RUN_STATE_COMPLETED",
+  "results": [
+    {
+      "type": "AGGREGATED",
+      "dictResult": {
+        "item_id": "route-001",
+        "text": "{\"answer\": {\"tool\": \"calendar_add_event\", \"args\": {\"title\": \"Dentist appointment\", \"date\": \"2027-03-14\", \"time\": \"09:30\"}}, \"confidence\": 0.9}",
+        "error": null,
+        "tokens_in": 812.0,
+        "tokens_out": 41.0,
+        "latency_ms": 1500.0
+      }
+    }
+  ],
+  "pyRunId": "escalation-route-item-Run #1"
+}

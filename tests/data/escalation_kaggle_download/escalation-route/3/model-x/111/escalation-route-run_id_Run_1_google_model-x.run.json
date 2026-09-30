@@ -1,0 +1,121 @@
+{
+  "taskVersion": {
+    "versionNumber": 1,
+    "name": "escalation-route",
+    "description": "Escalation benchmark, route shape: raw replies."
+  },
+  "modelVersion": {
+    "slug": "google/model-x"
+  },
+  "state": "BENCHMARK_TASK_RUN_STATE_COMPLETED",
+  "startTime": "2026-10-01T10:00:00.000000Z",
+  "endTime": "2026-10-01T10:00:09.000000Z",
+  "results": [
+    {
+      "type": "AGGREGATED",
+      "dictResult": {
+        "shape": "route",
+        "items": 4.0,
+        "completed": 3.0,
+        "errored": 1.0
+      }
+    }
+  ],
+  "subruns": [
+    {
+      "taskVersion": {
+        "versionNumber": 1,
+        "name": "escalation-route-item"
+      },
+      "modelVersion": {
+        "slug": "google/model-x"
+      },
+      "state": "BENCHMARK_TASK_RUN_STATE_COMPLETED",
+      "results": [
+        {
+          "type": "AGGREGATED",
+          "dictResult": {
+            "item_id": "route-001",
+            "text": "{\"answer\": {\"tool\": \"calendar_add_event\", \"args\": {\"title\": \"Dentist appointment\", \"date\": \"2027-03-14\", \"time\": \"09:30\"}}, \"confidence\": 0.9}",
+            "error": null,
+            "tokens_in": 812.0,
+            "tokens_out": 41.0,
+            "latency_ms": 1500.0
+          }
+        }
+      ],
+      "pyRunId": "escalation-route-item-Run #1"
+    },
+    {
+      "taskVersion": {
+        "versionNumber": 1,
+        "name": "escalation-route-item"
+      },
+      "modelVersion": {
+        "slug": "google/model-x"
+      },
+      "state": "BENCHMARK_TASK_RUN_STATE_COMPLETED",
+      "results": [
+        {
+          "type": "AGGREGATED",
+          "dictResult": {
+            "item_id": "route-002",
+            "text": null,
+            "error": "RuntimeError: boom",
+            "latency_ms": 20.0
+          }
+        }
+      ],
+      "pyRunId": "escalation-route-item-Run #2"
+    },
+    {
+      "taskVersion": {
+        "versionNumber": 1,
+        "name": "escalation-route-item"
+      },
+      "modelVersion": {
+        "slug": "google/model-x"
+      },
+      "state": "BENCHMARK_TASK_RUN_STATE_COMPLETED",
+      "results": [
+        {
+          "type": "AGGREGATED",
+          "dictResult": {
+            "item_id": "route-003",
+            "text": "I think it is about 42 kilometres.",
+            "error": null,
+            "tokens_in": 810.0,
+            "tokens_out": 12.0,
+            "latency_ms": 900.0
+          }
+        }
+      ],
+      "pyRunId": "escalation-route-item-Run #3"
+    },
+    {
+      "taskVersion": {
+        "versionNumber": 1,
+        "name": "escalation-route-item"
+      },
+      "modelVersion": {
+        "slug": "google/model-x"
+      },
+      "state": "BENCHMARK_TASK_RUN_STATE_COMPLETED",
+      "results": [
+        {
+          "type": "AGGREGATED",
+          "dictResult": {
+            "item_id": "route-004",
+            "text": "{\"answer\": \"ESCALATE\", \"confidence\": 0.7}",
+            "error": null,
+            "tokens_in": 805.0,
+            "tokens_out": 9.0,
+            "latency_ms": 700.0
+          }
+        }
+      ],
+      "pyRunId": "escalation-route-item-Run #4"
+    }
+  ],
+  "pyRunId": "escalation-route-Run #1"
+}

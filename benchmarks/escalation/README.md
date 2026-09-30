@@ -64,9 +64,14 @@ benchmarks/escalation/
   runner.py            puts the fixtures through a model backend, one JSON line per call
   aggregate.py         turns those rows into per-model, per-shape scores
   socket_backend.py    a backend that reaches the model through a Unix-socket delegate
+  kaggle_export.py     exports the exact prompts as data for a hosted run
+  kaggle_stage.py      stages them as a dataset and refuses to stage a leak
+  kaggle_rows.py       turns downloaded hosted run files back into runner rows
+  kaggle/<shape>_task.py  the four hosted task files (one per shape)
 tests/test_escalation_fixtures.py
 tests/test_escalation_runner.py
 tests/test_escalation_socket_backend.py
+tests/test_escalation_kaggle.py
 ```
 
 ## Running a model
@@ -106,6 +111,27 @@ continues it: rows already there are skipped and the rest are appended under the
 file's run id. An error row counts as done, because a failure is a result and is
 never retried; a torn last line left by a killed run is dropped. `--tail` prints
 one progress line per row as it is written.
+
+## A hosted run
+
+A hosted runner cannot import this repository, so the prompts travel as a dataset
+and the replies come back as run files. Nothing is scored on the host: each task
+file records the raw reply text per item (system and user message, temperature 0,
+seed 0) and `aggregate.py` scores the rows afterwards.
+
+```
+python benchmarks/escalation/kaggle_stage.py --out STAGING --dataset-id OWNER/SLUG --denylist NAMES
+python benchmarks/escalation/kaggle_rows.py DOWNLOADED --run-id ID --out rows.jsonl
+python benchmarks/escalation/aggregate.py rows.jsonl --format md
+```
+
+`STAGING` and `NAMES` (the deny-list of names, paths and hostnames) must both sit
+outside every git tree. `kaggle_stage.py` exports the prompts, adds this README's
+dataset twin and the catalogue, then refuses, and deletes the staging directory, if
+any gate fails: the file set and line counts against `manifest.json`, the answer key,
+everything `privacy_gate.py` checks, store and vault identifiers, Unicode
+lookalikes (a word mixing scripts, or a deny-list term that only matches after
+confusable letters are folded), and compressed or binary payloads.
 
 ## The authoring rule
 

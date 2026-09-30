@@ -186,12 +186,100 @@ def test_ollama_http_builds_the_documented_request(monkeypatch):
     assert captured["timeout"] == 7.0
     body = captured["body"]
     assert body["model"] == "some-model"
-    assert body["format"] == "json" and body["stream"] is False
+    assert body["format"] == runner.ANSWER_SCHEMA and body["stream"] is False
+    assert "think" not in body
     assert body["options"] == {"temperature": 0}
     assert body["messages"] == [
         {"role": "system", "content": "SYS"},
         {"role": "user", "content": "USER"},
     ]
+
+
+# --- local models through Ollama: schema always, Qwen thinking off ---------------
+
+
+def _fake_ollama(monkeypatch, content=GOOD):
+    """Stand in for Ollama's /api/chat; return the list of request bodies it received."""
+    bodies = []
+
+    class Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            return json.dumps({"message": {"content": content}}).encode()
+
+    def fake_urlopen(req, timeout):
+        bodies.append(json.loads(req.data))
+        return Resp()
+
+    monkeypatch.setattr(runner.urllib.request, "urlopen", fake_urlopen)
+    return bodies
+
+
+LOCAL_MODELS = ("gemma4:e2b", "phi4-mini", "qwen3.5")
+
+
+def test_a_qwen_request_carries_both_thinking_switches(monkeypatch):
+    bodies = _fake_ollama(monkeypatch)
+    runner.make_ollama_http()("qwen3.5", "SYS", "USER")
+    body = bodies[0]
+    assert body["think"] is False
+    assert body["messages"][-1]["content"].endswith("/no_think")
+    assert body["messages"][-1]["content"].startswith("USER")
+
+
+@pytest.mark.parametrize("model", ["gemma4:e2b", "phi4-mini"])
+def test_other_local_models_get_no_thinking_switch(monkeypatch, model):
+    bodies = _fake_ollama(monkeypatch)
+    runner.make_ollama_http()(model, "SYS", "USER")
+    assert "think" not in bodies[0]
+    assert bodies[0]["messages"][-1]["content"] == "USER"
+
+
+@pytest.mark.parametrize("model", LOCAL_MODELS)
+def test_every_local_request_carries_the_answer_schema(monkeypatch, model):
+    bodies = _fake_ollama(monkeypatch)
+    runner.make_ollama_http()(model, "SYS", "USER")
+    schema = bodies[0]["format"]
+    assert isinstance(schema, dict) and schema["type"] == "object"
+    assert schema["required"] == ["answer", "confidence"]
+    assert set(schema["properties"]) == {"answer", "confidence"}
+
+
+def test_the_schema_admits_every_shapes_answer_envelope():
+    # An answer is a string (judge, ground, ESCALATE) or an object (route, classify).
+    kinds = [alt["type"] for alt in runner.ANSWER_SCHEMA["properties"]["answer"]["anyOf"]]
+    assert sorted(kinds) == ["object", "string"]
+    assert runner.ANSWER_SCHEMA["properties"]["confidence"]["type"] == "number"
+
+
+def test_an_unparseable_local_reply_is_a_parse_failure_row(monkeypatch):
+    _fake_ollama(monkeypatch, content="Let me think about that...")
+    complete = runner.make_ollama_http()
+    rows = []
+    for model in LOCAL_MODELS:
+        item = runner.load_fixtures("judge")[0]
+        rows.append(
+            runner.make_row("r", model, "judge", item, "SYS", "USER", complete),
+        )
+    for row in rows:
+        assert row["parse_ok"] is False
+        assert row["raw"] == "Let me think about that..."
+        assert row["answer"] is None and row["confidence"] is None and row["parsed"] is None
+        assert row["error"] is None
+
+
+def test_a_parse_failure_row_is_counted_by_the_aggregator_not_silently_scored(monkeypatch):
+    _fake_ollama(monkeypatch, content="not json")
+    item = runner.load_fixtures("ground")[0]
+    row = runner.make_row("r", "qwen3.5", "ground", item, "S", "U", runner.make_ollama_http())
+    cell = aggregate.aggregate([row], aggregate.load_truth())["qwen3.5"]["ground"]
+    assert cell["n_unparseable"] == 1 and cell["n_correct"] == 0
+    assert cell["n_calibrated"] == 0
 
 
 # --- the dry run ----------------------------------------------------------------

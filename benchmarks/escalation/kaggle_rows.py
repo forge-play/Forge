@@ -20,7 +20,8 @@ The download directory holds a normalized model name (``google/gemini-x`` become
 the directory name instead.
 
 One row per fixture item, in fixture order, per (task, model): the newest run wins
-when a model has several. Fields the hosted run cannot know (``done_reason``) are null.
+when a model has several. ``done_reason`` is the item's own if the run file carries one, else ``unknown``: the SDK
+records no finish reason, and the aggregator reports that as unknown, not as no truncation.
 An item whose call failed becomes a row with ``error`` set; an item with no result in
 the files at all becomes one too, so it is counted rather than silently missing.
 
@@ -43,6 +44,7 @@ import runner  # noqa: E402
 BENCH = _HERE
 TASK_PREFIX = "escalation-"
 RUN_SUFFIX = ".run.json"
+DONE_UNKNOWN = "unknown"  # aggregate.DONE_UNKNOWN
 MISSING = "no result for this item in the downloaded run files"
 
 
@@ -132,12 +134,24 @@ def make_rows(rd: RunDir, run_id: str, model: str, bench: Path = BENCH) -> list[
             }
             row = runner.make_row(run_id, model, shape, item, system, user, lambda *_: reply)
             row["latency_ms"] = _int(result.get("latency_ms"))
+            row["done_reason"] = _done_reason(result)
         else:
             row = runner.make_row(run_id, model, shape, item, system, user, _refusal)
             row["error"] = str((result or {}).get("error") or MISSING)
             row["latency_ms"] = _int((result or {}).get("latency_ms"))
         rows.append(row)
     return rows
+
+
+def _done_reason(result: dict) -> str:
+    """The item's finish reason if the run file carries one, else ``unknown``.
+
+    kaggle-benchmarks 0.6.1 records no finish reason, so a hosted row is marked unknown
+    rather than left null, which the aggregator would read like a local backend that
+    reports none.
+    """
+    value = result.get("done_reason")
+    return value if isinstance(value, str) and value else DONE_UNKNOWN
 
 
 def _refusal(*_):

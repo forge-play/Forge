@@ -128,6 +128,250 @@ def test_the_four_task_files_differ_only_by_shape():
     assert len({*bodies.values()}) == 1
 
 
+# --- hosted parity: schema, output cap, done_reason -------------------------------------
+
+
+class _Namespace:
+    """What the stubbed SDK records while a task file runs against it."""
+
+    def __init__(self):
+        self.results: list[dict] = []
+        self.llm = None
+
+
+def _install_sdk_stub(monkeypatch, llm_class_name="OpenAI"):
+    """Stand-ins for kaggle_benchmarks, pandas and pydantic, enough to run a task file."""
+    ns = _Namespace()
+
+    class BaseModel:
+        model_fields: dict = {}
+
+        def __init_subclass__(cls, **kw):
+            cls.model_fields = dict(getattr(cls, "__annotations__", {}))
+
+        def __init__(self, **kw):
+            self.__dict__.update(kw)
+
+        def model_dump(self):
+            return dict(self.__dict__)
+
+    class ResponseParsingError(ValueError):
+        def __init__(self, value):
+            super().__init__("Failed to parse model response.")
+            self.value = value
+
+    class NonRecoverableError(Exception):
+        pass
+
+    class _Run:
+        def __init__(self, result):
+            self.result = result
+
+    class _Runs(list):
+        errored_runs: list = []
+
+        @property
+        def completed_runs(self):
+            return list(self)
+
+    class _Task:
+        def __init__(self, fn):
+            self.fn = fn
+
+        def evaluate(self, llm, evaluation_data, on_failure):
+            runs = _Runs()
+            for row in evaluation_data:
+                result = self.fn(llm[0], **row)
+                ns.results.append(result)
+                runs.append(_Run(result))
+            return runs
+
+        def run(self, llm):
+            return self.fn(llm)
+
+    def task(name=None, **kw):
+        return _Task
+
+    class _Reply:
+        def __init__(self, content, meta):
+            self.content, self._meta = content, meta
+
+    def _llm_class():
+        def respond(self, system=None, schema=str, **kwargs):
+            self.calls.append({"system": system, "schema": schema, **kwargs})
+            return self.script(self, schema)
+
+        return type(
+            llm_class_name,
+            (),
+            {"respond": respond, "__init__": lambda self: setattr(self, "calls", [])},
+        )
+
+    llm = _llm_class()()
+
+    def script(self, schema):
+        content = json.dumps({"answer": "ESCALATE", "confidence": 0.5})
+        if schema is not str:
+            content = schema(answer="ESCALATE", confidence=0.5)
+        return _Reply(
+            content,
+            {"input_tokens": 7, "output_tokens": 3, "raw_content": '{"answer": "ESCALATE"}'},
+        )
+
+    llm.script = script
+    ns.llm = llm
+    sdk = type(sys)("kaggle_benchmarks")
+    sdk.task, sdk.llm = task, llm
+    sdk.user = type("user", (), {"send": staticmethod(lambda *_: None)})
+    sdk.tasks = type("tasks", (), {"NonRecoverableError": NonRecoverableError})
+    prompting = type(sys)("kaggle_benchmarks.prompting")
+    prompting.ResponseParsingError = ResponseParsingError
+    pandas = type(sys)("pandas")
+    pandas.DataFrame = list
+    pydantic = type(sys)("pydantic")
+    pydantic.BaseModel = BaseModel
+    for name, module in (
+        ("kaggle_benchmarks", sdk),
+        ("kaggle_benchmarks.prompting", prompting),
+        ("pandas", pandas),
+        ("pydantic", pydantic),
+    ):
+        monkeypatch.setitem(sys.modules, name, module)
+    ns.ResponseParsingError = ResponseParsingError
+    return ns
+
+
+def _run_task(shape, monkeypatch, tmp_path, *, env=None, llm_class_name="OpenAI", script=None):
+    ns = _install_sdk_stub(monkeypatch, llm_class_name)
+    if script is not None:  # script(ns, schema) -> a reply, or raises
+        ns.llm.script = lambda self, schema: script(ns, schema)
+    data = tmp_path / "data"
+    if not data.exists():
+        export.write_export(data)
+    monkeypatch.setenv("ESCALATION_DATA_DIR", str(data))
+    monkeypatch.setenv("ESCALATION_LIMIT", "2")
+    for key in ("ESCALATION_SCHEMA", "ESCALATION_CAP_PARAM"):
+        monkeypatch.delenv(key, raising=False)
+    for key, value in (env or {}).items():
+        monkeypatch.setenv(key, value)
+    spec = importlib.util.spec_from_file_location(f"task_{shape}", TASK_DIR / f"{shape}_task.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module, ns
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+def test_the_schema_reaches_respond_for_every_shape(shape, monkeypatch, tmp_path):
+    module, ns = _run_task(shape, monkeypatch, tmp_path)
+    assert len(ns.llm.calls) == 2
+    exported = export.export_shape(shape)[0]["schema"]
+    assert (
+        set(module.Answer.model_fields) == set(exported["properties"]) == {"answer", "confidence"}
+    )
+    for call in ns.llm.calls:
+        assert call["schema"] is module.Answer
+        assert call["seed"] == 0 and call["temperature"] == 0
+    assert {r["schema"] for r in ns.results} == {"answer"}
+
+
+def test_the_schema_can_be_switched_off_and_the_row_says_so(monkeypatch, tmp_path):
+    _, ns = _run_task("route", monkeypatch, tmp_path, env={"ESCALATION_SCHEMA": "none"})
+    assert all(call["schema"] is str for call in ns.llm.calls)  # respond's default: no schema
+    assert {r["schema"] for r in ns.results} == {"none"}
+    assert all(json.loads(r["text"])["answer"] == "ESCALATE" for r in ns.results)
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+def test_the_output_cap_is_sent(shape, monkeypatch, tmp_path):
+    module, ns = _run_task(shape, monkeypatch, tmp_path)
+    assert module.MAX_OUTPUT_TOKENS == runner.MAX_OUTPUT_TOKENS == 512
+    assert all(call["max_tokens"] == 512 for call in ns.llm.calls)
+    assert all("max_output_tokens" not in call for call in ns.llm.calls)
+    assert {json.dumps(r["cap"]) for r in ns.results} == {'{"max_tokens": 512}'}
+
+
+def test_the_cap_parameter_follows_the_provider(monkeypatch, tmp_path):
+    _, ns = _run_task("route", monkeypatch, tmp_path, llm_class_name="GoogleGenAI")
+    assert all(
+        call["max_output_tokens"] == 512 and "max_tokens" not in call for call in ns.llm.calls
+    )
+    _, ns = _run_task(
+        "route", monkeypatch, tmp_path, env={"ESCALATION_CAP_PARAM": "max_completion_tokens"}
+    )
+    assert all(call["max_completion_tokens"] == 512 for call in ns.llm.calls)
+    _, ns = _run_task("route", monkeypatch, tmp_path, env={"ESCALATION_CAP_PARAM": "none"})
+    assert all(not {"max_tokens", "max_output_tokens"} & set(call) for call in ns.llm.calls)
+    assert {r["cap"] for r in ns.results} == {None}
+
+
+def test_a_parsed_reply_round_trips_through_rows_and_aggregate(monkeypatch, tmp_path):
+    """The SDK hands back a parsed Answer; the recorded text is JSON the aggregator parses."""
+
+    def script(ns, schema):
+        reply = type("Reply", (), {})()
+        reply.content = schema(
+            answer={"tool": "calendar_add_event", "args": {"title": "x"}}, confidence=0.9
+        )
+        reply._meta = {"input_tokens": 5, "output_tokens": 9, "raw_content": "```json\n{}\n```"}
+        return reply
+
+    _, ns = _run_task("route", monkeypatch, tmp_path, script=script)
+    first = ns.results[0]
+    assert json.loads(first["text"]) == {
+        "answer": {"tool": "calendar_add_event", "args": {"title": "x"}},
+        "confidence": 0.9,
+    }
+    assert first["raw_text"] == "```json\n{}\n```"
+    items = {r["item_id"]: r for r in ns.results}
+    rd = type("RD", (), {"shape": "route", "items": items})()
+    rows = rows_mod.make_rows(rd, "r", "m")
+    done = {r["fixture_id"]: r for r in rows if r["fixture_id"] in items}
+    assert all(r["parse_ok"] is True and r["error"] is None for r in done.values())
+    assert all(r["done_reason"] == "unknown" for r in done.values())
+    assert all(r["tokens_out"] == 9 for r in done.values())
+    cell = aggregate.aggregate(rows, aggregate.load_truth())["m"]["route"]
+    assert cell["n_unparseable"] == 0
+    assert cell["n_truncated"] == 0 and cell["n_truncation_unknown"] == 2
+
+
+def test_a_reply_that_breaks_the_schema_is_kept_as_unparseable_text(monkeypatch, tmp_path):
+    def script(ns, schema):
+        raise ns.ResponseParsingError("I think it is about 42 kilometres.")
+
+    _, ns = _run_task("route", monkeypatch, tmp_path, script=script)
+    first = ns.results[0]
+    assert first["error"] is None and first["text"] == "I think it is about 42 kilometres."
+    rd = type("RD", (), {"shape": "route", "items": {r["item_id"]: r for r in ns.results}})()
+    row = rows_mod.make_rows(rd, "r", "m")[0]
+    assert row["error"] is None and row["parse_ok"] is False
+    assert row["raw"] == "I think it is about 42 kilometres."
+
+
+def test_missing_done_reason_is_unknown_not_zero():
+    truth = aggregate.load_truth()
+    item = runner.load_fixtures("route")[0]
+    base = {
+        "run_id": "r",
+        "model": "m",
+        "shape": "route",
+        "fixture_id": item["id"],
+        "parse_ok": True,
+        "answer": "ESCALATE",
+        "confidence": 0.6,
+        "error": None,
+    }
+    hosted = aggregate.aggregate([{**base, "done_reason": "unknown"}], truth)
+    local_rows = [{**base, "done_reason": None}, {**base, "done_reason": "stop"}]
+    local = aggregate.aggregate(local_rows, truth)
+    assert hosted["m"]["route"]["n_truncated"] == 0
+    assert hosted["m"]["route"]["n_truncation_unknown"] == 1
+    md = aggregate.to_markdown(hosted)
+    assert "unknown (1)" in md and "no finish reason" in md
+    assert "n_truncation_unknown" not in local["m"]["route"]  # a local cell keeps its keys
+    local_md = aggregate.to_markdown(local)
+    assert "unknown" not in local_md and "no finish reason" not in local_md
+
+
 # --- converter -------------------------------------------------------------------
 
 
@@ -147,7 +391,7 @@ def test_converter_writes_one_runner_format_row_per_fixture_item():
     assert ok["parse_ok"] is True and ok["confidence"] == 0.9
     assert ok["answer"]["tool"] == "calendar_add_event"
     assert (ok["tokens_in"], ok["tokens_out"], ok["latency_ms"]) == (812, 41, 1500)
-    assert ok["done_reason"] is None and ok["error"] is None
+    assert ok["done_reason"] == "unknown" and ok["error"] is None
     system = runner.system_prompt("route")
     user = runner.user_prompt("route", runner.load_fixtures("route")[0])
     assert ok["prompt_sha256"] == runner.prompt_sha256(system, user)

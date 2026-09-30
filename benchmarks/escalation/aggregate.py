@@ -17,7 +17,10 @@ For each model and shape (and an ``all`` line per model):
   It is counted in neither rate above.
 * truncated: rows without an error whose ``done_reason`` is ``length`` (the reply hit
   the runner's output cap). A count, not a rate; such a row is scored as usual, so a
-  truncation shows up here instead of passing silently as an unparseable reply.
+  truncation shows up here instead of passing silently as an unparseable reply. Hosted
+  rows carry ``done_reason`` ``unknown`` (the SDK reports no finish reason); they are
+  counted in ``n_truncation_unknown`` (present only when nonzero) and shown as unknown,
+  never as 0.
 * Brier score and a 5-bin reliability table, computed here in the standard library.
   Brier = mean((confidence - outcome) ** 2), where outcome is 1 when the answer was
   right (an ``ESCALATE`` on an unanswerable item is right) and 0 when it was not.
@@ -57,6 +60,9 @@ Z95 = 1.96
 DEFAULT_SEED = 0
 DEFAULT_RESAMPLES = 10_000
 ESCALATE = "ESCALATE"
+#: The ``done_reason`` of a hosted row: the hosted SDK reports no finish reason, so whether
+#: the reply hit the output cap is not known. Counted apart from ``length``, never as 0.
+DONE_UNKNOWN = "unknown"
 SHAPES = ("route", "classify", "judge", "ground")
 CONF_LO, CONF_HI = 0.5, 0.99
 # Five equal-width reliability bins over the confidence range [0.5, 0.99]; the last
@@ -315,7 +321,7 @@ def _rate(num: int, den: int) -> float | None:
 
 def score_cell(rows: list[dict], truth: dict[str, dict]) -> dict:
     """Score one group of rows (one model, one shape or all shapes)."""
-    n_rows = n_errors = n_unparseable = n_unknown = n_truncated = 0
+    n_rows = n_errors = n_unparseable = n_unknown = n_truncated = n_truncation_unknown = 0
     n_answerable = n_correct = 0
     n_answerable_parsed = n_escalated = 0
     n_unanswerable_parsed = n_false_confident = 0
@@ -331,6 +337,8 @@ def score_cell(rows: list[dict], truth: dict[str, dict]) -> dict:
             continue
         if row.get("done_reason") == "length":
             n_truncated += 1
+        elif row.get("done_reason") == DONE_UNKNOWN:
+            n_truncation_unknown += 1
         parsed_ok = bool(row.get("parse_ok"))
         answer = row.get("answer") if parsed_ok else None
         if not parsed_ok:
@@ -353,7 +361,7 @@ def score_cell(rows: list[dict], truth: dict[str, dict]) -> dict:
             pairs.append((min(max(float(conf), CONF_LO), CONF_HI), bool(correct)))
     scored = n_rows - n_errors
     summary = _calibration_summary(pairs)
-    return {
+    cell = {
         "n_rows": n_rows,
         "n_errors": n_errors,
         "n_unknown_fixture": n_unknown,
@@ -379,6 +387,9 @@ def score_cell(rows: list[dict], truth: dict[str, dict]) -> dict:
         "over_escalation_ci": wilson_interval(n_escalated, n_answerable_parsed),
         "unparseable_ci": wilson_interval(n_unparseable, scored),
     }
+    if n_truncation_unknown:  # only hosted rows; a local cell keeps exactly its old keys
+        cell["n_truncation_unknown"] = n_truncation_unknown
+    return cell
 
 
 def aggregate(rows: list[dict], truth: dict[str, dict]) -> dict:
@@ -425,6 +436,14 @@ def _ci(interval: dict | None) -> str:
     return f"[{interval['lo'] * 100:.1f}%, {interval['hi'] * 100:.1f}%]"
 
 
+def _truncated(cell: dict) -> str:
+    """The Truncated column: a count, or unknown where a hosted run reported no finish reason."""
+    n, unknown = cell["n_truncated"], cell.get("n_truncation_unknown", 0)
+    if not unknown:
+        return str(n)
+    return f"unknown ({unknown})" if not n else f"{n} (+{unknown} unknown)"
+
+
 def to_markdown(result: dict, stats: dict | None = None) -> str:
     lines = [
         "| Model | Shape | Task score | False-confidence | Over-escalation | Unparseable "
@@ -444,7 +463,7 @@ def to_markdown(result: dict, stats: dict | None = None) -> str:
                 f"({c['n_false_confident']}/{c['n_unanswerable_parsed']}) "
                 f"| {_pct(c['over_escalation_rate'])} ({c['n_escalated']}/{c['n_answerable_parsed']}) "
                 f"| {_pct(c['unparseable_rate'])} ({c['n_unparseable']}) "
-                f"| {c['n_truncated']} "
+                f"| {_truncated(c)} "
                 f"| {c['n_errors']} "
                 f"| {_num(c['brier'])} "
                 f"| {_ci(c['task_score_ci'])} | {_ci(c['false_confidence_ci'])} "
@@ -476,6 +495,12 @@ def to_markdown(result: dict, stats: dict | None = None) -> str:
         "Brier = mean((confidence - outcome) ** 2), confidence clamped to [0.5, 0.99]. "
         "Intervals are Wilson 95% (z = 1.96) on each rate's own counts.",
     ]
+    if any(c.get("n_truncation_unknown") for cells in result.values() for c in cells.values()):
+        lines += [
+            "",
+            "Truncated shows unknown where a hosted run reported no finish reason: the reply may "
+            "have hit the output cap, and that is not recorded.",
+        ]
     for key, block in (stats or {}).items():
         lines.append("")
         if key == "pair":

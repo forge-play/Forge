@@ -3,23 +3,42 @@
 #
 # Does the model file a work-log note under the right status, severity and needs-human
 # flag, and say ESCALATE when the note does not say? This task only collects replies. It sends each exported prompt (system + user)
-# at temperature 0 and seed 0 and records the raw reply text per item. Nothing is parsed
-# or scored here; the benchmark's own aggregator scores the downloaded run files.
+# at temperature 0 and seed 0 and records the raw reply text per item. The reply is held to the
+# answer schema and the output cap; nothing is scored here; the benchmark's own aggregator scores the downloaded run files.
 
 # %%
 import json
 import os
 import time
 from pathlib import Path
+from typing import Any
 
 import kaggle_benchmarks as kbench
 import pandas as pd
+from kaggle_benchmarks.prompting import ResponseParsingError
+from pydantic import BaseModel
 
 SHAPE = "classify"
 DATASET_SLUG = "escalation-benchmark"
 SEED = 0
 # "0" sends temperature 0. Set ESCALATION_TEMPERATURE=none to leave it to the platform.
 TEMPERATURE = None if os.environ.get("ESCALATION_TEMPERATURE", "0") == "none" else 0
+# The local runner's output cap (runner.MAX_OUTPUT_TOKENS), sent to every hosted model.
+MAX_OUTPUT_TOKENS = 512
+# "auto" names the cap parameter by provider: max_output_tokens for Google GenAI models,
+# max_tokens otherwise. Set ESCALATION_CAP_PARAM to a parameter name (for example
+# max_completion_tokens) to override it, or to "none" to send no cap.
+CAP_PARAM = os.environ.get("ESCALATION_CAP_PARAM", "auto")
+# The answer schema is sent with every call. Set ESCALATION_SCHEMA=none for a model that
+# rejects structured output; each row then records schema "none".
+SCHEMA_ON = os.environ.get("ESCALATION_SCHEMA", "answer") != "none"
+
+
+class Answer(BaseModel):
+    """The reply envelope: runner.ANSWER_SCHEMA as a type the SDK accepts."""
+
+    answer: str | dict[str, Any]
+    confidence: float
 
 
 # %%
@@ -46,27 +65,71 @@ def load_frame() -> pd.DataFrame:
         item = json.loads(line)
         system, user = item["messages"]
         assert system["role"] == "system" and user["role"] == "user"
+        exported = item["schema"]
+        if set(exported["properties"]) != set(Answer.model_fields) or set(
+            exported["required"]
+        ) != set(Answer.model_fields):
+            raise ValueError("the exported answer schema no longer matches the Answer type")
         rows.append({"item_id": item["id"], "system": system["content"], "user": user["content"]})
     limit = os.environ.get("ESCALATION_LIMIT")
     return pd.DataFrame(rows[: int(limit)] if limit else rows)
 
 
 # %%
+def cap_kwargs(llm) -> dict:
+    """The per-call output cap, under the parameter name the model's provider takes."""
+    name = CAP_PARAM
+    if name == "none":
+        return {}
+    if name == "auto":
+        classes = {cls.__name__ for cls in type(llm).__mro__}
+        name = "max_output_tokens" if "GoogleGenAI" in classes else "max_tokens"
+    return {name: MAX_OUTPUT_TOKENS}
+
+
+def reply_text(reply) -> tuple[str | None, str | None]:
+    """The reply as the JSON text the aggregator parses, and the raw text when the SDK kept it.
+
+    With the schema on, the SDK hands back a parsed ``Answer``; it is written back out as
+    JSON. The raw text the model returned is in the message meta as ``raw_content``.
+    """
+    content = reply.content
+    raw = (getattr(reply, "_meta", None) or {}).get("raw_content")
+    raw = raw if isinstance(raw, str) else None
+    if isinstance(content, BaseModel):
+        return json.dumps(content.model_dump()), raw
+    return (content if isinstance(content, str) else str(content)), None
+
+
 @kbench.task(name="escalation-classify-item", store_task=False)
 def answer_item(llm, item_id: str, system: str, user: str) -> dict:
     """One item, one call. A failed call is a result, never retried."""
     started = time.monotonic()
-    result = {"item_id": item_id, "text": None, "error": None}
+    cap = cap_kwargs(llm)
+    result = {
+        "item_id": item_id,
+        "text": None,
+        "error": None,
+        "schema": "answer" if SCHEMA_ON else "none",
+        "cap": cap or None,
+    }
     try:
         kbench.user.send(user)
         kwargs = {} if TEMPERATURE is None else {"temperature": TEMPERATURE}
-        reply = llm.respond(system=system, seed=SEED, **kwargs)
+        if SCHEMA_ON:
+            kwargs["schema"] = Answer
+        reply = llm.respond(system=system, seed=SEED, **kwargs, **cap)
         meta = getattr(reply, "_meta", None) or {}
-        result["text"] = reply.content if isinstance(reply.content, str) else str(reply.content)
+        result["text"], raw = reply_text(reply)
+        if raw is not None:
+            result["raw_text"] = raw
         result["tokens_in"] = meta.get("input_tokens")
         result["tokens_out"] = meta.get("output_tokens")
     except kbench.tasks.NonRecoverableError:
         raise
+    except ResponseParsingError as exc:
+        # The model broke the schema. Like a local unparseable reply, it is kept as text.
+        result["text"] = None if exc.value is None else str(exc.value)
     except Exception as exc:
         result["error"] = f"{type(exc).__name__}: {exc}"
     result["latency_ms"] = int((time.monotonic() - started) * 1000)

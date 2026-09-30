@@ -91,7 +91,7 @@ and were not carried. A legend tag counts only when it LEADS the item text.
 34. ✅ **shipped**: a workshop cuts and checks its bundle from a pip install (f8490e1, 0.4.0) — `forge-export` is a declared console script; `tools/` was never in the wheel.
 35. An instantiated workshop inherits no branch protection, and the answer is known: apply the fleet's repo-level ruleset `require-test-for-merge` (required check `test`, strict, 0 approvals, non-fast-forward, default branch, admin bypass) as a step in standing up a workshop — 36 of 39 repos carry it, so there are 36 precedents.
 36. Org community-health files (`forge-play/.github`'s CONTRIBUTING, SECURITY, templates) do not reach a working tree, so an agent reading the clone sees none of them; mitigated by the template carrying `CLAUDE.md`, not closed.
-37. Whether `project_id` is derived from the repo name or declared in the template's config: derivation keeps the two from drifting, declaration survives a rename; the template derives today.
+37. Whether `project_id` is derived from the repo name or declared in the template's config: derivation keeps the two from drifting, declaration survives a rename; the template derives today. *(2026-09-30: the same question is open as willows-grove `docs/design/forge-convergence.md` §9 row 1, which proposes a declared `.forge/project` read at orient; answer it there.)*
 38. What the template's README says after the question. Less is right.
 
 ## I. The deposit, the record gate, the store diff, the store pull
@@ -121,7 +121,7 @@ and were not carried. A legend tag counts only when it LEADS the item text.
 55. ✅ **shipped**: what a CI-outcome claim looks like as a pair, and which lane it lands in (eda2507, 2026-09-03) — a `ci` row proposed into the project Nestor with a `refines` edge, by the deposit.
 56. Whether the PR trigger is a workflow, a hook, or the merge queue.
 57. ✅ **shipped**: store deposit (`willow-bot`) rather than git deposit (`willow-ci`) — the deposit module reads willow-bot's webhook inbox (eda2507), which keeps §0.2 intact.
-58. `willow-bot` is not under `~/github` and has 0 claims, while its extractor exists and has never run; cloning it into an org is a prerequisite (§13).
+58. `willow-bot` is not under `~/github` and has 0 claims, while its extractor exists and has never run; cloning it into an org is a prerequisite (§13). *(2026-09-30: the premise is stale. willow-bot is now `willow-memory/willow-bot`, cloned at `~/github/willow-memory/willow-bot` (the live steward checkout); `~/github/workshop/willow-bot` is an older fork. Whether its claims have been extracted is not re-measured here.)*
 59. ✅ **shipped**: whether the shape document belongs in the store or in `forge-play/Forge` — it is here, `docs/design/the-forge-shape.md`, since the repo's first commit (f611d90).
 60. `plan.py` has no notion of majors; a second major forces it.
 61. The toolchain bind: nothing binds `forge-play` into Kart (68 binds, zero mention; `governance/architecture/willow-v08-toolchain-path.drawio`).
@@ -131,7 +131,7 @@ and were not carried. A legend tag counts only when it LEADS the item text.
 65. Edge rank has no store: FSRS grades pairs today; nothing grades a connection.
 66. Prose is not a shape: design sections are unfindable until the scan exists; until then, decisions belong in decision records, not paragraphs.
 67. Whether the lean corpus payload is a default or an opt-in; §11 makes it load-bearing, and a mandatory call must be cheap or the mandate gets removed.
-68. Where the first-tool call is enforced — the entry scan (§3), the hook, or both; an advisory alone has already been tried and did not fire.
+68. Where the first-tool call is enforced — the entry scan (§3), the hook, or both; an advisory alone has already been tried and did not fire. *(2026-09-30: answered in willows-grove `docs/design/forge-convergence.md` §3, "The door is the hook, not the verb": the `session_start → orient` row carries it, because a hook fires whether or not anyone remembers.)*
 
 ## L. The store-side design (`the-forge.md` "Open / next" and the 2026-07-31 review)
 

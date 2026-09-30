@@ -435,4 +435,3 @@ def test_markdown_shows_a_dash_where_a_rate_has_no_denominator():
 def test_json_output_round_trips():
     result = aggregate.aggregate(_rows(), _truth())
     assert json.loads(aggregate.to_json(result)) == json.loads(json.dumps(result))
-

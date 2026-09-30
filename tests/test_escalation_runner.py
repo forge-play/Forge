@@ -523,3 +523,133 @@ def test_markdown_shows_a_dash_where_a_rate_has_no_denominator():
 def test_json_output_round_trips():
     result = aggregate.aggregate(_rows(), _truth())
     assert json.loads(aggregate.to_json(result)) == json.loads(json.dumps(result))
+
+
+# --- intervals, McNemar and bootstrap Spearman -----------------------------------
+
+
+def test_wilson_interval_matches_textbook_values():
+    w = aggregate.wilson_interval
+    # 8/40: centre 0.2263, half-width 0.1213 (hand computed, z = 1.96).
+    ci = w(8, 40)
+    assert ci["lo"] == pytest.approx(0.1050, abs=5e-4)
+    assert ci["hi"] == pytest.approx(0.3476, abs=5e-4)
+    # Newcombe (1998) worked example, 81/263.
+    ci = w(81, 263)
+    assert ci["lo"] == pytest.approx(0.2553, abs=5e-4)
+    assert ci["hi"] == pytest.approx(0.3662, abs=5e-4)
+    # The edges stay inside [0, 1]; 0/10 has a Wilson upper bound of 0.2775.
+    assert w(0, 10)["lo"] == 0.0
+    assert w(0, 10)["hi"] == pytest.approx(0.2775, abs=5e-4)
+    assert w(10, 10)["hi"] == 1.0
+    assert w(0, 0) is None
+
+
+def test_every_rate_carries_its_own_interval_in_the_cell_and_the_table():
+    cell = _cell()
+    assert cell["task_score_ci"] == aggregate.wilson_interval(1, 4)
+    assert cell["false_confidence_ci"] == aggregate.wilson_interval(1, 2)
+    assert cell["over_escalation_ci"] == aggregate.wilson_interval(1, 3)
+    assert cell["unparseable_ci"] == aggregate.wilson_interval(2, 7)
+    md = aggregate.to_markdown(aggregate.aggregate(_rows(), _truth()))
+    assert md.splitlines()[0].count("|") == md.splitlines()[2].count("|")
+    lo, hi = cell["task_score_ci"]["lo"], cell["task_score_ci"]["hi"]
+    assert f"[{lo * 100:.1f}%, {hi * 100:.1f}%]" in md
+    empty = aggregate.aggregate([_row("g1", "31 metres", 0.9)], _truth())["m"]["ground"]
+    assert empty["false_confidence_ci"] is None
+
+
+def _pair_truth():
+    return {
+        f"u{i}": {"shape": "ground", "expected": "ESCALATE", "answerable": False}
+        for i in range(1, 13)
+    }
+
+
+def _pair_rows():
+    def row(model, fid, answer):
+        return {
+            "model": model,
+            "shape": "ground",
+            "fixture_id": fid,
+            "parse_ok": True,
+            "answer": answer,
+            "confidence": 0.9,
+            "error": None,
+        }
+
+    rows = []
+    for i in range(1, 13):
+        fid = f"u{i}"
+        a = "ESCALATE" if i != 6 else "made up"  # A is confident only on u6
+        b = "made up" if i <= 5 else "ESCALATE"  # B is confident on u1-u5
+        rows += [row("A", fid, a), row("B", fid, b)]
+    return rows
+
+
+def test_mcnemar_exact_matches_hand_computed_b_and_c():
+    # b = 5 (A refused, B did not), c = 1; 6 discordant: p = 2 * (1 + 6) / 64.
+    out = aggregate.pair_test(_pair_rows(), _pair_truth(), "A", "B")
+    assert (out["b"], out["c"], out["n_shared"], out["n_discordant"]) == (5, 1, 12, 6)
+    assert out["p_value"] == pytest.approx(14 / 64)
+    # b = 8, c = 2: p = 2 * (1 + 10 + 45) / 1024.
+    assert aggregate.mcnemar_exact(8, 2) == pytest.approx(112 / 1024)
+    assert aggregate.mcnemar_exact(0, 0) == 1.0
+    assert aggregate.mcnemar_exact(3, 3) == 1.0
+
+
+def test_mcnemar_uses_only_shared_parsed_items():
+    drop = {"u1", "u2"}
+    rows = [r for r in _pair_rows() if not (r["model"] == "B" and r["fixture_id"] in drop)]
+    rows.append({**rows[0], "model": "B", "fixture_id": "u2", "parse_ok": False, "answer": None})
+    out = aggregate.pair_test(rows, _pair_truth(), "A", "B")
+    assert out["n_shared"] == 10  # u1 has no B row; u2's B reply is unparseable
+
+
+def test_spearman_known_values():
+    assert aggregate.spearman([1, 2, 3, 4], [10, 20, 30, 40]) == pytest.approx(1.0)
+    assert aggregate.spearman([1, 2, 3, 4], [4, 3, 2, 1]) == pytest.approx(-1.0)
+    # Ties take average ranks: ranks [1, 2, 3] against [1.5, 1.5, 3] give 1.5 / sqrt(3).
+    assert aggregate.spearman([1, 2, 3], [1, 1, 2]) == pytest.approx(3**0.5 / 2)
+    assert aggregate.spearman([1, 2, 3], [5, 5, 5]) is None
+    assert aggregate.spearman([1, 2], [1, 2]) is None
+
+
+def test_bootstrap_spearman_is_reproducible_under_a_seed():
+    xs = [0.1, 0.3, 0.35, 0.5, 0.6, 0.8, 0.9]
+    ys = [0.9, 0.7, 0.8, 0.5, 0.4, 0.45, 0.1]
+    a = aggregate.bootstrap_spearman(xs, ys, 500, seed=7)
+    assert a == aggregate.bootstrap_spearman(xs, ys, 500, seed=7)
+    assert a != aggregate.bootstrap_spearman(xs, ys, 500, seed=8)
+    assert -1.0 <= a["ci"]["lo"] <= a["ci"]["hi"] <= 1.0
+    assert a["rho"] == pytest.approx(aggregate.spearman(xs, ys))
+    # The default seed is fixed, so two default calls agree.
+    assert aggregate.bootstrap_spearman(xs, ys, 200) == aggregate.bootstrap_spearman(xs, ys, 200)
+    # A perfectly monotone set has a degenerate interval at 1.
+    mono = aggregate.bootstrap_spearman([1, 2, 3, 4, 5, 6], [2, 4, 6, 8, 10, 12], 300)
+    assert mono["ci"] == {"lo": 1.0, "hi": 1.0}
+
+
+def test_cli_pair_and_rank_are_additive(tmp_path, capsys):
+    rows = tmp_path / "rows.jsonl"
+    rows.write_text("\n".join(json.dumps(r) for r in _pair_rows()) + "\n", encoding="utf-8")
+    fx = tmp_path / "fx"
+    fx.mkdir()
+    for shape in aggregate.SHAPES:
+        lines = []
+        if shape == "ground":
+            for fid, t in _pair_truth().items():
+                lines.append(json.dumps({"id": fid, **t}))
+        (fx / f"{shape}.jsonl").write_text("\n".join(lines), encoding="utf-8")
+    base = [str(rows), "--fixtures", str(fx), "--format", "json"]
+    assert aggregate.main(base) == 0
+    plain = json.loads(capsys.readouterr().out)
+    assert "_stats" not in plain
+    assert aggregate.main([*base, "--pair", "A", "B", "--rank", "--seed", "3"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    stats = out.pop("_stats")
+    assert out == plain
+    assert stats["pair"]["b"] == 5 and stats["pair"]["c"] == 1
+    assert stats["rank"]["seed"] == 3 and stats["rank"]["n_resamples"] == 10_000
+    assert aggregate.main([str(rows), "--fixtures", str(fx), "--pair", "A", "B"]) == 0
+    assert "McNemar" in capsys.readouterr().out

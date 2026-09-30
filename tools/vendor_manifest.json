@@ -19,8 +19,8 @@
       "path": "forge/human_loop.py",
       "origin": "self",
       "body_from": null,
-      "sha256": "29f1432d6b501a5c9994222bfc7c22024df9dd46509de0ebe65510d6fb5634f7",
-      "note": "Canonical here since 2026-09-03; willow-mcp's src/willow_mcp/human_loop.py re-exports this module and its tests/test_forge_take.py identity-checks it, so a change here is willow-mcp's behaviour changing. Whole file pinned: there is no upstream body to keep separate from a local header. MOVED 2026-09-12 (C4-tests-yml, the fleet CI floor): `ruff format` at line-length 100 reformatted this file — whitespace and line breaks only, no token changed; willow-mcp identity-checks this module rather than hashing it, so no downstream pin moved. Previous hash: 539546f9221e870828040e5d2a81da22e396959689b9f164111ee76faa28eb6c."
+      "sha256": "52fadf5a5bdca49cee0ab3096bfc67b4a8715753bbc25c29097d54ff68202a6a",
+      "note": "MOVED 2026-09-30 (gap 69819a81a02a): _now() is now strictly increasing within the process, so two enqueues that land on one coarse-clock reading (Windows) no longer tie and sort oldest-first in list_queue / list_attestations. Behaviour change only in the tie case; stored record shape unchanged, so willow-mcp's identity-check needs no edit. Previous hash: 29f1432d6b501a5c9994222bfc7c22024df9dd46509de0ebe65510d6fb5634f7. Canonical here since 2026-09-03; willow-mcp's src/willow_mcp/human_loop.py re-exports this module and its tests/test_forge_take.py identity-checks it, so a change here is willow-mcp's behaviour changing. Whole file pinned: there is no upstream body to keep separate from a local header. MOVED 2026-09-12 (C4-tests-yml, the fleet CI floor): `ruff format` at line-length 100 reformatted this file — whitespace and line breaks only, no token changed; willow-mcp identity-checks this module rather than hashing it, so no downstream pin moved. Previous hash: 539546f9221e870828040e5d2a81da22e396959689b9f164111ee76faa28eb6c."
     },
     {
       "path": "forge/model_egress.py",

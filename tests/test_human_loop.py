@@ -226,6 +226,26 @@ def test_list_queue_newest_first(store):
     assert [r["id"] for r in rows[:2]] == [second["id"], first["id"]]
 
 
+def test_list_queue_newest_first_when_the_clock_does_not_tick(store, monkeypatch):
+    """A coarse clock (Windows, ~15ms) gives back-to-back enqueues the same
+    timestamp. The store returns rows in id order (random), so without a
+    tie-break the order is a coin flip per pair; six items make a lucky pass
+    a 1-in-720 event. Pin the clock and demand insertion order, newest first."""
+    frozen = datetime(2000, 1, 1, tzinfo=human_loop.timezone.utc)
+
+    class FrozenClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return frozen
+
+    monkeypatch.setattr(human_loop, "datetime", FrozenClock)
+    items = [
+        human_loop.enqueue(store, kind="review", title=f"t{n}", source_agent="x") for n in range(6)
+    ]
+    rows = human_loop.list_queue(store, status="", limit=10)
+    assert [r["id"] for r in rows] == [i["id"] for i in reversed(items)]
+
+
 # ── create_attestation() ─────────────────────────────────────────────────────
 
 

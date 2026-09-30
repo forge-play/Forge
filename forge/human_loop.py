@@ -43,8 +43,9 @@ Two deliberate departures from the willow-2.0 original:
 
 from __future__ import annotations
 
+import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 # ── attestation vocabulary ──────────────────────────────────────────────────────
@@ -65,8 +66,25 @@ class HumanLoopError(Exception):
     """Bad input to a human-loop primitive (unknown vocab, missing required field)."""
 
 
+_clock_lock = threading.Lock()
+_last_stamp: Optional[datetime] = None
+
+
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    """UTC ISO timestamp, strictly increasing within this process.
+
+    Records sort newest-first on `created_at`, and a coarse clock (Windows ticks
+    at ~15ms) hands two back-to-back calls the same reading, so a bare
+    `datetime.now()` lets the tie sort oldest-first. If the clock has not moved
+    past the last stamp issued, step one microsecond past it instead — the
+    tie-break lives in the timestamp, so the stored record shape is unchanged."""
+    global _last_stamp
+    with _clock_lock:
+        stamp = datetime.now(timezone.utc)
+        if _last_stamp is not None and stamp <= _last_stamp:
+            stamp = _last_stamp + timedelta(microseconds=1)
+        _last_stamp = stamp
+        return stamp.isoformat()
 
 
 def _gen_id() -> str:

@@ -339,6 +339,34 @@ def test_privacy_gate_denylist_never_prints_its_terms(scratch, tmp_path):
     assert "quux" not in result.stdout.lower()
 
 
+# Fleet names are public (the org names them), so the list may live here. The gate
+# matches plain substrings, so every term below must be absent from the data files.
+FLEET_TERMS = (
+    "willow nestor kart kartikeya grove loki jeles forge frank soil hanuman ratatosk "
+    "oakenscroll utety heimdallr vishwakarma skirnir ada gerald hornbook almanac node9 sap"
+).split()
+
+
+def test_privacy_gate_passes_the_data_files_with_a_fleet_denylist(tmp_path):
+    root = tmp_path / "escalation"
+    root.mkdir()
+    for sub in ("fixtures", "catalog"):
+        shutil.copytree(BENCH / sub, root / sub, ignore=shutil.ignore_patterns("__pycache__"))
+    shutil.copy(BENCH / "manifest.json", root / "manifest.json")
+    deny = tmp_path / "fleet-deny.txt"
+    deny.write_text("\n".join(FLEET_TERMS) + "\n", encoding="utf-8")
+    env = {k: v for k, v in os.environ.items() if k != "ESCALATION_GATE_DENYLIST"}
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
+    result = subprocess.run(
+        [sys.executable, "-B", str(GATE), "--root", str(root), "--denylist", str(deny)],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "deny-list applied" in result.stdout
+
+
 def test_privacy_gate_missing_denylist_file_is_a_usage_error(scratch, tmp_path):
     result = run_gate(scratch, "--denylist", str(tmp_path / "absent.txt"))
     assert result.returncode == 2

@@ -14,7 +14,7 @@
     {
       "path": "fixtures/ground.jsonl",
       "lines": 40,
-      "sha256": "88d828901bc87f70026d36d4791abfae931967faed492a38cc4cc033c9ca71d4"
+      "sha256": "2e2239bb27df51e1bff0d96ee13ffa229807cab384f97f2e8bc75b06324f3b12"
     },
     {
       "path": "fixtures/judge.jsonl",

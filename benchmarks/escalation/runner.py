@@ -9,7 +9,8 @@ A backend is one callable::
 
     complete(model: str, system: str, user: str) -> dict   # {text, tokens_in?, tokens_out?}
 
-Built in: ``ollama_http`` (Ollama's ``/api/chat``, temperature 0, JSON format)
+Built in: ``ollama_http`` (Ollama's ``/api/chat``, temperature 0, answers constrained by a
+JSON schema, Qwen thinking off via ``think: false`` plus a ``/no_think`` suffix)
 and, with ``--dry-run``, an echo backend that needs no model at all. Any other
 backend loads with ``--backend module:function``.
 
@@ -130,21 +131,54 @@ def _confidence(parsed: dict | None) -> float | None:
 # --- backends ----------------------------------------------------------------
 
 
+#: The JSON schema sent as Ollama's ``format``. It is the reply shape ``parse_reply`` and
+#: the aggregator read: an ``answer`` (a string, or an object for route and classify) and a
+#: numeric ``confidence``. Every shape's prompt asks for exactly this envelope.
+ANSWER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "answer": {"anyOf": [{"type": "string"}, {"type": "object"}]},
+        "confidence": {"type": "number"},
+    },
+    "required": ["answer", "confidence"],
+}
+NO_THINK_SUFFIX = "/no_think"
+
+
+def is_qwen(model: str) -> bool:
+    return "qwen" in model.lower()
+
+
+def build_chat_payload(model: str, system: str, user: str) -> dict:
+    """The ``/api/chat`` body. Qwen models get thinking switched off twice.
+
+    Ollama does not honour ``think: false`` alone for Qwen3 (ollama#12086), so a Qwen
+    request also ends its user turn with ``/no_think``. Other models get neither: some
+    refuse a ``think`` field outright. Every model is held to ``ANSWER_SCHEMA``.
+    """
+    if is_qwen(model):
+        user = f"{user}\n{NO_THINK_SUFFIX}"
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "stream": False,
+        "format": ANSWER_SCHEMA,
+        "options": {"temperature": 0},
+    }
+    if is_qwen(model):
+        payload["think"] = False
+    return payload
+
+
 def make_ollama_http(url: str = DEFAULT_OLLAMA_URL, timeout_s: float = DEFAULT_TIMEOUT_S):
-    """A backend that calls ``<url>/api/chat`` with temperature 0 and JSON format."""
+    """A backend that calls ``<url>/api/chat`` with temperature 0 and a JSON schema format."""
     endpoint = url.rstrip("/") + "/api/chat"
 
     def complete(model: str, system: str, user: str) -> dict:
-        payload = {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            "stream": False,
-            "format": "json",
-            "options": {"temperature": 0},
-        }
+        payload = build_chat_payload(model, system, user)
         req = urllib.request.Request(
             endpoint,
             data=json.dumps(payload).encode("utf-8"),

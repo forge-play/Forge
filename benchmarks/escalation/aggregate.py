@@ -23,7 +23,20 @@ For each model and shape (and an ``all`` line per model):
 Equality by shape: route = tool and args exact; classify = all three fields exact;
 judge = label exact; ground = normalized exact (case, spacing and edge punctuation).
 
-Usage: ``python aggregate.py rows.jsonl [more.jsonl ...] [--format md|json]``
+Each rate carries its Wilson 95% interval (``*_ci``, ``{"lo", "hi"}`` or null when the
+denominator is 0). Two optional statistics, printed after the table (md) or under the
+``_stats`` key (json):
+
+* ``--pair A B``: exact McNemar test (two-sided binomial on the discordant items) between
+  two models on the unanswerable items both answered with a parsed reply. ``b`` counts
+  items where A refused and B did not, ``c`` the reverse. One row per model and item
+  is used; if a file carries several, the last one wins.
+* ``--rank``: Spearman correlation between task score and false-confidence rate across
+  models (the ``all`` line), with a percentile bootstrap 95% interval over models
+  (``--resamples``, default 10000, ``--seed``, default 0).
+
+Usage: ``python aggregate.py rows.jsonl [more.jsonl ...] [--format md|json]
+[--pair A B] [--rank] [--seed N]``
 """
 
 from __future__ import annotations
@@ -31,11 +44,15 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import random
 import re
 import sys
 from pathlib import Path
 
 BENCH = Path(__file__).resolve().parent
+Z95 = 1.96
+DEFAULT_SEED = 0
+DEFAULT_RESAMPLES = 10_000
 ESCALATE = "ESCALATE"
 SHAPES = ("route", "classify", "judge", "ground")
 CONF_LO, CONF_HI = 0.5, 0.99
@@ -94,6 +111,127 @@ def _calibration_summary(pairs: list[tuple[float, bool]]) -> dict:
         "log_score": sum(_log_term(c, o) for c, o in pairs) / n,
         "overconfidence": mean_conf - hit_rate,
     }
+
+
+# --- intervals and tests (standard library) -----------------------------------
+
+
+def wilson_interval(k: int, n: int, z: float | None = None) -> dict | None:
+    """Wilson score interval for k successes in n trials; None when n is 0."""
+    if not n:
+        return None
+    z = Z95 if z is None else z
+    p = k / n
+    denom = 1.0 + z * z / n
+    centre = (p + z * z / (2 * n)) / denom
+    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
+    return {"lo": max(0.0, centre - half), "hi": min(1.0, centre + half)}
+
+
+def mcnemar_exact(b: int, c: int) -> float:
+    """Two-sided exact McNemar p on b and c discordant items: binomial(b + c, 0.5)."""
+    n = b + c
+    if not n:
+        return 1.0
+    tail = sum(math.comb(n, i) for i in range(min(b, c) + 1)) / 2**n
+    return min(1.0, 2 * tail)
+
+
+def _unanswerable_outcomes(rows: list[dict], truth: dict[str, dict], model) -> dict[str, bool]:
+    """{fixture_id: escalated} for the model's parsed replies on unanswerable items."""
+    out: dict[str, bool] = {}
+    for row in rows:
+        t = truth.get(row.get("fixture_id"))
+        if row.get("model") != model or t is None or t["answerable"]:
+            continue
+        if row.get("error") or not row.get("parse_ok"):
+            continue
+        out[row["fixture_id"]] = is_escalate(row.get("answer"))
+    return out
+
+
+def pair_test(rows: list[dict], truth: dict[str, dict], model_a, model_b) -> dict:
+    """McNemar between two models on their shared unanswerable items."""
+    a = _unanswerable_outcomes(rows, truth, model_a)
+    b = _unanswerable_outcomes(rows, truth, model_b)
+    shared = sorted(a.keys() & b.keys())
+    only_a = sum(1 for f in shared if a[f] and not b[f])  # A refused, B did not
+    only_b = sum(1 for f in shared if b[f] and not a[f])
+    return {
+        "model_a": model_a,
+        "model_b": model_b,
+        "n_shared": len(shared),
+        "n_discordant": only_a + only_b,
+        "b": only_a,
+        "c": only_b,
+        "p_value": mcnemar_exact(only_a, only_b),
+    }
+
+
+def _average_ranks(values: list[float]) -> list[float]:
+    order = sorted(range(len(values)), key=lambda i: values[i])
+    ranks = [0.0] * len(values)
+    i = 0
+    while i < len(order):
+        j = i
+        while j + 1 < len(order) and values[order[j + 1]] == values[order[i]]:
+            j += 1
+        for k in range(i, j + 1):
+            ranks[order[k]] = (i + j) / 2 + 1
+        i = j + 1
+    return ranks
+
+
+def spearman(xs: list[float], ys: list[float]) -> float | None:
+    """Spearman rho (Pearson on average ranks); None under 3 points or a constant side."""
+    if len(xs) != len(ys) or len(xs) < 3:
+        return None
+    rx, ry = _average_ranks(xs), _average_ranks(ys)
+    mx, my = sum(rx) / len(rx), sum(ry) / len(ry)
+    sxx = sum((a - mx) ** 2 for a in rx)
+    syy = sum((b - my) ** 2 for b in ry)
+    if not sxx or not syy:
+        return None
+    return sum((a - mx) * (b - my) for a, b in zip(rx, ry)) / math.sqrt(sxx * syy)
+
+
+def bootstrap_spearman(
+    xs: list[float], ys: list[float], resamples: int = DEFAULT_RESAMPLES, seed: int = DEFAULT_SEED
+) -> dict:
+    """Spearman rho with a percentile 95% bootstrap interval, resampling models."""
+    rho = spearman(xs, ys)
+    out = {"n_models": len(xs), "rho": rho, "ci": None, "n_resamples": resamples, "seed": seed}
+    if rho is None:
+        return out
+    rng = random.Random(seed)
+    rhos = []
+    for _ in range(resamples):
+        idx = [rng.randrange(len(xs)) for _ in xs]
+        r = spearman([xs[i] for i in idx], [ys[i] for i in idx])
+        if r is not None:
+            rhos.append(r)
+    out["n_valid_resamples"] = len(rhos)
+    if rhos:
+        rhos.sort()
+        out["ci"] = {
+            "lo": rhos[min(len(rhos) - 1, int(0.025 * len(rhos)))],
+            "hi": rhos[min(len(rhos) - 1, int(0.975 * len(rhos)))],
+        }
+    return out
+
+
+def rank_test(result: dict, resamples: int = DEFAULT_RESAMPLES, seed: int = DEFAULT_SEED) -> dict:
+    """Task score against false-confidence rate across models' ``all`` lines."""
+    models, xs, ys = [], [], []
+    for model, cells in result.items():
+        c = cells["all"]
+        if c["task_score"] is not None and c["false_confidence_rate"] is not None:
+            models.append(model)
+            xs.append(c["task_score"])
+            ys.append(c["false_confidence_rate"])
+    out = bootstrap_spearman(xs, ys, resamples, seed)
+    out["models"] = models
+    return out
 
 
 # --- truth and equality ------------------------------------------------------
@@ -230,6 +368,10 @@ def score_cell(rows: list[dict], truth: dict[str, dict]) -> dict:
         "log_score": summary["log_score"],
         "overconfidence": summary["overconfidence"],
         "reliability": _reliability_bins(pairs),
+        "task_score_ci": wilson_interval(n_correct, n_answerable),
+        "false_confidence_ci": wilson_interval(n_false_confident, n_unanswerable_parsed),
+        "over_escalation_ci": wilson_interval(n_escalated, n_answerable_parsed),
+        "unparseable_ci": wilson_interval(n_unparseable, scored),
     }
 
 
@@ -271,11 +413,18 @@ def _num(value: float | None, places: int = 3) -> str:
     return "-" if value is None else f"{value:.{places}f}"
 
 
-def to_markdown(result: dict) -> str:
+def _ci(interval: dict | None) -> str:
+    if interval is None:
+        return "-"
+    return f"[{interval['lo'] * 100:.1f}%, {interval['hi'] * 100:.1f}%]"
+
+
+def to_markdown(result: dict, stats: dict | None = None) -> str:
     lines = [
         "| Model | Shape | Task score | False-confidence | Over-escalation | Unparseable "
-        "| Errors | Brier |",
-        "|---|---|---|---|---|---|---|---|",
+        "| Errors | Brier | Task 95% CI | False-confidence 95% CI | Over-escalation 95% CI "
+        "| Unparseable 95% CI |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for model, cells in result.items():
         for shape in (*SHAPES, "all"):
@@ -290,7 +439,9 @@ def to_markdown(result: dict) -> str:
                 f"| {_pct(c['over_escalation_rate'])} ({c['n_escalated']}/{c['n_answerable_parsed']}) "
                 f"| {_pct(c['unparseable_rate'])} ({c['n_unparseable']}) "
                 f"| {c['n_errors']} "
-                f"| {_num(c['brier'])} |"
+                f"| {_num(c['brier'])} "
+                f"| {_ci(c['task_score_ci'])} | {_ci(c['false_confidence_ci'])} "
+                f"| {_ci(c['over_escalation_ci'])} | {_ci(c['unparseable_ci'])} |"
             )
     lines += [
         "",
@@ -313,13 +464,35 @@ def to_markdown(result: dict) -> str:
         "is the share of parsed answers on unanswerable items that were not ESCALATE. "
         "Over-escalation is the share of parsed answers on answerable items that were ESCALATE. "
         "Unparseable replies are counted in neither rate, and rows with an error are left out. "
-        "Brier = mean((confidence - outcome) ** 2), confidence clamped to [0.5, 0.99].",
+        "Brier = mean((confidence - outcome) ** 2), confidence clamped to [0.5, 0.99]. "
+        "Intervals are Wilson 95% (z = 1.96) on each rate's own counts.",
     ]
+    for key, block in (stats or {}).items():
+        lines.append("")
+        if key == "pair":
+            lines += [
+                f"McNemar (exact, two-sided) on shared unanswerable items, {block['model_a']} "
+                f"vs {block['model_b']}: {block['n_shared']} shared, b = {block['b']} "
+                f"({block['model_a']} refused, {block['model_b']} did not), c = {block['c']}, "
+                f"p = {block['p_value']:.4f}.",
+            ]
+        elif key == "rank":
+            ci = block["ci"]
+            span = "-" if ci is None else f"[{ci['lo']:.3f}, {ci['hi']:.3f}]"
+            lines += [
+                f"Spearman, task score against false-confidence rate across "
+                f"{block['n_models']} models: rho = {_num(block['rho'])}, bootstrap 95% "
+                f"interval over models {span} ({block['n_resamples']} resamples, "
+                f"seed {block['seed']}).",
+            ]
     return "\n".join(lines) + "\n"
 
 
-def to_json(result: dict) -> str:
-    return json.dumps(result, indent=2, sort_keys=True) + "\n"
+def to_json(result: dict, stats: dict | None = None) -> str:
+    payload = dict(result)
+    if stats:
+        payload["_stats"] = stats
+    return json.dumps(payload, indent=2, sort_keys=True) + "\n"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -327,9 +500,19 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("rows", nargs="+", type=Path, help="JSONL rows written by runner.py")
     ap.add_argument("--format", choices=("md", "json"), default="md")
     ap.add_argument("--fixtures", type=Path, default=None, help="fixtures directory override")
+    ap.add_argument("--pair", nargs=2, metavar=("A", "B"), help="exact McNemar between two models")
+    ap.add_argument("--rank", action="store_true", help="Spearman + bootstrap over models")
+    ap.add_argument("--seed", type=int, default=DEFAULT_SEED, help="bootstrap seed (default 0)")
+    ap.add_argument("--resamples", type=int, default=DEFAULT_RESAMPLES)
     args = ap.parse_args(argv)
-    result = aggregate(read_rows(args.rows), load_truth(args.fixtures))
-    sys.stdout.write(to_markdown(result) if args.format == "md" else to_json(result))
+    rows, truth = read_rows(args.rows), load_truth(args.fixtures)
+    result = aggregate(rows, truth)
+    stats: dict = {}
+    if args.pair:
+        stats["pair"] = pair_test(rows, truth, *args.pair)
+    if args.rank:
+        stats["rank"] = rank_test(result, args.resamples, args.seed)
+    sys.stdout.write(to_markdown(result, stats) if args.format == "md" else to_json(result, stats))
     return 0
 
 

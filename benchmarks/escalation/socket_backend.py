@@ -103,6 +103,7 @@ def chat_request(model: str, system: str, user: str) -> dict:
         "system": payload["messages"][0]["content"],
         "user": payload["messages"][1]["content"],
         "temperature": payload["options"]["temperature"],
+        "max_tokens": payload["options"]["num_predict"],
         "format": payload["format"],
         "keep_alive": os.environ.get("ESCALATION_KEEP_ALIVE", DEFAULT_KEEP_ALIVE),
     }
@@ -117,6 +118,7 @@ def complete(model: str, system: str, user: str) -> dict:
         "text": reply.get("text", ""),
         "tokens_in": reply.get("tokens_in"),
         "tokens_out": reply.get("tokens_out"),
+        "done_reason": reply.get("done_reason"),
     }
 
 

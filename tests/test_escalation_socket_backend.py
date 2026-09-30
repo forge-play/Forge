@@ -96,7 +96,7 @@ def delegate(monkeypatch):
 
 def test_chat_request_matches_the_ollama_http_payload(delegate):
     out = backend.complete("llama3.2:3b", "sys", "usr")
-    assert out == {"text": GOOD, "tokens_in": 11, "tokens_out": 3}
+    assert out == {"text": GOOD, "tokens_in": 11, "tokens_out": 3, "done_reason": None}
     (req,) = delegate.seen
     payload = runner.build_chat_payload("llama3.2:3b", "sys", "usr")
     assert req == {
@@ -105,10 +105,21 @@ def test_chat_request_matches_the_ollama_http_payload(delegate):
         "system": "sys",
         "user": "usr",
         "temperature": 0,
+        "max_tokens": runner.MAX_OUTPUT_TOKENS,
         "format": runner.ANSWER_SCHEMA,
         "keep_alive": backend.DEFAULT_KEEP_ALIVE,
     }
     assert req["format"] == payload["format"]
+    assert req["max_tokens"] == payload["options"]["num_predict"]
+
+
+def test_a_length_stop_from_the_delegate_reaches_the_row(delegate):
+    delegate.replies["chat"] = {"ok": True, "text": '{"answer": ', "done_reason": "length"}
+    buf = io.StringIO()
+    runner.run_benchmark(backend.complete, ["m"], ["route"], buf, "run-test", limit=1)
+    (row,) = [json.loads(line) for line in buf.getvalue().splitlines()]
+    assert row["done_reason"] == "length"
+    assert row["parse_ok"] is False and row["error"] is None
 
 
 def test_qwen_gets_the_no_think_suffix(delegate):

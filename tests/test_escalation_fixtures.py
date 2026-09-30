@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -365,6 +366,45 @@ def test_privacy_gate_passes_the_data_files_with_a_fleet_denylist(tmp_path):
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "deny-list applied" in result.stdout
+
+
+def _fleet_hits(text: str) -> list[str]:
+    """Fleet terms in a text. Terms of four letters or more match as plain substrings, the
+    way the gate does; the three-letter terms match as whole words so that a word such as
+    'adapt' does not count."""
+    low = text.casefold()
+    hits = []
+    for term in FLEET_TERMS:
+        if len(term) > 3:
+            found = term in low
+        else:
+            found = re.search(rf"(?<![a-z0-9]){term}(?![a-z0-9])", low) is not None
+        if found:
+            hits.append(term)
+    return hits
+
+
+def test_no_file_under_the_benchmark_tree_names_a_fleet_artifact():
+    """Every file that is published, code and prose included, not only the data files."""
+    files = sorted(
+        p
+        for p in BENCH.rglob("*")
+        if p.is_file() and "__pycache__" not in p.relative_to(BENCH).parts
+    )
+    suffixes = {p.suffix for p in files}
+    assert {".py", ".txt", ".md", ".json", ".jsonl"} <= suffixes, suffixes
+    offences = []
+    for path in files:
+        rel = path.relative_to(BENCH).as_posix()
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            offences += [f"{rel}:{lineno}: {term}" for term in _fleet_hits(line)]
+    assert not offences, offences
+
+
+def test_the_fleet_scan_finds_a_planted_name():
+    assert _fleet_hits("# see the " + "for" + "ge module") == ["forge"]
+    assert _fleet_hits("Invent, never adapt.") == []
+    assert _fleet_hits("the ada module") == ["ada"]
 
 
 def test_privacy_gate_missing_denylist_file_is_a_usage_error(scratch, tmp_path):

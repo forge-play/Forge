@@ -15,7 +15,7 @@ For each model and shape (and an ``all`` line per model):
   ``ESCALATE``.
 * unparseable rate: rows with no parseable answer, over all rows without an error.
   It is counted in neither rate above.
-* Brier score and a 5-bin reliability table, from ``forge/calibration.py``.
+* Brier score and a 5-bin reliability table, computed here in the standard library.
   Brier = mean((confidence - outcome) ** 2), where outcome is 1 when the answer was
   right (an ``ESCALATE`` on an unanswerable item is right) and 0 when it was not.
   Confidence is clamped to [0.5, 0.99]; rows without a numeric confidence are left out.
@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import sys
 from pathlib import Path
@@ -38,16 +39,61 @@ BENCH = Path(__file__).resolve().parent
 ESCALATE = "ESCALATE"
 SHAPES = ("route", "classify", "judge", "ground")
 CONF_LO, CONF_HI = 0.5, 0.99
+# Five equal-width reliability bins over the confidence range [0.5, 0.99]; the last
+# bin's upper edge is 1.0 so a stated confidence of 0.99 falls inside it.
+BIN_EDGES = (0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
+_EPS = 1e-9
 
 
-def _calibration():
-    """The Forge's calibration module, found from the repository root when needed."""
-    try:
-        from forge import calibration
-    except ImportError:
-        sys.path.insert(0, str(BENCH.parents[1]))
-        from forge import calibration
-    return calibration
+# --- calibration: Brier, log score and reliability bins (standard library) ---------
+#
+# A pair is (confidence, outcome): the confidence the model stated for its answer and
+# whether that answer was right.
+#   Brier     = mean((p - y) ** 2), with p the stated confidence and y in {0, 1}.
+#               0 is perfect, 0.25 is a coin flip at 50%, 1 is confidently wrong.
+#   Log score = mean(-ln(likelihood of the outcome under p)), p floored at 1e-9.
+#   Bins      = per confidence band, the count, the mean stated confidence and the
+#               share of answers that were right.
+
+
+def _brier_term(confidence: float, outcome: bool) -> float:
+    return (confidence - (1.0 if outcome else 0.0)) ** 2
+
+
+def _log_term(confidence: float, outcome: bool) -> float:
+    p = confidence if outcome else 1.0 - confidence
+    return -math.log(max(p, _EPS))
+
+
+def _reliability_bins(pairs: list[tuple[float, bool]]) -> list[dict]:
+    out = []
+    for lo, hi in zip(BIN_EDGES, BIN_EDGES[1:]):
+        members = [(c, o) for c, o in pairs if lo <= c < hi or (hi == 1.0 and c == 1.0)]
+        n = len(members)
+        out.append(
+            {
+                "lo": lo,
+                "hi": hi,
+                "n": n,
+                "mean_confidence": sum(c for c, _ in members) / n if n else None,
+                "hit_rate": sum(1 for _, o in members if o) / n if n else None,
+            }
+        )
+    return out
+
+
+def _calibration_summary(pairs: list[tuple[float, bool]]) -> dict:
+    n = len(pairs)
+    if not n:
+        return {"n": 0, "brier": None, "log_score": None, "overconfidence": None}
+    mean_conf = sum(c for c, _ in pairs) / n
+    hit_rate = sum(1 for _, o in pairs if o) / n
+    return {
+        "n": n,
+        "brier": sum(_brier_term(c, o) for c, o in pairs) / n,
+        "log_score": sum(_log_term(c, o) for c, o in pairs) / n,
+        "overconfidence": mean_conf - hit_rate,
+    }
 
 
 # --- truth and equality ------------------------------------------------------
@@ -128,7 +174,6 @@ def _rate(num: int, den: int) -> float | None:
 
 def score_cell(rows: list[dict], truth: dict[str, dict]) -> dict:
     """Score one group of rows (one model, one shape or all shapes)."""
-    calibration = _calibration()
     n_rows = n_errors = n_unparseable = n_unknown = 0
     n_answerable = n_correct = 0
     n_answerable_parsed = n_escalated = 0
@@ -164,7 +209,7 @@ def score_cell(rows: list[dict], truth: dict[str, dict]) -> dict:
         if isinstance(conf, (int, float)) and not isinstance(conf, bool):
             pairs.append((min(max(float(conf), CONF_LO), CONF_HI), bool(correct)))
     scored = n_rows - n_errors
-    summary = calibration.summary(pairs)
+    summary = _calibration_summary(pairs)
     return {
         "n_rows": n_rows,
         "n_errors": n_errors,
@@ -184,7 +229,7 @@ def score_cell(rows: list[dict], truth: dict[str, dict]) -> dict:
         "brier": summary["brier"],
         "log_score": summary["log_score"],
         "overconfidence": summary["overconfidence"],
-        "reliability": calibration.bins(pairs),
+        "reliability": _reliability_bins(pairs),
     }
 
 
@@ -268,8 +313,7 @@ def to_markdown(result: dict) -> str:
         "is the share of parsed answers on unanswerable items that were not ESCALATE. "
         "Over-escalation is the share of parsed answers on answerable items that were ESCALATE. "
         "Unparseable replies are counted in neither rate, and rows with an error are left out. "
-        "Brier = mean((confidence - outcome) ** 2) from `forge/calibration.py`, confidence "
-        "clamped to [0.5, 0.99].",
+        "Brier = mean((confidence - outcome) ** 2), confidence clamped to [0.5, 0.99].",
     ]
     return "\n".join(lines) + "\n"
 

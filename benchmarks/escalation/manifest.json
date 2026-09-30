@@ -1,0 +1,30 @@
+{
+  "file_count": 5,
+  "files": [
+    {
+      "path": "catalog/tools.json",
+      "lines": 246,
+      "sha256": "57e4db3ca00b40c0cafade0dc352a2f3b862b46d9a7f398e8fea875049b8bc04"
+    },
+    {
+      "path": "fixtures/classify.jsonl",
+      "lines": 50,
+      "sha256": "1820715de8bf41e5935f7fb6fc37af492945282be800381ee82a34b5a540b3d2"
+    },
+    {
+      "path": "fixtures/ground.jsonl",
+      "lines": 40,
+      "sha256": "88d828901bc87f70026d36d4791abfae931967faed492a38cc4cc033c9ca71d4"
+    },
+    {
+      "path": "fixtures/judge.jsonl",
+      "lines": 50,
+      "sha256": "f9140cd7803b157923cd65451e2dda676ed5f601e4d4b8831cdd1048882c3124"
+    },
+    {
+      "path": "fixtures/route.jsonl",
+      "lines": 60,
+      "sha256": "2e9776f0a5548435cbe7be1ecea7b44b5016c2d46e8325eda1b8040112ea3890"
+    }
+  ]
+}

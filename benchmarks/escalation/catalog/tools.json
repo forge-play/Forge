@@ -1,0 +1,246 @@
+{
+  "catalog": "everyday-tools-v1",
+  "note": "Twenty invented tools. Every name and description is fictional and authored for this benchmark.",
+  "tools": [
+    {
+      "name": "calendar_add_event",
+      "description": "Add an event to the user's calendar on a given date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {"type": "string"},
+          "date": {"type": "string", "description": "YYYY-MM-DD"},
+          "time": {"type": "string", "description": "HH:MM, 24-hour"}
+        },
+        "required": ["title", "date"]
+      }
+    },
+    {
+      "name": "calendar_list_events",
+      "description": "List the events on the user's calendar for one date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {"type": "string", "description": "YYYY-MM-DD"}
+        },
+        "required": ["date"]
+      }
+    },
+    {
+      "name": "weather_current",
+      "description": "Get the current weather conditions for a city.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "city": {"type": "string"}
+        },
+        "required": ["city"]
+      }
+    },
+    {
+      "name": "weather_forecast",
+      "description": "Get a multi-day weather forecast for a city.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "city": {"type": "string"},
+          "days": {"type": "integer", "description": "Number of days, 1 to 10"}
+        },
+        "required": ["city", "days"]
+      }
+    },
+    {
+      "name": "library_search",
+      "description": "Search the public library catalogue for books by keyword.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string"},
+          "author": {"type": "string"}
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "library_hold_book",
+      "description": "Place a hold on a library book for pickup at a branch.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "isbn": {"type": "string"},
+          "branch": {"type": "string"}
+        },
+        "required": ["isbn", "branch"]
+      }
+    },
+    {
+      "name": "recipe_search",
+      "description": "Find recipes that use a given main ingredient.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ingredient": {"type": "string"},
+          "diet": {"type": "string", "enum": ["any", "vegetarian", "vegan", "gluten_free"]}
+        },
+        "required": ["ingredient"]
+      }
+    },
+    {
+      "name": "recipe_scale",
+      "description": "Scale a saved recipe to a new number of servings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "recipe_id": {"type": "string"},
+          "servings": {"type": "integer"}
+        },
+        "required": ["recipe_id", "servings"]
+      }
+    },
+    {
+      "name": "transit_next_departure",
+      "description": "Get the next departure time of a bus or tram route at a stop.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "stop": {"type": "string"},
+          "route": {"type": "string"}
+        },
+        "required": ["stop", "route"]
+      }
+    },
+    {
+      "name": "transit_plan_trip",
+      "description": "Plan a public transit trip between two places.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "origin": {"type": "string"},
+          "destination": {"type": "string"}
+        },
+        "required": ["origin", "destination"]
+      }
+    },
+    {
+      "name": "convert_units",
+      "description": "Convert a quantity from one unit of measure to another.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "value": {"type": "number"},
+          "from_unit": {"type": "string"},
+          "to_unit": {"type": "string"}
+        },
+        "required": ["value", "from_unit", "to_unit"]
+      }
+    },
+    {
+      "name": "convert_currency",
+      "description": "Convert an amount of money between two currencies by ISO code.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "amount": {"type": "number"},
+          "from_code": {"type": "string"},
+          "to_code": {"type": "string"}
+        },
+        "required": ["amount", "from_code", "to_code"]
+      }
+    },
+    {
+      "name": "timezone_convert",
+      "description": "Convert a clock time from one time zone to another.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "time": {"type": "string", "description": "HH:MM, 24-hour"},
+          "from_zone": {"type": "string"},
+          "to_zone": {"type": "string"}
+        },
+        "required": ["time", "from_zone", "to_zone"]
+      }
+    },
+    {
+      "name": "dictionary_define",
+      "description": "Look up the definition of an English word.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "word": {"type": "string"}
+        },
+        "required": ["word"]
+      }
+    },
+    {
+      "name": "translate_text",
+      "description": "Translate a short text into a target language.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {"type": "string"},
+          "target_lang": {"type": "string", "description": "Two-letter language code"}
+        },
+        "required": ["text", "target_lang"]
+      }
+    },
+    {
+      "name": "tide_table",
+      "description": "Get the high and low tide times for a harbour on a date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "harbour": {"type": "string"},
+          "date": {"type": "string", "description": "YYYY-MM-DD"}
+        },
+        "required": ["harbour", "date"]
+      }
+    },
+    {
+      "name": "flight_status",
+      "description": "Get the status of a scheduled flight on a date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "flight_number": {"type": "string"},
+          "date": {"type": "string", "description": "YYYY-MM-DD"}
+        },
+        "required": ["flight_number", "date"]
+      }
+    },
+    {
+      "name": "parcel_track",
+      "description": "Track a parcel by its tracking number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tracking_number": {"type": "string"}
+        },
+        "required": ["tracking_number"]
+      }
+    },
+    {
+      "name": "reminder_set",
+      "description": "Set a reminder that fires at a given date and time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {"type": "string"},
+          "date": {"type": "string", "description": "YYYY-MM-DD"},
+          "time": {"type": "string", "description": "HH:MM, 24-hour"}
+        },
+        "required": ["text", "date", "time"]
+      }
+    },
+    {
+      "name": "math_evaluate",
+      "description": "Evaluate an arithmetic expression and return the number.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "expression": {"type": "string"}
+        },
+        "required": ["expression"]
+      }
+    }
+  ]
+}

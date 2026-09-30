@@ -4,7 +4,7 @@
 
 This paper moved to willows-grove, where the session flowchart lives:
 **`willow-memory/willows-grove` `docs/design/forge-convergence.md`**
-(branch `docs/forge-convergence`).
+(on `master`).
 
 Operator, 2026-09-23: "lets land the paper in the grove."
 

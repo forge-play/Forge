@@ -40,7 +40,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 MANIFEST_NAME = "manifest.json"
 DATA_DIRS = ("catalog", "fixtures")
-ALLOWED_OTHER = {"README.md", MANIFEST_NAME, "gate/privacy_gate.py"}
+ALLOWED_OTHER = {
+    "README.md",
+    MANIFEST_NAME,
+    "gate/privacy_gate.py",
+    "runner.py",
+    "aggregate.py",
+}
+PROMPT_DIR = "prompts"
 SKIP_DIRS = {"__pycache__"}
 DENYLIST_ENV = "ESCALATION_GATE_DENYLIST"
 
@@ -166,6 +173,14 @@ def iter_files(root: Path):
         yield p, "/".join(rel_parts)
 
 
+def is_allowed(rel: str) -> bool:
+    """Whether a path belongs in the layout: data files, listed scripts, prompt texts."""
+    parts = rel.split("/")
+    if parts[0] in DATA_DIRS or rel in ALLOWED_OTHER:
+        return True
+    return len(parts) == 2 and parts[0] == PROMPT_DIR and parts[1].endswith(".txt")
+
+
 def scan_file(path: Path, rel: str, denylist: list[str]) -> set[tuple[str, str]]:
     """Return {(class, location)} for one file."""
     out: set[tuple[str, str]] = set()
@@ -270,7 +285,7 @@ def run(root: Path, denylist_path: str | None) -> tuple[int, list[str]]:
     scanned = 0
     for path, rel in iter_files(root):
         scanned += 1
-        if rel.split("/")[0] not in DATA_DIRS and rel not in ALLOWED_OTHER:
+        if not is_allowed(rel):
             findings.add(("unexpected-file", rel))
         findings |= scan_file(path, rel, denylist)
     findings |= check_manifest(root)

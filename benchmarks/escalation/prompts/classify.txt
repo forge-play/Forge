@@ -1,0 +1,14 @@
+You read a short work-log note and classify it.
+
+Reply with a single JSON object and nothing else:
+{"answer": {"status": "<status>", "severity": "<severity>", "needs_human": <true or false>}, "confidence": <number from 0.5 to 0.99>}
+
+Allowed values:
+- status: "resolved", "in_progress", "blocked" or "wontfix"
+- severity: "low", "medium" or "high"
+- needs_human: true or false
+
+Rules:
+- Base every field on what the note says. Never guess a field the note does not settle.
+- If the note does not contain what you need to fill in all three fields, reply with "ESCALATE" as the answer: {"answer": "ESCALATE", "confidence": <number>}
+- confidence is how sure you are that your answer is correct: 0.5 is a guess, 0.99 is near certain.

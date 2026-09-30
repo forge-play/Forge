@@ -63,8 +63,10 @@ benchmarks/escalation/
   prompts/<shape>.txt  one system prompt per shape
   runner.py            puts the fixtures through a model backend, one JSON line per call
   aggregate.py         turns those rows into per-model, per-shape scores
+  socket_backend.py    a backend that reaches the model through a Unix-socket delegate
 tests/test_escalation_fixtures.py
 tests/test_escalation_runner.py
+tests/test_escalation_socket_backend.py
 ```
 
 ## Running a model
@@ -86,6 +88,24 @@ pipeline can be checked with no model. The aggregator reports, per model and
 shape, the task score, the false-confidence rate, the over-escalation rate, the
 unparseable rate (counted in neither rate) and a Brier score with a five-bin
 reliability table.
+
+Where the benchmark runs somewhere with no route to the model server, but a
+delegate on a Unix socket can reach it, use `socket_backend.py`. It sends the
+same request as `ollama_http` (temperature 0, the same answer schema, Qwen
+thinking off) and reads the socket path from `ESCALATION_SOCKET`. Its `ladder`
+command runs several models one at a time and asks the delegate to unload each
+before the next loads, so only one model is held in memory:
+
+```
+ESCALATION_SOCKET=... python benchmarks/escalation/socket_backend.py ladder --models llama3.2:1b,llama3.2:3b --out rows.jsonl --tail
+ESCALATION_SOCKET=... python benchmarks/escalation/socket_backend.py ladder --models llama3.2:1b,llama3.2:3b --out rows.jsonl --resume
+```
+
+`ladder` will not overwrite a rows file that already has rows. `--resume`
+continues it: rows already there are skipped and the rest are appended under the
+file's run id. An error row counts as done, because a failure is a result and is
+never retried; a torn last line left by a killed run is dropped. `--tail` prints
+one progress line per row as it is written.
 
 ## The authoring rule
 

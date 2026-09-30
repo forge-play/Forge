@@ -168,7 +168,12 @@ def test_ollama_http_builds_the_documented_request(monkeypatch):
             return False
 
         def read(self):
-            body = {"message": {"content": GOOD}, "prompt_eval_count": 5, "eval_count": 2}
+            body = {
+                "message": {"content": GOOD},
+                "prompt_eval_count": 5,
+                "eval_count": 2,
+                "done_reason": "stop",
+            }
             return json.dumps(body).encode()
 
     def fake_urlopen(req, timeout):
@@ -181,14 +186,14 @@ def test_ollama_http_builds_the_documented_request(monkeypatch):
     monkeypatch.setenv("OLLAMA_URL", "http://ollama.invalid:1234/")
     monkeypatch.setenv("OLLAMA_TIMEOUT", "7")
     out = runner.ollama_http("some-model", "SYS", "USER")
-    assert out == {"text": GOOD, "tokens_in": 5, "tokens_out": 2}
+    assert out == {"text": GOOD, "tokens_in": 5, "tokens_out": 2, "done_reason": "stop"}
     assert captured["url"] == "http://ollama.invalid:1234/api/chat"
     assert captured["timeout"] == 7.0
     body = captured["body"]
     assert body["model"] == "some-model"
     assert body["format"] == runner.ANSWER_SCHEMA and body["stream"] is False
     assert "think" not in body
-    assert body["options"] == {"temperature": 0}
+    assert body["options"] == {"temperature": 0, "num_predict": runner.MAX_OUTPUT_TOKENS}
     assert body["messages"] == [
         {"role": "system", "content": "SYS"},
         {"role": "user", "content": "USER"},
@@ -280,6 +285,54 @@ def test_a_parse_failure_row_is_counted_by_the_aggregator_not_silently_scored(mo
     cell = aggregate.aggregate([row], aggregate.load_truth())["qwen3.5"]["ground"]
     assert cell["n_unparseable"] == 1 and cell["n_correct"] == 0
     assert cell["n_calibrated"] == 0
+
+
+# --- output cap and truncation ----------------------------------------------------
+
+
+def test_every_request_carries_the_explicit_output_cap(monkeypatch):
+    bodies = _fake_ollama(monkeypatch)
+    for model in LOCAL_MODELS:
+        runner.make_ollama_http()(model, "SYS", "USER")
+    assert all(b["options"]["num_predict"] == runner.MAX_OUTPUT_TOKENS for b in bodies)
+    assert runner.MAX_OUTPUT_TOKENS == 512
+
+
+def test_a_length_stop_is_recorded_on_the_row_and_counted_as_truncated(monkeypatch):
+    class Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            cut = '{"answer": {"tool": "t", "args": {"x": '
+            return json.dumps({"message": {"content": cut}, "done_reason": "length"}).encode()
+
+    monkeypatch.setattr(runner.urllib.request, "urlopen", lambda req, timeout: Resp())
+    item = runner.load_fixtures("route")[0]
+    row = runner.make_row("r", "m", "route", item, "S", "U", runner.make_ollama_http())
+    assert row["done_reason"] == "length"
+    assert row["parse_ok"] is False and row["error"] is None
+    cell = aggregate.aggregate([row], aggregate.load_truth())["m"]["route"]
+    assert cell["n_truncated"] == 1
+    assert cell["n_unparseable"] == 1
+
+
+def test_a_normal_stop_is_not_truncated():
+    rows = [
+        {**_row("g1", "31 metres", 0.9), "done_reason": "stop"},
+        {**_row("g1", "31 metres", 0.9), "done_reason": None},
+    ]
+    cell = aggregate.aggregate(rows, _truth())["m"]["ground"]
+    assert cell["n_truncated"] == 0
+
+
+def test_an_error_row_is_never_counted_as_truncated():
+    row = {**_row("g1", None, None), "error": "TimeoutError: x", "done_reason": "length"}
+    cell = aggregate.aggregate([row], _truth())["m"]["ground"]
+    assert cell["n_errors"] == 1 and cell["n_truncated"] == 0
 
 
 # --- the dry run ----------------------------------------------------------------
@@ -509,7 +562,10 @@ def test_markdown_output_renders_a_table():
     assert header.startswith("| Model | Shape | Task score | False-confidence |")
     assert set(rule) <= {"|", "-"}
     assert header.count("|") == rule.count("|") == first.count("|")
-    assert "| m | ground | 25.0% (1/4) | 50.0% (1/2) | 33.3% (1/3) | 28.6% (2) | 1 | 0.382 |" in md
+    assert (
+        "| m | ground | 25.0% (1/4) | 50.0% (1/2) | 33.3% (1/3) | 28.6% (2) | 0 | 1 | 0.382 |" in md
+    )
+    assert "| Unparseable | Truncated | Errors |" in md
     assert "| m | all |" in md
     assert "| m | 0.9-1.0 | 2 | 0.900 | 50.0% |" in md
     assert "Brier = mean((confidence - outcome) ** 2)" in md

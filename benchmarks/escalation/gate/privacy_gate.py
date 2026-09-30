@@ -46,6 +46,7 @@ ALLOWED_OTHER = {
     "gate/privacy_gate.py",
     "runner.py",
     "aggregate.py",
+    "socket_backend.py",
 }
 PROMPT_DIR = "prompts"
 SKIP_DIRS = {"__pycache__"}

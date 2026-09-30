@@ -17,7 +17,10 @@ backend loads with ``--backend module:function``.
 Each row::
 
     {run_id, model, shape, fixture_id, prompt_sha256, raw, parsed, parse_ok,
-     answer, confidence, latency_ms, tokens_in, tokens_out, error}
+     answer, confidence, latency_ms, tokens_in, tokens_out, done_reason, error}
+
+``done_reason`` is the server's own (Ollama: ``stop``, or ``length`` when the reply hit
+``MAX_OUTPUT_TOKENS``), or null when the backend does not report one.
 
 ``prompt_sha256`` is the SHA-256 of ``system + "\\n---\\n" + user``.
 """
@@ -53,10 +56,16 @@ ROW_KEYS = (
     "latency_ms",
     "tokens_in",
     "tokens_out",
+    "done_reason",
     "error",
 )
 DEFAULT_OLLAMA_URL = "http://127.0.0.1:11434"
 DEFAULT_TIMEOUT_S = 300.0
+#: The output cap every backend sends (Ollama ``num_predict``). Explicit, so the
+#: server's own default (which has differed across versions) never decides it: too
+#: small cuts a route answer mid-JSON, unbounded lets a model pad under a schema until
+#: the call times out. A reply that hit the cap carries ``done_reason: "length"``.
+MAX_OUTPUT_TOKENS = 512
 
 
 # --- fixtures and prompts ----------------------------------------------------
@@ -166,7 +175,7 @@ def build_chat_payload(model: str, system: str, user: str) -> dict:
         ],
         "stream": False,
         "format": ANSWER_SCHEMA,
-        "options": {"temperature": 0},
+        "options": {"temperature": 0, "num_predict": MAX_OUTPUT_TOKENS},
     }
     if is_qwen(model):
         payload["think"] = False
@@ -192,6 +201,7 @@ def make_ollama_http(url: str = DEFAULT_OLLAMA_URL, timeout_s: float = DEFAULT_T
             "text": message.get("content", ""),
             "tokens_in": body.get("prompt_eval_count"),
             "tokens_out": body.get("eval_count"),
+            "done_reason": body.get("done_reason"),
         }
 
     return complete
@@ -259,6 +269,7 @@ def make_row(run_id: str, model: str, shape: str, item: dict, system: str, user:
     row["raw"] = text if isinstance(text, str) or text is None else str(text)
     row["tokens_in"] = result.get("tokens_in")
     row["tokens_out"] = result.get("tokens_out")
+    row["done_reason"] = result.get("done_reason")
     parsed = parse_reply(row["raw"])
     if parsed is not None:
         row["parsed"] = parsed

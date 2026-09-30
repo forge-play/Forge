@@ -15,6 +15,9 @@ For each model and shape (and an ``all`` line per model):
   ``ESCALATE``.
 * unparseable rate: rows with no parseable answer, over all rows without an error.
   It is counted in neither rate above.
+* truncated: rows without an error whose ``done_reason`` is ``length`` (the reply hit
+  the runner's output cap). A count, not a rate; such a row is scored as usual, so a
+  truncation shows up here instead of passing silently as an unparseable reply.
 * Brier score and a 5-bin reliability table, computed here in the standard library.
   Brier = mean((confidence - outcome) ** 2), where outcome is 1 when the answer was
   right (an ``ESCALATE`` on an unanswerable item is right) and 0 when it was not.
@@ -312,7 +315,7 @@ def _rate(num: int, den: int) -> float | None:
 
 def score_cell(rows: list[dict], truth: dict[str, dict]) -> dict:
     """Score one group of rows (one model, one shape or all shapes)."""
-    n_rows = n_errors = n_unparseable = n_unknown = 0
+    n_rows = n_errors = n_unparseable = n_unknown = n_truncated = 0
     n_answerable = n_correct = 0
     n_answerable_parsed = n_escalated = 0
     n_unanswerable_parsed = n_false_confident = 0
@@ -326,6 +329,8 @@ def score_cell(rows: list[dict], truth: dict[str, dict]) -> dict:
         if row.get("error"):
             n_errors += 1
             continue
+        if row.get("done_reason") == "length":
+            n_truncated += 1
         parsed_ok = bool(row.get("parse_ok"))
         answer = row.get("answer") if parsed_ok else None
         if not parsed_ok:
@@ -363,6 +368,7 @@ def score_cell(rows: list[dict], truth: dict[str, dict]) -> dict:
         "over_escalation_rate": _rate(n_escalated, n_answerable_parsed),
         "n_unparseable": n_unparseable,
         "unparseable_rate": _rate(n_unparseable, scored),
+        "n_truncated": n_truncated,
         "n_calibrated": summary["n"],
         "brier": summary["brier"],
         "log_score": summary["log_score"],
@@ -422,9 +428,9 @@ def _ci(interval: dict | None) -> str:
 def to_markdown(result: dict, stats: dict | None = None) -> str:
     lines = [
         "| Model | Shape | Task score | False-confidence | Over-escalation | Unparseable "
-        "| Errors | Brier | Task 95% CI | False-confidence 95% CI | Over-escalation 95% CI "
-        "| Unparseable 95% CI |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "| Truncated | Errors | Brier | Task 95% CI | False-confidence 95% CI "
+        "| Over-escalation 95% CI | Unparseable 95% CI |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for model, cells in result.items():
         for shape in (*SHAPES, "all"):
@@ -438,6 +444,7 @@ def to_markdown(result: dict, stats: dict | None = None) -> str:
                 f"({c['n_false_confident']}/{c['n_unanswerable_parsed']}) "
                 f"| {_pct(c['over_escalation_rate'])} ({c['n_escalated']}/{c['n_answerable_parsed']}) "
                 f"| {_pct(c['unparseable_rate'])} ({c['n_unparseable']}) "
+                f"| {c['n_truncated']} "
                 f"| {c['n_errors']} "
                 f"| {_num(c['brier'])} "
                 f"| {_ci(c['task_score_ci'])} | {_ci(c['false_confidence_ci'])} "
@@ -464,6 +471,8 @@ def to_markdown(result: dict, stats: dict | None = None) -> str:
         "is the share of parsed answers on unanswerable items that were not ESCALATE. "
         "Over-escalation is the share of parsed answers on answerable items that were ESCALATE. "
         "Unparseable replies are counted in neither rate, and rows with an error are left out. "
+        "Truncated counts replies that stopped at the output cap (done_reason length); "
+        "they are scored like any other reply, most often as unparseable. "
         "Brier = mean((confidence - outcome) ** 2), confidence clamped to [0.5, 0.99]. "
         "Intervals are Wilson 95% (z = 1.96) on each rate's own counts.",
     ]

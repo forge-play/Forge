@@ -60,8 +60,32 @@ benchmarks/escalation/
   catalog/tools.json   the 20 invented tools the route items are written against
   fixtures/*.jsonl     the four fixture files
   gate/privacy_gate.py the privacy gate (stdlib only)
+  prompts/<shape>.txt  one system prompt per shape
+  runner.py            puts the fixtures through a model backend, one JSON line per call
+  aggregate.py         turns those rows into per-model, per-shape scores
 tests/test_escalation_fixtures.py
+tests/test_escalation_runner.py
 ```
+
+## Running a model
+
+The runner needs no dependencies. A backend is one callable,
+`complete(model, system, user) -> {text, tokens_in?, tokens_out?}`. The built-in
+`ollama_http` backend calls Ollama's `/api/chat` at temperature 0 with JSON output;
+any other backend loads with `--backend module:function`. Nothing is retried: a
+timeout or an exception becomes a row with `error` set.
+
+```
+python benchmarks/escalation/runner.py --dry-run --limit 5 --out rows.jsonl
+python benchmarks/escalation/runner.py --models llama3.2:3b --ollama-url http://127.0.0.1:11434 --out rows.jsonl
+python benchmarks/escalation/aggregate.py rows.jsonl --format md
+```
+
+`--dry-run` uses a built-in backend that always answers `ESCALATE`, so the
+pipeline can be checked with no model. The aggregator reports, per model and
+shape, the task score, the false-confidence rate, the over-escalation rate, the
+unparseable rate (counted in neither rate) and a Brier score with a five-bin
+reliability table.
 
 ## The authoring rule
 

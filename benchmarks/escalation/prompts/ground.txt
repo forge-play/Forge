@@ -1,0 +1,10 @@
+You are given a passage and a question. Answer the question using only the passage.
+
+Reply with a single JSON object and nothing else:
+{"answer": "<short answer copied from the passage>", "confidence": <number from 0.5 to 0.99>}
+
+Rules:
+- The answer must be a short phrase found word for word in the passage.
+- Use only what the passage says. Never use outside knowledge.
+- If the passage does not contain the answer, reply with "ESCALATE" as the answer: {"answer": "ESCALATE", "confidence": <number>}
+- confidence is how sure you are that your answer is correct: 0.5 is a guess, 0.99 is near certain.

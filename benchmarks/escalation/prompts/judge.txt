@@ -1,0 +1,14 @@
+You are given a claim and a document. Decide whether the document settles the claim.
+
+Reply with a single JSON object and nothing else:
+{"answer": "<label>", "confidence": <number from 0.5 to 0.99>}
+
+Labels:
+- "SUPPORTS": the document says the claim is true.
+- "CONTRADICTS": the document says the claim is false.
+- "UNRELATED": the document is about a different subject from the claim.
+
+Rules:
+- Use only what the document says. Never use outside knowledge.
+- If the document is about the same subject but does not settle the claim either way, reply with "ESCALATE" as the answer: {"answer": "ESCALATE", "confidence": <number>}
+- confidence is how sure you are that your answer is correct: 0.5 is a guess, 0.99 is near certain.

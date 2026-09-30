@@ -606,6 +606,29 @@ def test_mcnemar_uses_only_shared_parsed_items():
     assert out["n_shared"] == 10  # u1 has no B row; u2's B reply is unparseable
 
 
+def test_mcnemar_counts_unanswerable_items_only():
+    # Answerable items that split the two models must not reach b, c, n_shared or p.
+    truth = _pair_truth()
+    rows = _pair_rows()
+    for i, (a_ans, b_ans) in enumerate(
+        [
+            ("ESCALATE", "31 metres"),
+            ("ESCALATE", "31 metres"),
+            ("ESCALATE", "31 metres"),
+            ("31 metres", "ESCALATE"),
+        ],
+        start=1,
+    ):
+        fid = f"a{i}"
+        truth[fid] = {"shape": "ground", "expected": "31 metres", "answerable": True}
+        for model, ans in (("A", a_ans), ("B", b_ans)):
+            rows.append({**rows[0], "model": model, "fixture_id": fid, "answer": ans})
+    out = aggregate.pair_test(rows, truth, "A", "B")
+    # Counting the answerable items would give b = 8, c = 2, n_shared = 16, p = 112 / 1024.
+    assert (out["b"], out["c"], out["n_shared"], out["n_discordant"]) == (5, 1, 12, 6)
+    assert out["p_value"] == pytest.approx(14 / 64)
+
+
 def test_spearman_known_values():
     assert aggregate.spearman([1, 2, 3, 4], [10, 20, 30, 40]) == pytest.approx(1.0)
     assert aggregate.spearman([1, 2, 3, 4], [4, 3, 2, 1]) == pytest.approx(-1.0)

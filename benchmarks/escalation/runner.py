@@ -10,7 +10,8 @@ A backend is one callable::
     complete(model: str, system: str, user: str) -> dict   # {text, tokens_in?, tokens_out?}
 
 Built in: ``ollama_http`` (Ollama's ``/api/chat``, temperature 0, answers constrained by a
-JSON schema, Qwen thinking off via ``think: false`` plus a ``/no_think`` suffix)
+JSON schema, thinking off via ``think: false`` for Qwen and Gemma 4, plus a
+``/no_think`` suffix for Qwen)
 and, with ``--dry-run``, an echo backend that needs no model at all. Any other
 backend loads with ``--backend module:function``.
 
@@ -158,12 +159,24 @@ def is_qwen(model: str) -> bool:
     return "qwen" in model.lower()
 
 
-def build_chat_payload(model: str, system: str, user: str) -> dict:
-    """The ``/api/chat`` body. Qwen models get thinking switched off twice.
+def is_gemma4(model: str) -> bool:
+    return model.lower().startswith("gemma4")
 
-    Ollama does not honour ``think: false`` alone for Qwen3 (ollama#12086), so a Qwen
-    request also ends its user turn with ``/no_think``. Other models get neither: some
-    refuse a ``think`` field outright. Every model is held to ``ANSWER_SCHEMA``.
+
+def thinks_by_default(model: str) -> bool:
+    """Models that reason before answering unless told not to. Every model in the
+    benchmark answers directly, so these get ``think: false``."""
+    return is_qwen(model) or is_gemma4(model)
+
+
+def build_chat_payload(model: str, system: str, user: str) -> dict:
+    """The ``/api/chat`` body. Thinking is off for every model that thinks by default.
+
+    Qwen and Gemma 4 reason before answering unless told not to; both get
+    ``think: false``, so every model answers on the same terms. Ollama does not
+    honour ``think: false`` alone for Qwen3 (ollama#12086), so a Qwen request also
+    ends its user turn with ``/no_think``. Other models get no ``think`` field: some
+    refuse it outright. Every model is held to ``ANSWER_SCHEMA``.
     """
     if is_qwen(model):
         user = f"{user}\n{NO_THINK_SUFFIX}"
@@ -177,7 +190,7 @@ def build_chat_payload(model: str, system: str, user: str) -> dict:
         "format": ANSWER_SCHEMA,
         "options": {"temperature": 0, "num_predict": MAX_OUTPUT_TOKENS},
     }
-    if is_qwen(model):
+    if thinks_by_default(model):
         payload["think"] = False
     return payload
 

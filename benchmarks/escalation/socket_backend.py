@@ -97,7 +97,7 @@ def call(req: dict, path: str | None = None, timeout_s: float | None = None) -> 
 def chat_request(model: str, system: str, user: str) -> dict:
     """The delegate ``chat`` request: the same knobs ``build_chat_payload`` sets."""
     payload = runner.build_chat_payload(model, system, user)
-    return {
+    req = {
         "op": "chat",
         "model": model,
         "system": payload["messages"][0]["content"],
@@ -107,6 +107,10 @@ def chat_request(model: str, system: str, user: str) -> dict:
         "format": payload["format"],
         "keep_alive": os.environ.get("ESCALATION_KEEP_ALIVE", DEFAULT_KEEP_ALIVE),
     }
+    # Only when the payload carries it: some models refuse a think field outright.
+    if "think" in payload:
+        req["think"] = payload["think"]
+    return req
 
 
 def complete(model: str, system: str, user: str) -> dict:

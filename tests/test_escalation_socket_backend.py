@@ -113,6 +113,18 @@ def test_chat_request_matches_the_ollama_http_payload(delegate):
     assert req["max_tokens"] == payload["options"]["num_predict"]
 
 
+@pytest.mark.parametrize("model", ["gemma4:e2b", "qwen3:4b", "qwen3.5:latest"])
+def test_thinking_off_reaches_the_delegate_for_models_that_think(delegate, model):
+    backend.complete(model, "sys", "usr")
+    assert delegate.seen[0]["think"] is False
+
+
+@pytest.mark.parametrize("model", ["llama3.2:3b", "gemma3:4b", "phi4-mini:latest"])
+def test_no_think_field_for_models_that_do_not_think(delegate, model):
+    backend.complete(model, "sys", "usr")
+    assert "think" not in delegate.seen[0]
+
+
 def test_a_length_stop_from_the_delegate_reaches_the_row(delegate):
     delegate.replies["chat"] = {"ok": True, "text": '{"answer": ', "done_reason": "length"}
     buf = io.StringIO()

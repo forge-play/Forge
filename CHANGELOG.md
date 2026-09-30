@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.1](https://github.com/forge-play/Forge/compare/v0.8.0...v0.8.1) (2026-09-30)
+
+
+### Fixed
+
+* **human_loop:** break same-timestamp ties so list_queue is newest-first on coarse clocks ([19b68a9](https://github.com/forge-play/Forge/commit/19b68a9a0f077b90f3298f26dec1e9b84b5f2477))
+* **human_loop:** break same-timestamp ties so list_queue is newest-first on coarse clocks ([762fdd5](https://github.com/forge-play/Forge/commit/762fdd5642f38d07c640d95f40f47d0bfb228346))
+
 ## [0.8.0](https://github.com/forge-play/Forge/compare/v0.7.3...v0.8.0) (2026-09-30)
 
 

@@ -134,19 +134,16 @@ def _body(shape: str, *, drop_typed: bool = False) -> str:
     return body.replace(shape, "SHAPE_WORD")
 
 
-def test_judge_and_ground_task_files_differ_only_by_shape():
-    assert _body("judge") == _body("ground")
-
-
-def test_route_and_classify_task_files_differ_only_by_shape_and_the_typed_answer():
+def test_the_four_task_files_differ_only_by_shape_and_the_typed_answer():
     """The typed answer schema is the one deliberate hosted/local difference per shape."""
-    assert _body("route", drop_typed=True) == _body("classify", drop_typed=True)
-    for shape in ("route", "classify"):
+    bodies = {shape: _body(shape, drop_typed=True) for shape in SHAPES}
+    assert all(body == bodies["route"] for body in bodies.values())
+    for shape in SHAPES:
         text = _task_text(shape)
         assert text.count("# --- typed answer schema") == 1
         assert "hosted/local difference" in text.split("# %%")[1].lower()  # the header says so
-    for shape in ("judge", "ground"):
-        assert "typed answer schema" not in _task_text(shape)  # judge and ground are unchanged
+        assert "dict[str, Any]" not in text
+        assert not re.search(r"^from typing import .*\bAny\b", text, re.M)
 
 
 # --- hosted parity: schema, output cap, done_reason -------------------------------------
@@ -297,9 +294,6 @@ def _run_task(
     return module, ns
 
 
-TYPED_LABEL = {"route": "answer-typed", "classify": "answer-typed"}
-
-
 @pytest.mark.parametrize("shape", SHAPES)
 def test_the_schema_reaches_respond_for_every_shape(shape, monkeypatch, tmp_path):
     module, ns = _run_task(shape, monkeypatch, tmp_path)
@@ -311,7 +305,7 @@ def test_the_schema_reaches_respond_for_every_shape(shape, monkeypatch, tmp_path
     for call in ns.llm.calls:
         assert call["schema"] is module.Answer
         assert call["seed"] == 0 and call["temperature"] == 0
-    assert {r["schema"] for r in ns.results} == {TYPED_LABEL.get(shape, "answer")}
+    assert {r["schema"] for r in ns.results} == {"answer-typed"}
 
 
 def test_the_schema_can_be_switched_off_and_the_row_says_so(monkeypatch, tmp_path):
@@ -417,9 +411,17 @@ def test_missing_done_reason_is_unknown_not_zero():
     assert "unknown" not in local_md and "no finish reason" not in local_md
 
 
-# --- typed answer schemas (route, classify) -------------------------------------------
+# --- typed answer schemas (all four shapes) -------------------------------------------
 
-TYPED = ("route", "classify")
+TYPED = SHAPES
+# The JSON types each typed ``answer`` admits. Judge and ground are scored as strings only
+# (aggregate.answers_match), so they have no object arm.
+ARMS = {
+    "route": {"object", "string"},
+    "classify": {"object", "string"},
+    "judge": {"string"},
+    "ground": {"string"},
+}
 
 
 def _answer_class(shape, monkeypatch, tmp_path):
@@ -438,25 +440,111 @@ def _walk(node):
             yield from _walk(value)
 
 
+def openai_strict_problems(schema: dict) -> list[str]:
+    """What OpenAI strict structured output would refuse in a JSON schema (empty: accepted).
+
+    Strict mode wants every object closed (``additionalProperties: false``), with named
+    ``properties`` and every one of them in ``required``, and no ``$ref`` left for the SDK
+    to resolve. An open object (``dict[str, Any]``) fails the first two: gpt-5.4-nano answered
+    90 of 90 judge and ground calls with a 400 on ``additionalProperties`` for that reason.
+    """
+    problems = []
+    for node in _walk(schema):
+        if "$ref" in node:
+            problems.append(f"unresolved $ref {node['$ref']}")
+        if node.get("type") != "object" and "properties" not in node:
+            continue
+        where = f"object with {sorted(node.get('properties', {}))}"
+        if not node.get("properties"):
+            problems.append(f"{where}: open object, no properties")
+        if node.get("additionalProperties") is not False:
+            problems.append(f"{where}: additionalProperties is not false")
+        if set(node.get("required", [])) != set(node.get("properties", {})):
+            problems.append(f"{where}: required is not every property")
+    return problems
+
+
+def test_the_strict_check_refuses_the_old_open_object_and_the_other_open_forms():
+    """The check is only worth having if it fails on the schema that failed on OpenAI."""
+    pydantic = pytest.importorskip("pydantic")
+    from typing import Any
+
+    class Old(pydantic.BaseModel):  # judge's and ground's answer at 278b871
+        answer: str | dict[str, Any]
+        confidence: float
+
+    problems = openai_strict_problems(Old.model_json_schema())
+    assert any("additionalProperties is not false" in p for p in problems), problems
+    assert any("open object, no properties" in p for p in problems), problems
+
+    class Closed(pydantic.BaseModel):
+        model_config = pydantic.ConfigDict(extra="forbid")
+        answer: str
+        confidence: float
+
+    good = Closed.model_json_schema()
+    assert openai_strict_problems(good) == []
+    for edit in (
+        lambda s: s.pop("additionalProperties"),
+        lambda s: s.__setitem__("additionalProperties", True),
+        lambda s: s["required"].remove("confidence"),
+        lambda s: s.pop("properties"),
+        lambda s: s["properties"].__setitem__("note", {"$ref": "#/$defs/Note"}),
+    ):
+        schema = json.loads(json.dumps(good))
+        edit(schema)
+        assert openai_strict_problems(schema), schema
+
+
 @pytest.mark.parametrize("shape", TYPED)
 def test_the_typed_answer_schema_has_no_open_object(shape, monkeypatch, tmp_path):
     """The defect (gap a84645278b60): an ``answer`` with no properties lets a hosted
-    structured-output API emit only ``{}``. Every object in the schema now names its
-    properties, requires all of them, and refuses extras; ESCALATE stays a string arm."""
+    structured-output API emit only ``{}``; and OpenAI strict mode refuses any open object
+    outright. Every object in the schema names its properties, requires all of them, and
+    refuses extras. ESCALATE stays expressible: a string arm."""
     schema = _answer_class(shape, monkeypatch, tmp_path).Answer.model_json_schema()
     assert "$defs" not in schema and "$ref" not in json.dumps(schema)  # SDK keeps response_format
+    assert openai_strict_problems(schema) == []
     objects = [n for n in _walk(schema) if n.get("type") == "object"]
-    # the envelope and the answer object(s): route has one call and one args object per tool
-    assert len(objects) >= (1 + 2 * 20 if shape == "route" else 2)
+    # the envelope and the answer object(s): route has one call and one args object per tool;
+    # judge and ground have the envelope only
+    assert len(objects) >= {"route": 1 + 2 * 20, "classify": 2, "judge": 1, "ground": 1}[shape]
     for node in objects:
         assert node.get("properties"), f"open object in the {shape} schema: {node}"
         assert set(node["required"]) == set(node["properties"])
         assert node["additionalProperties"] is False
-    arms = schema["properties"]["answer"]["anyOf"]
-    assert {"const": "ESCALATE", "type": "string"} in [
-        {k: v for k, v in arm.items() if k in ("const", "type")} for arm in arms
-    ]
-    assert {arm["type"] for arm in arms} == {"object", "string"}
+    answer = schema["properties"]["answer"]
+    arms = answer.get("anyOf", [answer])
+    assert {arm["type"] for arm in arms} == ARMS[shape]
+    escalate = [a for a in arms if a.get("const") == "ESCALATE" or "ESCALATE" in a.get("enum", [])]
+    assert escalate or shape == "ground"  # ground's string arm is any phrase, ESCALATE included
+    assert any(arm["type"] == "string" for arm in arms)
+
+
+def test_the_judge_schema_matches_the_prompt_and_the_fixtures(monkeypatch, tmp_path):
+    module = _answer_class("judge", monkeypatch, tmp_path)
+    answer = module.Answer.model_json_schema()["properties"]["answer"]
+    labels = set(answer["enum"])
+    assert answer["type"] == "string" and len(answer["enum"]) == len(labels) == 4
+    prompt = runner.system_prompt("judge")
+    for label in labels:
+        assert f'"{label}"' in prompt, label
+    # exactly what the scorer can credit: every fixture's expected label, nothing else
+    assert labels == {item["expected"] for item in runner.load_fixtures("judge")}
+
+
+def test_the_ground_answer_is_a_plain_string_because_the_scorer_only_reads_strings(
+    monkeypatch, tmp_path
+):
+    module = _answer_class("ground", monkeypatch, tmp_path)
+    assert module.Answer.model_json_schema()["properties"]["answer"] == {
+        "title": "Answer",
+        "type": "string",
+    }
+    for item in runner.load_fixtures("ground"):
+        assert isinstance(item["expected"], str), item["id"]
+    assert aggregate.answers_match("ground", {"a": 1}, "x") is False  # an object never scores
+    assert aggregate.answers_match("judge", {"a": 1}, "SUPPORTS") is False
 
 
 def test_the_route_schema_matches_the_catalogue(monkeypatch, tmp_path):
@@ -598,12 +686,15 @@ def test_every_fixture_answer_is_expressible_in_the_typed_schema(shape, monkeypa
 def test_the_guard_accepts_the_runner_schema_and_refuses_a_real_mismatch(
     shape, monkeypatch, tmp_path
 ):
-    """Rule: same envelope fields, same required set, same ``confidence`` type, and the typed
-    ``answer`` admits exactly the JSON types the export's ``answer`` admits (object, string)."""
+    """Rule: same envelope fields, same required set, same ``confidence`` type; the export's
+    arms stay within (object, string); the typed ``answer`` keeps the string arm and adds no
+    arm the export lacks. A typed answer narrower than the export (judge, ground: no object
+    arm, because the scorer reads strings only) is accepted; a typed arm the export lacks, a
+    lost string arm and a changed export are refused."""
     module = _answer_class(shape, monkeypatch, tmp_path)
     good = json.loads(json.dumps(runner.ANSWER_SCHEMA))
     module.check_exported_schema(good)
-    assert module.answer_arm_types() == {"object", "string"}
+    assert module.answer_arm_types() == ARMS[shape]
 
     def broken(edit):
         schema = json.loads(json.dumps(good))
@@ -616,11 +707,21 @@ def test_the_guard_accepts_the_runner_schema_and_refuses_a_real_mismatch(
     broken(lambda s: s["properties"]["confidence"].update(type="string"))
     broken(lambda s: s["properties"]["answer"]["anyOf"].append({"type": "array"}))  # a new arm
     broken(lambda s: s["properties"]["answer"]["anyOf"].pop(0))  # a dropped string arm
-    broken(lambda s: s["properties"]["answer"]["anyOf"].pop(1))  # a dropped object arm
-    # the typed side losing an arm is refused too
+    broken(lambda s: s["properties"]["answer"].pop("anyOf"))  # no arms at all
+    dropped_object = json.loads(json.dumps(good))
+    dropped_object["properties"]["answer"]["anyOf"].pop(1)  # the export loses its object arm
+    if "object" in ARMS[shape]:
+        with pytest.raises(ValueError, match="no longer matches"):
+            module.check_exported_schema(dropped_object)  # the typed object arm has no export
+    else:
+        module.check_exported_schema(dropped_object)  # a string-only shape does not need it
+    # the typed side losing its string arm, or gaining an arm the export lacks, is refused
     monkeypatch.setattr(module, "answer_arm_types", lambda *_: {"object"})
     with pytest.raises(ValueError, match="no longer matches"):
         module.check_exported_schema(good)
+    monkeypatch.setattr(module, "answer_arm_types", lambda *_: {"object", "string"})
+    with pytest.raises(ValueError, match="no longer matches"):
+        module.check_exported_schema(dropped_object)
 
 
 def test_the_export_still_carries_the_open_runner_schema():
@@ -1102,6 +1203,52 @@ def test_a_deepseek_reply_parses_through_the_real_sdk_on_every_shape(
         assert r["reasoning"] is None and r["cap"] == {"max_tokens": 512}
     # nothing the proxy might refuse was added for deepseek: no reasoning_effort
     assert all("reasoning_effort" not in body and body["max_tokens"] == 512 for body in seen)
+
+
+NANO = "openai/gpt-5.4-nano-2026-03-17"
+
+
+def _sent_schema(body: dict) -> dict:
+    """The JSON schema the real SDK put on the wire as the strict ``response_format``."""
+    fmt = body["response_format"]
+    assert fmt["type"] == "json_schema" and fmt["json_schema"]["strict"] is True, fmt
+    return fmt["json_schema"]["schema"]
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+def test_the_request_the_real_sdk_sends_passes_the_openai_strict_check(
+    shape, monkeypatch, tmp_path
+):
+    """smoke3: every gpt-5.4-nano judge and ground call was a 400 on the sent schema. The
+    request body the real SDK builds for the typed ``Answer`` now has no open object."""
+    pytest.importorskip("pydantic")
+    seen: list = []
+    real = _real_sdk_llm(True, BODY_JSON, seen, model=NANO)
+    _, ns = _run_task(shape, monkeypatch, tmp_path, real=real, model=NANO)
+    assert len(ns.results) == len(seen) == 2
+    for r in ns.results:
+        assert r["error"] is None, r
+        assert json.loads(r["text"]) == PARSED and r["schema"] == "answer-typed"
+    for body in seen:
+        assert openai_strict_problems(_sent_schema(body)) == []
+        assert "temperature" not in body and body["max_completion_tokens"] == 512
+
+
+def test_the_old_open_answer_fails_the_strict_check_on_the_real_sdk_request():
+    """The control: the same real-SDK path with judge's old ``str | dict[str, Any]`` answer
+    sends a schema the check refuses, which is the schema OpenAI answered with a 400."""
+    pydantic = pytest.importorskip("pydantic")
+    from typing import Any
+
+    class OldAnswer(pydantic.BaseModel):
+        answer: str | dict[str, Any]
+        confidence: float
+
+    seen: list = []
+    llm, _ = _real_sdk_llm(True, BODY_JSON, seen, model=NANO)
+    llm.respond(schema=OldAnswer)
+    problems = openai_strict_problems(_sent_schema(seen[0]))
+    assert any("additionalProperties is not false" in p for p in problems), problems
 
 
 # --- converter -------------------------------------------------------------------

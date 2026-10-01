@@ -289,20 +289,26 @@ def find_prompts() -> Path:
 def check_exported_schema(exported: dict) -> None:
     """Refuse an exported schema the typed ``Answer`` does not cover.
 
-    The typed model is narrower than the exported one by design (explicit objects, not an
-    open object), so equality is not the rule. The rule: the same envelope fields, the same
-    required set, the same JSON type for ``confidence``, and the typed ``answer`` admits
-    every JSON type the exported ``answer`` admits and no other (object and string). A
-    dropped ESCALATE string, a dropped object arm, or a type added to the export is refused.
+    The typed model may be narrower than the exported one (the export's open object has no
+    typed form), so equality is not the rule. The rule: the same envelope fields, the same
+    required set, the same JSON type for ``confidence``; the export's ``answer`` arms stay
+    within the runner's vocabulary (object, string); and the typed ``answer`` keeps the string
+    arm (ESCALATE is a string) and adds no arm the export lacks. A typed answer may drop an
+    arm the scorer cannot use for the shape (a string-only shape has no object arm), never
+    gain one. A dropped string arm, a type added to the export, or a type added to the typed
+    side is refused.
     """
     fields = set(Answer.model_fields)
     typed = Answer.model_json_schema()["properties"]
-    answer_arms = {arm.get("type") for arm in exported["properties"]["answer"].get("anyOf", [])}
+    exported_arms = {arm.get("type") for arm in exported["properties"]["answer"].get("anyOf", [])}
+    typed_arms = answer_arm_types()
     if (
         set(exported["properties"]) != fields
         or set(exported["required"]) != fields
         or exported["properties"]["confidence"].get("type") != typed["confidence"].get("type")
-        or answer_arms != answer_arm_types()
+        or not exported_arms <= {"object", "string"}
+        or "string" not in typed_arms
+        or not typed_arms <= exported_arms
     ):
         raise ValueError("the exported answer schema no longer matches the Answer type")
 

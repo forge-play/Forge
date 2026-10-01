@@ -5,6 +5,13 @@
 # say ESCALATE when the document is on the subject but silent? This task only collects replies. It sends each exported prompt (system + user)
 # at temperature 0 and seed 0 and records the raw reply text per item. The reply is held to the
 # answer schema and the output cap; nothing is scored here; the benchmark's own aggregator scores the downloaded run files.
+#
+# Hosted/local difference: the local runner sends ``runner.ANSWER_SCHEMA``, whose ``answer``
+# is "a string or an open object". OpenAI strict structured output refuses an open object
+# (every object needs ``additionalProperties: false``), so gpt-5.x answered every call with a
+# 400. A judge answer is only ever one of four strings (aggregate.answers_match scores a
+# string label), so here ``answer`` is typed as exactly those labels, ESCALATE among them. The
+# reply text is the same JSON the aggregator reads for a local reply.
 
 # %%
 import json
@@ -12,12 +19,12 @@ import os
 import re
 import time
 from pathlib import Path
-from typing import Any
+from typing import Literal
 
 import kaggle_benchmarks as kbench
 import pandas as pd
 from kaggle_benchmarks.prompting import ResponseParsingError
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 SHAPE = "judge"
 DATASET_SLUG = "escalation-benchmark"
@@ -199,11 +206,35 @@ def recover_reply(raw: str, answer_type: type[BaseModel], **dump) -> tuple[str, 
 # --- end model settings ---
 
 
-class Answer(BaseModel):
-    """The reply envelope: runner.ANSWER_SCHEMA as a type the SDK accepts."""
+# --- typed answer schema (hosted/local difference; a test pins it to the prompt) ---
+ESCALATE = "ESCALATE"
+SCHEMA_LABEL = "answer-typed"  # the per-row ``schema`` value when the typed schema is sent
+_STRICT = ConfigDict(extra="forbid")
 
-    answer: str | dict[str, Any]
+
+class Answer(BaseModel):
+    """The reply envelope: ``answer`` is one of the labels prompts/judge.txt allows."""
+
+    model_config = _STRICT
+
+    answer: Literal["SUPPORTS", "CONTRADICTS", "UNRELATED", "ESCALATE"]
     confidence: float
+
+
+def answer_arm_types(model: type[BaseModel] = Answer) -> set[str]:
+    """The JSON types the typed ``answer`` admits: "object" and "string", read off its schema."""
+    schema = model.model_json_schema()
+    arms: set[str] = set()
+    stack = [schema["properties"]["answer"]]
+    while stack:
+        node = stack.pop()
+        stack.extend(node.get("anyOf", []))
+        if node.get("type") in ("object", "string"):
+            arms.add(node["type"])
+    return arms
+
+
+# --- end typed answer schema ---
 
 
 # %%
@@ -221,20 +252,46 @@ def find_prompts() -> Path:
     raise FileNotFoundError(f"{SHAPE}.jsonl not found under {root}; attach the dataset")
 
 
+def check_exported_schema(exported: dict) -> None:
+    """Refuse an exported schema the typed ``Answer`` does not cover.
+
+    The typed model may be narrower than the exported one (the export's open object has no
+    typed form), so equality is not the rule. The rule: the same envelope fields, the same
+    required set, the same JSON type for ``confidence``; the export's ``answer`` arms stay
+    within the runner's vocabulary (object, string); and the typed ``answer`` keeps the string
+    arm (ESCALATE is a string) and adds no arm the export lacks. A typed answer may drop an
+    arm the scorer cannot use for the shape (a string-only shape has no object arm), never
+    gain one. A dropped string arm, a type added to the export, or a type added to the typed
+    side is refused.
+    """
+    fields = set(Answer.model_fields)
+    typed = Answer.model_json_schema()["properties"]
+    exported_arms = {arm.get("type") for arm in exported["properties"]["answer"].get("anyOf", [])}
+    typed_arms = answer_arm_types()
+    if (
+        set(exported["properties"]) != fields
+        or set(exported["required"]) != fields
+        or exported["properties"]["confidence"].get("type") != typed["confidence"].get("type")
+        or not exported_arms <= {"object", "string"}
+        or "string" not in typed_arms
+        or not typed_arms <= exported_arms
+    ):
+        raise ValueError("the exported answer schema no longer matches the Answer type")
+
+
 def load_frame() -> pd.DataFrame:
     """One row per item: item_id, system, user. ESCALATION_LIMIT keeps the first N."""
     rows = []
+    checked = None
     for line in find_prompts().read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
         item = json.loads(line)
         system, user = item["messages"]
         assert system["role"] == "system" and user["role"] == "user"
-        exported = item["schema"]
-        if set(exported["properties"]) != set(Answer.model_fields) or set(
-            exported["required"]
-        ) != set(Answer.model_fields):
-            raise ValueError("the exported answer schema no longer matches the Answer type")
+        if item["schema"] != checked:  # every line carries the same schema; check it once
+            check_exported_schema(item["schema"])
+            checked = item["schema"]
         rows.append({"item_id": item["id"], "system": system["content"], "user": user["content"]})
     limit = os.environ.get("ESCALATION_LIMIT")
     return pd.DataFrame(rows[: int(limit)] if limit else rows)
@@ -252,9 +309,9 @@ def reply_text(reply) -> tuple[str | None, str | None]:
     raw = (getattr(reply, "_meta", None) or {}).get("raw_content")
     raw = raw if isinstance(raw, str) else None
     if isinstance(content, BaseModel):
-        return json.dumps(content.model_dump()), raw
+        return json.dumps(content.model_dump(exclude_none=True)), raw
     text = content if isinstance(content, str) else str(content)
-    return recover_reply(text, Answer)
+    return recover_reply(text, Answer, exclude_none=True)
 
 
 @kbench.task(name="escalation-bench-judge-item", store_task=False)
@@ -268,7 +325,7 @@ def answer_item(llm, item_id: str, system: str, user: str) -> dict:
         "item_id": item_id,
         "text": None,
         "error": None,
-        "schema": "answer" if SCHEMA_ON else "none",
+        "schema": SCHEMA_LABEL if SCHEMA_ON else "none",
         "cap": cap or None,
         "reasoning": reasoning.get("reasoning"),
         "temperature": temperature.get("temperature", "default"),
@@ -294,7 +351,7 @@ def answer_item(llm, item_id: str, system: str, user: str) -> dict:
         raw = reply_in_error(exc)
         if raw is not None and strip_think(raw) != raw:
             # A <think> block ahead of the answer broke the SDK's parse: strip it, keep the raw.
-            result["text"], result["raw_text"] = recover_reply(raw, Answer)
+            result["text"], result["raw_text"] = recover_reply(raw, Answer, exclude_none=True)
         elif isinstance(exc, ResponseParsingError):
             # The model broke the schema. Like a local unparseable reply, it is kept as text.
             result["text"] = None if exc.value is None else str(exc.value)

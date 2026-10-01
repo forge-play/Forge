@@ -47,6 +47,13 @@ ALLOWED_OTHER = {
     "runner.py",
     "aggregate.py",
     "socket_backend.py",
+    "kaggle_export.py",
+    "kaggle_rows.py",
+    "kaggle_stage.py",
+    "kaggle/route_task.py",
+    "kaggle/classify_task.py",
+    "kaggle/judge_task.py",
+    "kaggle/ground_task.py",
 }
 PROMPT_DIR = "prompts"
 SKIP_DIRS = {"__pycache__"}

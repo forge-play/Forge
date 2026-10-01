@@ -47,7 +47,7 @@ TASK_PREFIXES = ("escalation-bench-", "escalation-")  # longest first; bench- is
 RUN_SUFFIX = ".run.json"
 DONE_UNKNOWN = "unknown"  # aggregate.DONE_UNKNOWN
 MISSING = "no result for this item in the downloaded run files"
-PASS_THROUGH = ("attempts", "temperature")  # hosted-only fields, copied as recorded
+PASS_THROUGH = ("attempts", "temperature", "schema_violation")  # hosted-only, copied as recorded
 
 
 def iter_runs(run: dict):

@@ -1102,13 +1102,97 @@ def test_a_reply_cut_off_inside_its_think_block_stays_unparseable_text(
 
 
 @pytest.mark.parametrize("shape", SHAPES)
-def test_a_pydantic_failure_with_no_think_block_is_still_an_error_row(shape, monkeypatch, tmp_path):
+def test_a_pydantic_json_failure_with_no_think_block_is_kept_as_unparseable_text(
+    shape, monkeypatch, tmp_path
+):
+    """The text is in the error (json_invalid), so it is kept as the reply, as a local
+    unparseable reply is, and not dropped as an error row."""
+
     def script(ns, schema):
         return schema.model_validate_json("not json at all")
 
     _, ns = _run_task(shape, monkeypatch, tmp_path, script=script, model=DEEPSEEK)
     for r in ns.results:
-        assert r["text"] is None and r["error"].startswith("ValidationError")
+        assert r["error"] is None and "schema_violation" not in r
+        assert r["text"] == r["raw_text"] == "not json at all"
+
+
+# --- a reply that is JSON but breaks the typed schema (smoke3 nano route-017/038/060) ----
+
+VIOLATING = '{"confidence": "high"}'  # no answer, confidence not a number: invalid on every shape
+
+
+def _violating_script(ns, schema):
+    return schema.model_validate_json(VIOLATING)  # raises a ValidationError, not json_invalid
+
+
+def _rows_of(ns, shape):
+    by_id = {r["item_id"]: r for r in ns.results}
+    rd = type("RD", (), {"shape": shape, "items": by_id})()
+    return [r for r in rows_mod.make_rows(rd, "r", "m") if r["fixture_id"] in by_id]
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+def test_a_schema_violating_reply_is_an_unparseable_row_not_an_error_row(
+    shape, monkeypatch, tmp_path
+):
+    pytest.importorskip("pydantic")
+    _, ns = _run_task(shape, monkeypatch, tmp_path, script=_violating_script, model=NANO)
+    assert len(ns.results) == 2
+    for r in ns.results:
+        assert r["error"] is None and r["text"] == ""
+        assert "ValidationError" not in r["text"] and "validation error" in r["schema_violation"]
+    done = _rows_of(ns, shape)
+    assert len(done) == 2
+    for row in done:
+        assert row["error"] is None and row["parse_ok"] is False
+        assert row["schema_violation"].startswith("2 validation errors")
+    cell = aggregate.aggregate(done, aggregate.load_truth())["m"][shape]
+    answerable = cell["n_answerable"]
+    assert cell["n_errors"] == 0 and cell["n_unparseable"] == 2 and cell["n_rows"] == 2
+    assert cell["n_correct"] == 0  # never counted right
+    assert cell["task_score"] == (0.0 if answerable else None)  # counted in the denominator
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+def test_the_schema_violation_kept_on_the_row_is_bounded(shape, monkeypatch, tmp_path):
+    pytest.importorskip("pydantic")
+
+    def script(ns, schema):
+        return schema.model_validate_json(json.dumps({"x" * 5000: 1, "confidence": "high"}))
+
+    module, ns = _run_task(shape, monkeypatch, tmp_path, script=script, model=NANO)
+    for r in ns.results:
+        assert r["error"] is None
+        assert len(r["schema_violation"]) == module.SCHEMA_VIOLATION_MAX == 2000
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+@pytest.mark.parametrize("name", ["RateLimitError", "BadRequestError"])
+def test_an_api_failure_is_still_an_error_row(name, shape, monkeypatch, tmp_path):
+    def script(ns, schema):
+        raise type(name, (Exception,), {})("429 or 400 from the API")
+
+    _, ns = _run_task(shape, monkeypatch, tmp_path, script=script, model=NANO)
+    for r in ns.results:
+        assert r["text"] is None and r["error"].startswith(name)
+        assert "schema_violation" not in r
+    assert all(row["error"] for row in _rows_of(ns, shape))
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+def test_a_schema_violating_reply_through_the_real_sdk_is_not_an_error_row(
+    shape, monkeypatch, tmp_path
+):
+    """Same check on the real SDK request path, whichever of its two failures it raises."""
+    pytest.importorskip("pydantic")
+    seen: list = []
+    real = _real_sdk_llm(True, VIOLATING, seen, model=NANO)
+    _, ns = _run_task(shape, monkeypatch, tmp_path, real=real, model=NANO)
+    assert len(ns.results) == len(seen) == 2
+    for r in ns.results:
+        assert r["error"] is None and r["text"] in ("", VIOLATING), r
+    assert all(row["error"] is None and row["parse_ok"] is False for row in _rows_of(ns, shape))
 
 
 def _real_sdk_llm(

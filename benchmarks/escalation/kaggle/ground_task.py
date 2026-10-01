@@ -168,6 +168,9 @@ def strip_think(text: str) -> str:
     return _THINK_BLOCK.sub("", text, count=1)
 
 
+SCHEMA_VIOLATION_MAX = 2000  # characters of a ValidationError kept on the row
+
+
 def reply_in_error(exc: Exception) -> str | None:
     """The reply text an SDK parse failure carries, or None.
 
@@ -354,8 +357,17 @@ def answer_item(llm, item_id: str, system: str, user: str) -> dict:
         elif isinstance(exc, ResponseParsingError):
             # The model broke the schema. Like a local unparseable reply, it is kept as text.
             result["text"] = None if exc.value is None else str(exc.value)
+        elif raw is not None:
+            # Not valid JSON and no think block: the text is the reply, kept like a local one.
+            result["text"] = result["raw_text"] = raw
         else:
-            result["error"] = f"{type(exc).__name__}: {exc}"
+            # Valid JSON that breaks the typed schema. The SDK parses before it appends the
+            # reply to the chat, and the error holds only the offending parts, so the text is
+            # gone. It is still a reply the model gave, so it scores as unparseable (empty
+            # text) and the evidence stays on the row; it is not an error row, which
+            # aggregate would drop from the denominators.
+            result["text"] = ""
+            result["schema_violation"] = str(exc)[:SCHEMA_VIOLATION_MAX]
     except Exception as exc:
         result["error"] = f"{type(exc).__name__}: {exc}"
     result["latency_ms"] = int((time.monotonic() - started) * 1000)

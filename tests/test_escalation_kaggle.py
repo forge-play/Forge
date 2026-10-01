@@ -1563,7 +1563,7 @@ def _staged(tmp_path, denylist):
 
 def test_stage_builds_the_dataset_and_passes_every_gate(tmp_path, denylist):
     out = _staged(tmp_path, denylist)
-    files = sorted(str(p.relative_to(out)) for p in out.rglob("*") if p.is_file())
+    files = sorted(p.relative_to(out).as_posix() for p in out.rglob("*") if p.is_file())
     assert files == sorted(stage.EXPECTED_FILES)
     meta = json.loads((out / "dataset-metadata.json").read_text(encoding="utf-8"))
     assert meta["id"] == "owner/escalation-benchmark" and meta["licenses"]

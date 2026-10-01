@@ -95,6 +95,60 @@ def reasoning_kwargs(llm) -> dict:
     return {}
 
 
+# Temperature. TEMPERATURE (0) is sent unless the model's provider refuses it. The OpenAI
+# gpt-5 family accepts only its default: gpt-5.4-nano answered every smoke2 call with
+# a 400 "'temperature' does not support 0 with this model". The SDK has no per-model
+# rule (respond() passes the value through; only prompt() gates it, and the proxy loader
+# switches that off), so the set is ours: openai/gpt-5 (nano: confirmed by smoke2; gpt-5.5:
+# inferred from the same family). gpt-oss-20b is not in it: smoke2 ran it with
+# temperature 0 and 0 errors. Every row records what was sent: 0, or "default".
+NO_TEMPERATURE_PREFIXES = ("openai/gpt-5",)
+
+
+def temperature_kwargs(llm) -> dict:
+    """The ``temperature`` sent for this model, or nothing when it keeps its default."""
+    if TEMPERATURE is None or model_name(llm).startswith(NO_TEMPERATURE_PREFIXES):
+        return {}
+    return {"temperature": TEMPERATURE}
+
+
+# Rate limits. A RateLimitError (HTTP 429) is the one failure that is retried: the call
+# never reached the model, so it is safe to repeat. Every other failure is recorded once.
+# Up to RETRY_MAX_ATTEMPTS calls in all; the wait before call n+1 is
+# min(RETRY_MAX_WAIT_S, RETRY_BASE_WAIT_S * 2 ** (n - 1)): 4, 8, 16, 32, 60 s, 120 s at
+# most per item. smoke2's 429s came in waves (deepseek 169 of 200), and the SDK's own client
+# already retries twice inside one call, so this is the slower second line. Only
+# ``llm.respond`` is repeated, never ``kbench.user.send``: the SDK appends the user turn to
+# the chat before the call and the assistant turn only after a reply, so a call that
+# raised leaves the chat as it was and the retry sends the same prompt. The row's
+# ``attempts`` is the number of calls made (1 when none was retried).
+RETRY_MAX_ATTEMPTS = 6
+RETRY_BASE_WAIT_S = 4.0
+RETRY_MAX_WAIT_S = 60.0
+
+
+def is_rate_limit(exc: BaseException) -> bool:
+    """True for the SDK's rate-limit exception (any class named RateLimitError in its MRO)."""
+    return any(cls.__name__ == "RateLimitError" for cls in type(exc).__mro__)
+
+
+def respond_with_retry(llm, result: dict, **kwargs) -> object:
+    """``llm.respond(**kwargs)``, repeated while it raises a rate limit, up to the bound.
+
+    ``result["attempts"]`` is the count of calls started, so an error row carries it too.
+    The last rate-limit error is raised once the attempts are spent; any other exception
+    is raised at once.
+    """
+    for attempt in range(1, RETRY_MAX_ATTEMPTS + 1):
+        result["attempts"] = attempt
+        try:
+            return llm.respond(**kwargs)
+        except Exception as exc:
+            if not is_rate_limit(exc) or attempt == RETRY_MAX_ATTEMPTS:
+                raise
+            time.sleep(min(RETRY_MAX_WAIT_S, RETRY_BASE_WAIT_S * 2 ** (attempt - 1)))
+
+
 # A reasoning model behind the proxy can put its trace in the reply as a leading
 # <think>...</think> block (deepseek-r1). kaggle_benchmarks 0.6.1 strips it only when a
 # reasoning level was sent, and a structured-output call parses before it strips, so a
@@ -205,10 +259,11 @@ def reply_text(reply) -> tuple[str | None, str | None]:
 
 @kbench.task(name="escalation-bench-ground-item", store_task=False)
 def answer_item(llm, item_id: str, system: str, user: str) -> dict:
-    """One item, one call. A failed call is a result, never retried."""
+    """One item. A failed call is a result; only a rate limit is retried (see above)."""
     started = time.monotonic()
     cap = cap_kwargs(llm)
     reasoning = reasoning_kwargs(llm)
+    temperature = temperature_kwargs(llm)
     result = {
         "item_id": item_id,
         "text": None,
@@ -216,13 +271,17 @@ def answer_item(llm, item_id: str, system: str, user: str) -> dict:
         "schema": "answer" if SCHEMA_ON else "none",
         "cap": cap or None,
         "reasoning": reasoning.get("reasoning"),
+        "temperature": temperature.get("temperature", "default"),
+        "attempts": 0,
     }
     try:
-        kbench.user.send(user)
-        kwargs = {} if TEMPERATURE is None else {"temperature": TEMPERATURE}
+        kbench.user.send(user)  # once: a retry repeats respond() only, never this
+        kwargs = dict(temperature)
         if SCHEMA_ON:
             kwargs["schema"] = Answer
-        reply = llm.respond(system=system, seed=SEED, **kwargs, **cap, **reasoning)
+        reply = respond_with_retry(
+            llm, result, system=system, seed=SEED, **kwargs, **cap, **reasoning
+        )
         meta = getattr(reply, "_meta", None) or {}
         result["text"], raw = reply_text(reply)
         if raw is not None:

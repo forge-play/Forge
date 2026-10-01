@@ -17,6 +17,7 @@ import json
 import re
 import shutil
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -157,6 +158,8 @@ class _Namespace:
     def __init__(self):
         self.results: list[dict] = []
         self.llm = None
+        self.sleeps: list[float] = []  # every time.sleep a task made (never really slept)
+        self.sends: list[tuple] = []  # every kbench.user.send a task made
 
 
 def _install_sdk_stub(monkeypatch, llm_class_name="OpenAI", model=None, real=None):
@@ -235,13 +238,20 @@ def _install_sdk_stub(monkeypatch, llm_class_name="OpenAI", model=None, real=Non
             {"input_tokens": 7, "output_tokens": 3, "raw_content": '{"answer": "ESCALATE"}'},
         )
 
-    llm.script = script
+    llm.script = llm.default_script = script
     if real is not None:
         llm, ResponseParsingError = real
     ns.llm = llm
+
+    def send(*args):
+        ns.sends.append(args)
+        forward = getattr(llm, "user_send", None)  # a real-SDK llm: really append the turn
+        if forward is not None:
+            forward(*args)
+
     sdk = type(sys)("kaggle_benchmarks")
     sdk.task, sdk.llm = task, llm
-    sdk.user = type("user", (), {"send": staticmethod(lambda *_: None)})
+    sdk.user = type("user", (), {"send": staticmethod(send)})
     sdk.tasks = type("tasks", (), {"NonRecoverableError": NonRecoverableError})
     prompting = type(sys)("kaggle_benchmarks.prompting")
     prompting.ResponseParsingError = ResponseParsingError
@@ -269,6 +279,7 @@ def _run_task(
     real=None,
 ):
     ns = _install_sdk_stub(monkeypatch, llm_class_name, model, real)
+    monkeypatch.setattr(time, "sleep", lambda seconds: ns.sleeps.append(seconds))
     if script is not None:  # script(ns, schema) -> a reply, or raises
         ns.llm.script = lambda self, schema: script(ns, schema)
     data = tmp_path / "data"
@@ -628,7 +639,7 @@ def test_the_export_still_carries_the_open_runner_schema():
         ("openai/gpt-5.5", "low"),
         ("openai/gpt-oss-20b", "low"),
         ("anthropic/claude-opus-5", None),
-        ("xai/grok-4.6", None),
+        # xai/grok-4.6 left this batch (operator: "For this batch, retire and drop Grok")
         ("deepseek-ai/deepseek-r1-0528", None),
         ("qwen/qwen3-235b-a22b-instruct-2507", None),
         (None, None),
@@ -660,22 +671,32 @@ def test_the_reasoning_level_can_be_overridden_or_left_to_the_model(shape, monke
 
 CAP_NAMES = ("max_tokens", "max_completion_tokens", "max_output_tokens")
 
-# The ratified set (279aedee): slug -> (cap parameter name, reasoning level sent). The cap
-# value is 512 for every slug; the reasoning level is None when nothing is sent.
+# The ratified set (279aedee) minus xai/grok-4.6, which leaves this batch (operator: "For
+# this batch, retire and drop Grok"; smoke2 404 "model not found" on 200 of 200 calls):
+# slug -> (cap parameter name, reasoning level sent, temperature sent). The cap value is
+# 512 for every slug; the reasoning level is None when nothing is sent; the temperature is
+# 0 or "default" (none sent). openai/gpt-5.4-nano: "default" is confirmed by smoke2 (400 on
+# temperature 0). openai/gpt-5.5: "default" is inferred (same family, SDK silent). The
+# other nine send 0: confirmed by smoke2 for gpt-oss-20b, deepseek and gemini-3.8-flash
+# (no temperature error among their rows); inferred for the rest, which smoke2 did not run.
 RATIFIED = {
-    "anthropic/claude-opus-5": ("max_tokens", None),
-    "openai/gpt-5.5": ("max_completion_tokens", "low"),
-    "google/gemini-3.1-pro-preview": ("max_tokens", "low"),
-    "xai/grok-4.6": ("max_tokens", None),
-    "anthropic/claude-sonnet-5": ("max_tokens", None),
-    "google/gemini-3.8-flash": ("max_tokens", "low"),
-    "deepseek-ai/deepseek-r1-0528": ("max_tokens", None),
-    "anthropic/claude-haiku-4-5": ("max_tokens", None),
-    "openai/gpt-5.4-nano": ("max_completion_tokens", "low"),
-    "google/gemma-4-26b-a4b-it": ("max_tokens", None),
-    "qwen/qwen3-235b-a22b-instruct-2507": ("max_tokens", None),
-    "openai/gpt-oss-20b": ("max_completion_tokens", "low"),
+    "anthropic/claude-opus-5": ("max_tokens", None, 0),
+    "openai/gpt-5.5": ("max_completion_tokens", "low", "default"),
+    "google/gemini-3.1-pro-preview": ("max_tokens", "low", 0),
+    "anthropic/claude-sonnet-5": ("max_tokens", None, 0),
+    "google/gemini-3.8-flash": ("max_tokens", "low", 0),
+    "deepseek-ai/deepseek-r1-0528": ("max_tokens", None, 0),
+    "anthropic/claude-haiku-4-5": ("max_tokens", None, 0),
+    "openai/gpt-5.4-nano": ("max_completion_tokens", "low", "default"),
+    "google/gemma-4-26b-a4b-it": ("max_tokens", None, 0),
+    "qwen/qwen3-235b-a22b-instruct-2507": ("max_tokens", None, 0),
+    "openai/gpt-oss-20b": ("max_completion_tokens", "low", 0),
 }
+
+
+def test_the_ratified_set_has_eleven_slugs_and_no_grok():
+    assert len(RATIFIED) == 11
+    assert not [slug for slug in RATIFIED if slug.startswith("xai/")]
 
 
 @pytest.mark.parametrize("shape", SHAPES)
@@ -683,14 +704,155 @@ RATIFIED = {
 def test_every_ratified_slug_gets_its_cap_parameter_and_reasoning_on_every_shape(
     slug, shape, monkeypatch, tmp_path
 ):
-    cap_name, level = RATIFIED[slug]
+    cap_name, level, temperature = RATIFIED[slug]
     _, ns = _run_task(shape, monkeypatch, tmp_path, model=slug)
     assert len(ns.llm.calls) == 2
     for call in ns.llm.calls:
         assert {k: call[k] for k in CAP_NAMES if k in call} == {cap_name: 512}, slug
         assert call.get("reasoning") == level, slug
+        # temperature 0 is sent, or the key is absent: never anything else
+        assert call.get("temperature", "default") == temperature, slug
+        assert ("temperature" in call) is (temperature != "default"), slug
     assert {json.dumps(r["cap"]) for r in ns.results} == {json.dumps({cap_name: 512})}
     assert {r["reasoning"] for r in ns.results} == {level}
+    assert {r["temperature"] for r in ns.results} == {temperature}, slug
+    assert {r["attempts"] for r in ns.results} == {1}, slug
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+def test_the_temperature_can_be_left_to_the_platform_for_every_model(shape, monkeypatch, tmp_path):
+    _, ns = _run_task(
+        shape,
+        monkeypatch,
+        tmp_path,
+        model="anthropic/claude-opus-5",
+        env={"ESCALATION_TEMPERATURE": "none"},
+    )
+    assert all("temperature" not in call for call in ns.llm.calls)
+    assert {r["temperature"] for r in ns.results} == {"default"}
+
+
+# --- 429 retry: a rate limit is retried within a bound, nothing else is -------------
+
+
+class RateLimitError(Exception):
+    """Named like the SDK's openai.RateLimitError: the task matches on the class name."""
+
+
+class BadRequestError(Exception):
+    pass
+
+
+def _fail_then(errors):
+    """A respond script that raises each of ``errors`` in turn, then answers."""
+    pending = list(errors)
+
+    def script(ns, schema):
+        if pending:
+            raise pending.pop(0)
+        return ns.llm.default_script(ns.llm, schema)
+
+    return script
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+def test_a_rate_limit_is_retried_with_growing_waits_then_the_row_is_clean(
+    shape, monkeypatch, tmp_path
+):
+    # the first item's first three calls are rate limited; everything after answers
+    script = _fail_then([RateLimitError("429 slow down")] * 3)
+    _, ns = _run_task(shape, monkeypatch, tmp_path, script=script, model=DEEPSEEK)
+    assert [r["attempts"] for r in ns.results] == [4, 1]
+    assert all(r["error"] is None and r["text"] for r in ns.results)
+    assert ns.sleeps == [4.0, 8.0, 16.0]
+    assert len(ns.llm.calls) == 5  # 4 calls for item one, 1 for item two
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+def test_a_rate_limit_that_never_clears_is_an_error_row_at_the_bound(shape, monkeypatch, tmp_path):
+    def script(ns, schema):
+        raise RateLimitError("429 still slow")
+
+    module, ns = _run_task(shape, monkeypatch, tmp_path, script=script, model=DEEPSEEK)
+    bound = module.RETRY_MAX_ATTEMPTS
+    assert bound == 6
+    assert len(ns.llm.calls) == 2 * bound
+    for r in ns.results:
+        assert r["attempts"] == bound
+        assert r["text"] is None and r["error"] == "RateLimitError: 429 still slow"
+    # 4, 8, 16, 32, 60 per item: five waits, 120 s at most, none past the cap
+    assert ns.sleeps == [4.0, 8.0, 16.0, 32.0, 60.0] * 2
+    assert sum(ns.sleeps[:5]) == 120.0 and max(ns.sleeps) == module.RETRY_MAX_WAIT_S
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+@pytest.mark.parametrize("error", [BadRequestError, ValueError, TimeoutError, RuntimeError])
+def test_any_other_error_is_recorded_once_and_never_retried(shape, error, monkeypatch, tmp_path):
+    def script(ns, schema):
+        raise error("boom")
+
+    _, ns = _run_task(shape, monkeypatch, tmp_path, script=script, model=DEEPSEEK)
+    assert len(ns.llm.calls) == 2  # one call per item
+    assert ns.sleeps == []
+    for r in ns.results:
+        assert r["attempts"] == 1 and r["error"] == f"{error.__name__}: boom"
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+def test_a_subclass_of_the_rate_limit_error_is_retried_and_a_lookalike_is_not(
+    shape, monkeypatch, tmp_path
+):
+    class Throttled(RateLimitError):
+        pass
+
+    _, ns = _run_task(
+        shape, monkeypatch, tmp_path, script=_fail_then([Throttled("429")]), model=DEEPSEEK
+    )
+    assert [r["attempts"] for r in ns.results] == [2, 1]
+
+    class RateLimitErrorLookalike(Exception):  # a name that merely contains the words
+        pass
+
+    _, ns = _run_task(
+        shape, monkeypatch, tmp_path, script=_fail_then([RateLimitErrorLookalike("429")])
+    )
+    assert [r["attempts"] for r in ns.results] == [1, 1] and ns.results[0]["error"]
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+def test_a_retry_repeats_respond_only_and_sends_the_same_arguments(shape, monkeypatch, tmp_path):
+    _, ns = _run_task(
+        shape,
+        monkeypatch,
+        tmp_path,
+        script=_fail_then([RateLimitError("429"), RateLimitError("429")]),
+        model="openai/gpt-5.4-nano",
+    )
+    assert len(ns.sends) == 2  # one kbench.user.send per item, whatever the attempts
+    assert [r["attempts"] for r in ns.results] == [3, 1]
+    first = ns.llm.calls[:3]
+    assert all(call == first[0] for call in first)  # same system, seed, cap, reasoning, schema
+
+
+def test_the_real_sdk_chat_holds_one_user_turn_across_a_retry(monkeypatch, tmp_path):
+    """The prompt the model sees is unchanged by a retry: through the real SDK, a rate-limited
+    call leaves the chat as it was, so the request after it carries the same messages."""
+    pytest.importorskip("pydantic")
+    seen: list = []
+    real = _real_sdk_llm(False, BODY_JSON, seen, persistent=True, rate_limited=2)
+    from kaggle_benchmarks import actors, chats
+
+    with chats.new(name="retry-probe"):
+        _, ns = _run_task("judge", monkeypatch, tmp_path, real=real, model=DEEPSEEK)
+        user_turns = [m for m in chats.get_current_chat().messages if m.sender is actors.user]
+    assert [r["attempts"] for r in ns.results] == [3, 1]
+    assert all(r["error"] is None for r in ns.results)
+    first_item = seen[:3]
+    assert first_item[0]["messages"] == first_item[1]["messages"] == first_item[2]["messages"]
+    assert [m["role"] for m in first_item[0]["messages"]].count("user") == 1
+    # item two sees item one's whole exchange once (user, assistant) plus its own user turn
+    assert [m["role"] for m in seen[3]["messages"]].count("user") == 2
+    assert len(user_turns) == 2  # one user turn per item, not per attempt
 
 
 @pytest.mark.parametrize("shape", SHAPES)
@@ -733,7 +895,14 @@ def test_the_four_task_files_carry_one_identical_settings_table():
     blocks = {shape: _settings_block(shape) for shape in SHAPES}
     drifted = sorted(shape for shape in SHAPES if blocks[shape] != blocks["route"])
     assert not drifted, f"settings table differs from route's in: {drifted}"
-    assert "REASONING_BY_PREFIX" in blocks["route"] and "CAP_PARAM_BY_PREFIX" in blocks["route"]
+    for name in (
+        "REASONING_BY_PREFIX",
+        "CAP_PARAM_BY_PREFIX",
+        "NO_TEMPERATURE_PREFIXES",
+        "RETRY_MAX_ATTEMPTS",
+        "def respond_with_retry",
+    ):
+        assert name in blocks["route"], name
 
 
 def _project_test_extra() -> list[str]:
@@ -841,22 +1010,38 @@ def test_a_pydantic_failure_with_no_think_block_is_still_an_error_row(shape, mon
         assert r["text"] is None and r["error"].startswith("ValidationError")
 
 
-def _real_sdk_llm(structured: bool, reply_content: str, seen: list, model: str = DEEPSEEK):
+def _real_sdk_llm(
+    structured: bool,
+    reply_content: str,
+    seen: list,
+    model: str = DEEPSEEK,
+    *,
+    persistent: bool = False,
+    rate_limited: int = 0,
+):
     """A real kaggle_benchmarks ``OpenAI`` actor over a canned HTTP transport (no network).
 
     Returns ``(llm, ResponseParsingError)``. The llm's ``respond`` is the real SDK's, so a
     reply goes through the SDK's own request building and parsing; the request bodies it
     sent are appended to ``seen``. Skipped where the SDK is not installed (Forge CI).
+
+    ``rate_limited``: the first N requests get an HTTP 429 (the SDK raises its own
+    RateLimitError; the client's built-in retries are off so each request is one attempt).
+    ``persistent``: ``respond`` runs in the caller's chat instead of opening a new one, and
+    ``kbench.user.send`` really appends to it, so chat state across attempts is the real one.
     """
     kbench = pytest.importorskip("kaggle_benchmarks")
     openai = pytest.importorskip("openai")
     httpx = pytest.importorskip("httpx")
-    from kaggle_benchmarks import chats
+    from kaggle_benchmarks import actors, chats
     from kaggle_benchmarks.actors import llms
     from kaggle_benchmarks.prompting import ResponseParsingError
 
     def handler(request):
         seen.append(json.loads(request.content))
+        if len(seen) <= rate_limited:
+            body = {"error": {"message": "slow down", "type": "rate_limit_error", "code": "429"}}
+            return httpx.Response(429, json=body)
         message = {"role": "assistant", "content": reply_content}
         return httpx.Response(
             200,
@@ -874,15 +1059,20 @@ def _real_sdk_llm(structured: bool, reply_content: str, seen: list, model: str =
         base_url="http://sdk.invalid/v1",
         api_key="not-a-key",
         http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        max_retries=0,
     )
     actor = llms.OpenAI(client, model, support_structured_outputs=structured)
 
     class OpenAI:  # named like the SDK class: the task reads the class name and ``model``
         def __init__(self):
             self.model, self.calls = model, []
+            if persistent:
+                self.user_send = actors.user.send
 
         def respond(self, **kwargs):
             self.calls.append(kwargs)
+            if persistent:
+                return actor.respond(**kwargs)
             with chats.new(name="probe"):
                 kbench.user.send("hi")
                 return actor.respond(**kwargs)

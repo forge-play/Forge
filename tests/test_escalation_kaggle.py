@@ -509,6 +509,28 @@ def test_converter_takes_the_newest_run_per_model(tmp_path):
     assert by_id["route-003"]["answer"] == "ESCALATE"
 
 
+def _renamed_tree(tmp_path, name):
+    tree = tmp_path / "tree"
+    shutil.copytree(TREE, tree)
+    (tree / "escalation-route").rename(tree / name)
+    return tree
+
+
+def test_converter_accepts_the_pushed_bench_task_name(tmp_path):
+    rows = _convert(_renamed_tree(tmp_path, "escalation-bench-route"))
+    assert len(rows) == 60 and {r["shape"] for r in rows} == {"route"}
+    assert {r["model"] for r in rows} == {"google/model-x"}
+
+
+def test_converter_still_accepts_the_old_task_name(tmp_path):
+    assert len(_convert(_renamed_tree(tmp_path, "escalation-route"))) == 60
+
+
+@pytest.mark.parametrize("name", ["escalation-probe", "escalation-bench-foo", "escalation-bench-"])
+def test_converter_skips_an_unrelated_task_name(tmp_path, name):
+    assert _convert(_renamed_tree(tmp_path, name)) == []
+
+
 def test_converter_ignores_trees_with_no_run_files(tmp_path):
     assert _convert(tmp_path) == []
     assert rows_mod.main([str(tmp_path), "--run-id", "r"]) == 1

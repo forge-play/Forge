@@ -9,7 +9,8 @@ The tree is what the download command lays out::
 
     <out>/<task>/<version>/<model>/<run_id>/<task>-<run>.run.json   (+ one file per item)
 
-``<task>`` is ``escalation-<shape>``. A run's top-level file carries the items as
+``<task>`` is ``escalation-bench-<shape>`` (the name the tasks were pushed under) or
+``escalation-<shape>``; any other task name is skipped. A run's top-level file carries the items as
 ``subruns``; each item's result is a dict ``{item_id, text, error, tokens_in,
 tokens_out, latency_ms}``. Item results are found by that content, never by file name:
 the top-level file and the per-item files share a name prefix.
@@ -42,7 +43,7 @@ if str(_HERE) not in sys.path:
 import runner  # noqa: E402
 
 BENCH = _HERE
-TASK_PREFIX = "escalation-"
+TASK_PREFIXES = ("escalation-bench-", "escalation-")  # longest first; bench- is the pushed name
 RUN_SUFFIX = ".run.json"
 DONE_UNKNOWN = "unknown"  # aggregate.DONE_UNKNOWN
 MISSING = "no result for this item in the downloaded run files"
@@ -95,8 +96,11 @@ class RunDir:
 
     @property
     def shape(self) -> str | None:
-        shape = self.task.removeprefix(TASK_PREFIX)
-        return shape if self.task.startswith(TASK_PREFIX) and shape in runner.SHAPES else None
+        for prefix in TASK_PREFIXES:  # longest first
+            if self.task.startswith(prefix):
+                shape = self.task.removeprefix(prefix)
+                return shape if shape in runner.SHAPES else None
+        return None
 
 
 def find_run_dirs(tree: Path) -> list[RunDir]:

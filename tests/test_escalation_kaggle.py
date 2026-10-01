@@ -159,11 +159,13 @@ class _Namespace:
         self.llm = None
 
 
-def _install_sdk_stub(monkeypatch, llm_class_name="OpenAI", model=None):
+def _install_sdk_stub(monkeypatch, llm_class_name="OpenAI", model=None, real=None):
     """Stand-ins for kaggle_benchmarks and pandas, enough to run a task file.
 
     pydantic is the real one: the typed route and classify answers are pydantic models, and
-    a stub could not tell a typed schema from an open one.
+    a stub could not tell a typed schema from an open one. ``real`` is ``(llm, error_class)``
+    from ``_real_sdk_llm``: the stub then hands the task that llm, whose ``respond`` is the
+    real SDK's, and the task catches the real ``ResponseParsingError``.
     """
     pytest.importorskip("pydantic")
     ns = _Namespace()
@@ -234,6 +236,8 @@ def _install_sdk_stub(monkeypatch, llm_class_name="OpenAI", model=None):
         )
 
     llm.script = script
+    if real is not None:
+        llm, ResponseParsingError = real
     ns.llm = llm
     sdk = type(sys)("kaggle_benchmarks")
     sdk.task, sdk.llm = task, llm
@@ -254,9 +258,17 @@ def _install_sdk_stub(monkeypatch, llm_class_name="OpenAI", model=None):
 
 
 def _run_task(
-    shape, monkeypatch, tmp_path, *, env=None, llm_class_name="OpenAI", script=None, model=None
+    shape,
+    monkeypatch,
+    tmp_path,
+    *,
+    env=None,
+    llm_class_name="OpenAI",
+    script=None,
+    model=None,
+    real=None,
 ):
-    ns = _install_sdk_stub(monkeypatch, llm_class_name, model)
+    ns = _install_sdk_stub(monkeypatch, llm_class_name, model, real)
     if script is not None:  # script(ns, schema) -> a reply, or raises
         ns.llm.script = lambda self, schema: script(ns, schema)
     data = tmp_path / "data"
@@ -622,16 +634,16 @@ def test_the_export_still_carries_the_open_runner_schema():
         (None, None),
     ],
 )
-@pytest.mark.parametrize("shape", TYPED)
+@pytest.mark.parametrize("shape", SHAPES)
 def test_the_reasoning_level_follows_the_provider(shape, model, expected, monkeypatch, tmp_path):
     _, ns = _run_task(shape, monkeypatch, tmp_path, model=model)
     for call in ns.llm.calls:
         assert call.get("reasoning") == expected and ("reasoning" in call) is (expected is not None)
-        assert call["max_tokens"] == 512  # the cap is never raised to make room
+        assert [call[k] for k in CAP_NAMES if k in call] == [512]  # never raised to make room
     assert {r["reasoning"] for r in ns.results} == {expected}
 
 
-@pytest.mark.parametrize("shape", TYPED)
+@pytest.mark.parametrize("shape", SHAPES)
 def test_the_reasoning_level_can_be_overridden_or_left_to_the_model(shape, monkeypatch, tmp_path):
     _, ns = _run_task(
         shape, monkeypatch, tmp_path, model="google/g", env={"ESCALATION_REASONING": "high"}
@@ -644,11 +656,262 @@ def test_the_reasoning_level_can_be_overridden_or_left_to_the_model(shape, monke
     assert {r["reasoning"] for r in ns.results} == {None}
 
 
-@pytest.mark.parametrize("shape", ("judge", "ground"))
-def test_judge_and_ground_send_no_reasoning_level(shape, monkeypatch, tmp_path):
-    _, ns = _run_task(shape, monkeypatch, tmp_path, model="google/gemini-3.8-flash")
-    assert all("reasoning" not in call for call in ns.llm.calls)
-    assert all("reasoning" not in r for r in ns.results)
+# --- one settings table for all four shapes --------------------------------------------
+
+CAP_NAMES = ("max_tokens", "max_completion_tokens", "max_output_tokens")
+
+# The ratified set (279aedee): slug -> (cap parameter name, reasoning level sent). The cap
+# value is 512 for every slug; the reasoning level is None when nothing is sent.
+RATIFIED = {
+    "anthropic/claude-opus-5": ("max_tokens", None),
+    "openai/gpt-5.5": ("max_completion_tokens", "low"),
+    "google/gemini-3.1-pro-preview": ("max_tokens", "low"),
+    "xai/grok-4.6": ("max_tokens", None),
+    "anthropic/claude-sonnet-5": ("max_tokens", None),
+    "google/gemini-3.8-flash": ("max_tokens", "low"),
+    "deepseek-ai/deepseek-r1-0528": ("max_tokens", None),
+    "anthropic/claude-haiku-4-5": ("max_tokens", None),
+    "openai/gpt-5.4-nano": ("max_completion_tokens", "low"),
+    "google/gemma-4-26b-a4b-it": ("max_tokens", None),
+    "qwen/qwen3-235b-a22b-instruct-2507": ("max_tokens", None),
+    "openai/gpt-oss-20b": ("max_completion_tokens", "low"),
+}
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+@pytest.mark.parametrize("slug", sorted(RATIFIED))
+def test_every_ratified_slug_gets_its_cap_parameter_and_reasoning_on_every_shape(
+    slug, shape, monkeypatch, tmp_path
+):
+    cap_name, level = RATIFIED[slug]
+    _, ns = _run_task(shape, monkeypatch, tmp_path, model=slug)
+    assert len(ns.llm.calls) == 2
+    for call in ns.llm.calls:
+        assert {k: call[k] for k in CAP_NAMES if k in call} == {cap_name: 512}, slug
+        assert call.get("reasoning") == level, slug
+    assert {json.dumps(r["cap"]) for r in ns.results} == {json.dumps({cap_name: 512})}
+    assert {r["reasoning"] for r in ns.results} == {level}
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+def test_the_cap_parameter_can_still_be_forced_for_an_openai_slug(shape, monkeypatch, tmp_path):
+    _, ns = _run_task(
+        shape,
+        monkeypatch,
+        tmp_path,
+        model="openai/gpt-5.5",
+        env={"ESCALATION_CAP_PARAM": "max_tokens"},
+    )
+    assert all(call["max_tokens"] == 512 for call in ns.llm.calls)
+    assert all("max_completion_tokens" not in call for call in ns.llm.calls)
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+def test_a_google_genai_client_keeps_max_output_tokens_whatever_its_name(
+    shape, monkeypatch, tmp_path
+):
+    _, ns = _run_task(
+        shape, monkeypatch, tmp_path, llm_class_name="GoogleGenAI", model="google/gemini-3.8-flash"
+    )
+    assert all(
+        {k: call[k] for k in CAP_NAMES if k in call} == {"max_output_tokens": 512}
+        for call in ns.llm.calls
+    )
+
+
+def _settings_block(shape: str) -> str:
+    text = _task_text(shape)
+    assert text.count("# --- model settings") == 1, shape
+    assert text.count("# --- end model settings ---") == 1, shape
+    return text[text.index("# --- model settings") : text.index("# --- end model settings ---")]
+
+
+def test_the_four_task_files_carry_one_identical_settings_table():
+    """Each task file is standalone on Kaggle, so the table is copied four times. A copy
+    that drifts gives one shape a different cap parameter or reasoning level than another,
+    and per-shape scores stop comparing like with like."""
+    blocks = {shape: _settings_block(shape) for shape in SHAPES}
+    drifted = sorted(shape for shape in SHAPES if blocks[shape] != blocks["route"])
+    assert not drifted, f"settings table differs from route's in: {drifted}"
+    assert "REASONING_BY_PREFIX" in blocks["route"] and "CAP_PARAM_BY_PREFIX" in blocks["route"]
+
+
+def _project_test_extra() -> list[str]:
+    """The requirement strings of pyproject.toml's ``test`` extra."""
+    import tomllib
+
+    data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    return data["project"]["optional-dependencies"]["test"]
+
+
+def _ci_test_installs() -> int:
+    """How many CI legs in tests.yml install the package with its ``test`` extra."""
+    workflow = (ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
+    return workflow.count('pip install -e ".[test]"')
+
+
+def test_the_test_extra_installs_pydantic_so_ci_runs_the_typed_tests():
+    """The typed kaggle tests importorskip pydantic. CI's matrix and Windows legs install
+    ``.[test]``, so pydantic in that extra is what makes them run instead of skip."""
+    extra = _project_test_extra()
+    assert any(re.match(r"pydantic\b", dep) for dep in extra), extra
+    assert _ci_test_installs() >= 2  # the Linux matrix and Windows legs
+
+
+# --- a <think>-prefixed reply (deepseek-r1) --------------------------------------------
+
+THINK = "<think>\nThe note does not say, so the safe answer is to escalate.\n</think>\n"
+BODY_JSON = json.dumps({"answer": "ESCALATE", "confidence": 0.5})
+PARSED = {"answer": "ESCALATE", "confidence": 0.5}
+DEEPSEEK = "deepseek-ai/deepseek-r1-0528"
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+def test_a_think_prefixed_reply_the_sdk_could_not_parse_is_stripped_and_the_raw_kept(
+    shape, monkeypatch, tmp_path
+):
+    def script(ns, schema):
+        raise ns.ResponseParsingError(THINK + BODY_JSON)
+
+    _, ns = _run_task(shape, monkeypatch, tmp_path, script=script, model=DEEPSEEK)
+    assert len(ns.results) == 2
+    for r in ns.results:
+        assert r["error"] is None
+        assert json.loads(r["text"]) == PARSED
+        assert r["raw_text"] == THINK + BODY_JSON  # the reply as the model sent it
+    by_id = {r["item_id"]: r for r in ns.results}
+    rows = rows_mod.make_rows(type("RD", (), {"shape": shape, "items": by_id})(), "r", "m")
+    done = [r for r in rows if r["fixture_id"] in by_id]
+    assert done and all(r["parse_ok"] and r["answer"] == "ESCALATE" for r in done)
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+def test_a_think_prefixed_reply_that_fails_pydantic_first_is_recovered_too(
+    shape, monkeypatch, tmp_path
+):
+    """The structured-output path parses before the SDK can strip: a pydantic
+    ValidationError carries the whole text as the input of its json_invalid error."""
+
+    def script(ns, schema):
+        return schema.model_validate_json(THINK + BODY_JSON)  # raises ValidationError
+
+    _, ns = _run_task(shape, monkeypatch, tmp_path, script=script, model=DEEPSEEK)
+    for r in ns.results:
+        assert r["error"] is None and json.loads(r["text"]) == PARSED
+        assert r["raw_text"] == THINK + BODY_JSON
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+def test_a_think_prefixed_text_reply_with_the_schema_off_is_stripped(shape, monkeypatch, tmp_path):
+    def script(ns, schema):
+        reply = type("Reply", (), {})()
+        reply.content, reply._meta = THINK + BODY_JSON, {"raw_content": THINK + BODY_JSON}
+        return reply
+
+    _, ns = _run_task(
+        shape, monkeypatch, tmp_path, script=script, env={"ESCALATION_SCHEMA": "none"}
+    )
+    for r in ns.results:
+        assert json.loads(r["text"]) == PARSED and r["raw_text"] == THINK + BODY_JSON
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+def test_a_reply_cut_off_inside_its_think_block_stays_unparseable_text(
+    shape, monkeypatch, tmp_path
+):
+    """Nothing to strip when the block never closes (the 512 cap ended it): the text is kept
+    as sent and scores as unparseable, which is the honest result."""
+    cut = "<think>\nThe note says nothing about the status, so"
+
+    def script(ns, schema):
+        raise ns.ResponseParsingError(cut)
+
+    _, ns = _run_task(shape, monkeypatch, tmp_path, script=script, model=DEEPSEEK)
+    for r in ns.results:
+        assert r["error"] is None and r["text"] == cut and "raw_text" not in r
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+def test_a_pydantic_failure_with_no_think_block_is_still_an_error_row(shape, monkeypatch, tmp_path):
+    def script(ns, schema):
+        return schema.model_validate_json("not json at all")
+
+    _, ns = _run_task(shape, monkeypatch, tmp_path, script=script, model=DEEPSEEK)
+    for r in ns.results:
+        assert r["text"] is None and r["error"].startswith("ValidationError")
+
+
+def _real_sdk_llm(structured: bool, reply_content: str, seen: list, model: str = DEEPSEEK):
+    """A real kaggle_benchmarks ``OpenAI`` actor over a canned HTTP transport (no network).
+
+    Returns ``(llm, ResponseParsingError)``. The llm's ``respond`` is the real SDK's, so a
+    reply goes through the SDK's own request building and parsing; the request bodies it
+    sent are appended to ``seen``. Skipped where the SDK is not installed (Forge CI).
+    """
+    kbench = pytest.importorskip("kaggle_benchmarks")
+    openai = pytest.importorskip("openai")
+    httpx = pytest.importorskip("httpx")
+    from kaggle_benchmarks import chats
+    from kaggle_benchmarks.actors import llms
+    from kaggle_benchmarks.prompting import ResponseParsingError
+
+    def handler(request):
+        seen.append(json.loads(request.content))
+        message = {"role": "assistant", "content": reply_content}
+        return httpx.Response(
+            200,
+            json={
+                "id": "x",
+                "object": "chat.completion",
+                "created": 1,
+                "model": model,
+                "choices": [{"index": 0, "finish_reason": "stop", "message": message}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
+            },
+        )
+
+    client = openai.OpenAI(
+        base_url="http://sdk.invalid/v1",
+        api_key="not-a-key",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    actor = llms.OpenAI(client, model, support_structured_outputs=structured)
+
+    class OpenAI:  # named like the SDK class: the task reads the class name and ``model``
+        def __init__(self):
+            self.model, self.calls = model, []
+
+        def respond(self, **kwargs):
+            self.calls.append(kwargs)
+            with chats.new(name="probe"):
+                kbench.user.send("hi")
+                return actor.respond(**kwargs)
+
+    return OpenAI(), ResponseParsingError
+
+
+@pytest.mark.parametrize("prefix", [THINK, ""], ids=["think-prefixed", "plain"])
+@pytest.mark.parametrize("structured", [False, True], ids=["text-path", "structured-path"])
+@pytest.mark.parametrize("shape", SHAPES)
+def test_a_deepseek_reply_parses_through_the_real_sdk_on_every_shape(
+    shape, structured, prefix, monkeypatch, tmp_path
+):
+    """The same SDK parse path the task uses. deepseek-ai/ models are built with
+    support_structured_outputs=False by kaggle_benchmarks' model proxy loader (the
+    ``"deepseek" not in model`` check), so the text path is the live one; the structured
+    path is run as well because a pydantic failure there arrives as a ValidationError."""
+    pytest.importorskip("pydantic")
+    seen: list = []
+    real = _real_sdk_llm(structured, prefix + BODY_JSON, seen)
+    _, ns = _run_task(shape, monkeypatch, tmp_path, real=real, model=DEEPSEEK)
+    assert len(ns.results) == len(seen) == 2
+    for r in ns.results:
+        assert r["error"] is None, r
+        assert json.loads(r["text"]) == PARSED
+        assert r["raw_text"] == prefix + BODY_JSON
+        assert r["reasoning"] is None and r["cap"] == {"max_tokens": 512}
+    # nothing the proxy might refuse was added for deepseek: no reasoning_effort
+    assert all("reasoning_effort" not in body and body["max_tokens"] == 512 for body in seen)
 
 
 # --- converter -------------------------------------------------------------------

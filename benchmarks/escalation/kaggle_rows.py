@@ -47,6 +47,7 @@ TASK_PREFIXES = ("escalation-bench-", "escalation-")  # longest first; bench- is
 RUN_SUFFIX = ".run.json"
 DONE_UNKNOWN = "unknown"  # aggregate.DONE_UNKNOWN
 MISSING = "no result for this item in the downloaded run files"
+PASS_THROUGH = ("attempts", "temperature")  # hosted-only fields, copied as recorded
 
 
 def iter_runs(run: dict):
@@ -143,6 +144,11 @@ def make_rows(rd: RunDir, run_id: str, model: str, bench: Path = BENCH) -> list[
             row = runner.make_row(run_id, model, shape, item, system, user, _refusal)
             row["error"] = str((result or {}).get("error") or MISSING)
             row["latency_ms"] = _int((result or {}).get("latency_ms"))
+        # The hosted task records how many calls a 429 took and the temperature it sent
+        # (sealed cf803012); carry both onto the row so rows.jsonl shows them too.
+        for key in PASS_THROUGH:
+            if result is not None and key in result:
+                row[key] = result[key]
         rows.append(row)
     return rows
 

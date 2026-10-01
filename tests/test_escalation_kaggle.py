@@ -1241,6 +1241,32 @@ def test_converter_takes_the_newest_run_per_model(tmp_path):
     assert by_id["route-003"]["answer"] == "ESCALATE"
 
 
+def test_converter_carries_attempts_and_temperature_onto_rows(tmp_path, capsys):
+    """Sealed cf803012: each row records how many calls a 429 took. The hosted task puts
+    ``attempts`` and ``temperature`` in its result; the converted row keeps both, and only
+    when the run file recorded them."""
+    tree = tmp_path / "tree"
+    shutil.copytree(TREE, tree)
+    recorded = {"route-001": (3, "default"), "route-002": (6, 0)}
+    for path in tree.rglob("*.run.json"):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        for run in rows_mod.iter_runs(data):
+            found = rows_mod.item_result(run)
+            if found and found["item_id"] in recorded:
+                found["attempts"], found["temperature"] = recorded[found["item_id"]]
+        path.write_text(json.dumps(data), encoding="utf-8")
+    by_id = {r["fixture_id"]: r for r in _convert(tree)}
+    assert (by_id["route-001"]["attempts"], by_id["route-001"]["temperature"]) == (3, "default")
+    assert by_id["route-001"]["error"] is None
+    assert (by_id["route-002"]["attempts"], by_id["route-002"]["temperature"]) == (6, 0)
+    assert by_id["route-002"]["error"] == "RuntimeError: boom"
+    assert "attempts" not in by_id["route-003"] and "temperature" not in by_id["route-005"]
+    out = tmp_path / "rows.jsonl"
+    assert rows_mod.main([str(tree), "--run-id", "run-hosted", "--out", str(out)]) == 0
+    assert aggregate.main([str(out), "--format", "json"]) == 0
+    assert json.loads(capsys.readouterr().out)["google/model-x"]["all"]["n_rows"] == 60
+
+
 def _renamed_tree(tmp_path, name):
     tree = tmp_path / "tree"
     shutil.copytree(TREE, tree)

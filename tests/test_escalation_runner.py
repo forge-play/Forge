@@ -237,12 +237,35 @@ def test_a_qwen_request_carries_both_thinking_switches(monkeypatch):
     assert body["messages"][-1]["content"].startswith("USER")
 
 
-@pytest.mark.parametrize("model", ["gemma4:e2b", "phi4-mini"])
-def test_other_local_models_get_no_thinking_switch(monkeypatch, model):
+def test_a_gemma4_request_has_thinking_off_without_the_qwen_suffix(monkeypatch):
+    bodies = _fake_ollama(monkeypatch)
+    runner.make_ollama_http()("gemma4:e2b", "SYS", "USER")
+    assert bodies[0]["think"] is False
+    assert bodies[0]["messages"][-1]["content"] == "USER"
+
+
+@pytest.mark.parametrize("model", ["phi4-mini", "gemma3:4b", "llama3.1:8b", "llama3.2:1b"])
+def test_models_that_do_not_think_get_no_thinking_switch(monkeypatch, model):
     bodies = _fake_ollama(monkeypatch)
     runner.make_ollama_http()(model, "SYS", "USER")
     assert "think" not in bodies[0]
     assert bodies[0]["messages"][-1]["content"] == "USER"
+
+
+@pytest.mark.parametrize(
+    ("model", "thinks"),
+    [
+        ("qwen3:4b", True),
+        ("qwen3.5:latest", True),
+        ("gemma4:e2b", True),
+        ("Gemma4:e2b", True),
+        ("gemma3:4b", False),
+        ("phi4-mini:latest", False),
+        ("llama3.1:8b", False),
+    ],
+)
+def test_thinks_by_default_names_exactly_qwen_and_gemma4(model, thinks):
+    assert runner.thinks_by_default(model) is thinks
 
 
 @pytest.mark.parametrize("model", LOCAL_MODELS)

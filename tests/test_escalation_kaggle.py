@@ -112,20 +112,40 @@ def test_task_file_follows_the_kaggle_benchmarks_conventions(shape):
     last = tree.body[-1]
     assert ast.unparse(last) == f"escalation_{shape}.run(kbench.llm)"
     names = re.findall(r'name="([^"]+)"', text)
-    assert names == [f"escalation-{shape}-item", f"escalation-{shape}"]
+    # the names the tasks are live under on Kaggle (push2/), not the repo's old escalation-<shape>
+    assert names == [f"escalation-bench-{shape}-item", f"escalation-bench-{shape}"]
     assert all(re.fullmatch(r"[a-z0-9-]+", n) for n in names)  # slugifies to itself
     assert "store_task=False" in text
     assert 'on_failure="continue"' in text
     assert f'SHAPE = "{shape}"' in text
 
 
-def test_the_four_task_files_differ_only_by_shape():
-    bodies = {}
-    for shape in SHAPES:
+def _body(shape: str, *, drop_typed: bool = False) -> str:
+    text = _task_text(shape)
+    body = text[text.index("# %%\nimport json") :]
+    if drop_typed:
+        body = re.sub(
+            r"# --- typed answer schema.*?# --- end typed answer schema ---\n", "", body, flags=re.S
+        )
+        body = re.sub(
+            r"^from (functools|operator|typing|pydantic) import .*\n", "", body, flags=re.M
+        )
+    return body.replace(shape, "SHAPE_WORD")
+
+
+def test_judge_and_ground_task_files_differ_only_by_shape():
+    assert _body("judge") == _body("ground")
+
+
+def test_route_and_classify_task_files_differ_only_by_shape_and_the_typed_answer():
+    """The typed answer schema is the one deliberate hosted/local difference per shape."""
+    assert _body("route", drop_typed=True) == _body("classify", drop_typed=True)
+    for shape in ("route", "classify"):
         text = _task_text(shape)
-        body = text[text.index("# %%\nimport json") :]
-        bodies[shape] = body.replace(shape, "SHAPE_WORD")
-    assert len({*bodies.values()}) == 1
+        assert text.count("# --- typed answer schema") == 1
+        assert "hosted/local difference" in text.split("# %%")[1].lower()  # the header says so
+    for shape in ("judge", "ground"):
+        assert "typed answer schema" not in _task_text(shape)  # judge and ground are unchanged
 
 
 # --- hosted parity: schema, output cap, done_reason -------------------------------------
@@ -139,21 +159,14 @@ class _Namespace:
         self.llm = None
 
 
-def _install_sdk_stub(monkeypatch, llm_class_name="OpenAI"):
-    """Stand-ins for kaggle_benchmarks, pandas and pydantic, enough to run a task file."""
+def _install_sdk_stub(monkeypatch, llm_class_name="OpenAI", model=None):
+    """Stand-ins for kaggle_benchmarks and pandas, enough to run a task file.
+
+    pydantic is the real one: the typed route and classify answers are pydantic models, and
+    a stub could not tell a typed schema from an open one.
+    """
+    pytest.importorskip("pydantic")
     ns = _Namespace()
-
-    class BaseModel:
-        model_fields: dict = {}
-
-        def __init_subclass__(cls, **kw):
-            cls.model_fields = dict(getattr(cls, "__annotations__", {}))
-
-        def __init__(self, **kw):
-            self.__dict__.update(kw)
-
-        def model_dump(self):
-            return dict(self.__dict__)
 
     class ResponseParsingError(ValueError):
         def __init__(self, value):
@@ -208,6 +221,8 @@ def _install_sdk_stub(monkeypatch, llm_class_name="OpenAI"):
         )
 
     llm = _llm_class()()
+    if model is not None:
+        llm.model = model
 
     def script(self, schema):
         content = json.dumps({"answer": "ESCALATE", "confidence": 0.5})
@@ -228,21 +243,20 @@ def _install_sdk_stub(monkeypatch, llm_class_name="OpenAI"):
     prompting.ResponseParsingError = ResponseParsingError
     pandas = type(sys)("pandas")
     pandas.DataFrame = list
-    pydantic = type(sys)("pydantic")
-    pydantic.BaseModel = BaseModel
     for name, module in (
         ("kaggle_benchmarks", sdk),
         ("kaggle_benchmarks.prompting", prompting),
         ("pandas", pandas),
-        ("pydantic", pydantic),
     ):
         monkeypatch.setitem(sys.modules, name, module)
     ns.ResponseParsingError = ResponseParsingError
     return ns
 
 
-def _run_task(shape, monkeypatch, tmp_path, *, env=None, llm_class_name="OpenAI", script=None):
-    ns = _install_sdk_stub(monkeypatch, llm_class_name)
+def _run_task(
+    shape, monkeypatch, tmp_path, *, env=None, llm_class_name="OpenAI", script=None, model=None
+):
+    ns = _install_sdk_stub(monkeypatch, llm_class_name, model)
     if script is not None:  # script(ns, schema) -> a reply, or raises
         ns.llm.script = lambda self, schema: script(ns, schema)
     data = tmp_path / "data"
@@ -250,7 +264,7 @@ def _run_task(shape, monkeypatch, tmp_path, *, env=None, llm_class_name="OpenAI"
         export.write_export(data)
     monkeypatch.setenv("ESCALATION_DATA_DIR", str(data))
     monkeypatch.setenv("ESCALATION_LIMIT", "2")
-    for key in ("ESCALATION_SCHEMA", "ESCALATION_CAP_PARAM"):
+    for key in ("ESCALATION_SCHEMA", "ESCALATION_CAP_PARAM", "ESCALATION_REASONING"):
         monkeypatch.delenv(key, raising=False)
     for key, value in (env or {}).items():
         monkeypatch.setenv(key, value)
@@ -258,6 +272,9 @@ def _run_task(shape, monkeypatch, tmp_path, *, env=None, llm_class_name="OpenAI"
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module, ns
+
+
+TYPED_LABEL = {"route": "answer-typed", "classify": "answer-typed"}
 
 
 @pytest.mark.parametrize("shape", SHAPES)
@@ -271,7 +288,7 @@ def test_the_schema_reaches_respond_for_every_shape(shape, monkeypatch, tmp_path
     for call in ns.llm.calls:
         assert call["schema"] is module.Answer
         assert call["seed"] == 0 and call["temperature"] == 0
-    assert {r["schema"] for r in ns.results} == {"answer"}
+    assert {r["schema"] for r in ns.results} == {TYPED_LABEL.get(shape, "answer")}
 
 
 def test_the_schema_can_be_switched_off_and_the_row_says_so(monkeypatch, tmp_path):
@@ -310,15 +327,20 @@ def test_a_parsed_reply_round_trips_through_rows_and_aggregate(monkeypatch, tmp_
     def script(ns, schema):
         reply = type("Reply", (), {})()
         reply.content = schema(
-            answer={"tool": "calendar_add_event", "args": {"title": "x"}}, confidence=0.9
+            answer={
+                "tool": "calendar_add_event",
+                "args": {"title": "x", "date": "2027-03-14", "time": None},
+            },
+            confidence=0.9,
         )
         reply._meta = {"input_tokens": 5, "output_tokens": 9, "raw_content": "```json\n{}\n```"}
         return reply
 
     _, ns = _run_task("route", monkeypatch, tmp_path, script=script)
     first = ns.results[0]
+    # the unset optional argument is dropped from the recorded reply, as a local reply omits it
     assert json.loads(first["text"]) == {
-        "answer": {"tool": "calendar_add_event", "args": {"title": "x"}},
+        "answer": {"tool": "calendar_add_event", "args": {"title": "x", "date": "2027-03-14"}},
         "confidence": 0.9,
     }
     assert first["raw_text"] == "```json\n{}\n```"
@@ -370,6 +392,263 @@ def test_missing_done_reason_is_unknown_not_zero():
     assert "n_truncation_unknown" not in local["m"]["route"]  # a local cell keeps its keys
     local_md = aggregate.to_markdown(local)
     assert "unknown" not in local_md and "no finish reason" not in local_md
+
+
+# --- typed answer schemas (route, classify) -------------------------------------------
+
+TYPED = ("route", "classify")
+
+
+def _answer_class(shape, monkeypatch, tmp_path):
+    module, _ = _run_task(shape, monkeypatch, tmp_path)
+    return module
+
+
+def _walk(node):
+    """Every dict in a JSON schema, depth first."""
+    if isinstance(node, dict):
+        yield node
+        for value in node.values():
+            yield from _walk(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from _walk(value)
+
+
+@pytest.mark.parametrize("shape", TYPED)
+def test_the_typed_answer_schema_has_no_open_object(shape, monkeypatch, tmp_path):
+    """The defect (gap a84645278b60): an ``answer`` with no properties lets a hosted
+    structured-output API emit only ``{}``. Every object in the schema now names its
+    properties, requires all of them, and refuses extras; ESCALATE stays a string arm."""
+    schema = _answer_class(shape, monkeypatch, tmp_path).Answer.model_json_schema()
+    assert "$defs" not in schema and "$ref" not in json.dumps(schema)  # SDK keeps response_format
+    objects = [n for n in _walk(schema) if n.get("type") == "object"]
+    # the envelope and the answer object(s): route has one call and one args object per tool
+    assert len(objects) >= (1 + 2 * 20 if shape == "route" else 2)
+    for node in objects:
+        assert node.get("properties"), f"open object in the {shape} schema: {node}"
+        assert set(node["required"]) == set(node["properties"])
+        assert node["additionalProperties"] is False
+    arms = schema["properties"]["answer"]["anyOf"]
+    assert {"const": "ESCALATE", "type": "string"} in [
+        {k: v for k, v in arm.items() if k in ("const", "type")} for arm in arms
+    ]
+    assert {arm["type"] for arm in arms} == {"object", "string"}
+
+
+def test_the_route_schema_matches_the_catalogue(monkeypatch, tmp_path):
+    module = _answer_class("route", monkeypatch, tmp_path)
+    catalog = {t["name"]: t["parameters"] for t in runner.load_catalog()}
+    arms = {
+        arm["properties"]["tool"]["const"]: arm
+        for arm in module.Answer.model_json_schema()["properties"]["answer"]["anyOf"]
+        if arm.get("type") == "object"
+    }
+    assert set(arms) == set(catalog)
+    for tool, params in catalog.items():
+        args = arms[tool]["properties"]["args"]
+        assert set(args["properties"]) == set(params["properties"]), tool
+        for name, spec in params["properties"].items():
+            typed = args["properties"][name]
+            required = name in params["required"]
+            arm_types = {a.get("type") for a in typed.get("anyOf", [typed])}
+            assert ("null" in arm_types) is (not required), (tool, name)
+            wanted = {"string": "string", "integer": "integer", "number": "number"}[spec["type"]]
+            assert wanted in arm_types, (tool, name)
+            if "enum" in spec:
+                enum = typed.get("enum") or next(a["enum"] for a in typed["anyOf"] if "enum" in a)
+                assert set(enum) == set(spec["enum"]), (tool, name)
+
+
+def test_the_classify_schema_matches_the_prompt(monkeypatch, tmp_path):
+    module = _answer_class("classify", monkeypatch, tmp_path)
+    arms = module.Answer.model_json_schema()["properties"]["answer"]["anyOf"]
+    obj = next(arm for arm in arms if arm.get("type") == "object")
+    assert set(obj["properties"]) == {"status", "severity", "needs_human"}
+    assert obj["properties"]["status"]["enum"] == ["resolved", "in_progress", "blocked", "wontfix"]
+    assert obj["properties"]["severity"]["enum"] == ["low", "medium", "high"]
+    assert obj["properties"]["needs_human"]["type"] == "boolean"
+    prompt = runner.system_prompt("classify")
+    for value in obj["properties"]["status"]["enum"] + obj["properties"]["severity"]["enum"]:
+        assert f'"{value}"' in prompt
+
+
+def _typed_reply(shape, schema, item, escalate=False):
+    """The typed model's reply for one fixture item: its expected answer, or ESCALATE."""
+    expected = "ESCALATE" if escalate else item["expected"]
+    if shape == "route" and isinstance(expected, dict):
+        call = next(
+            c for c in schema.model_fields["answer"].annotation.__args__ if _is(c, expected)
+        )
+        nulls = {k: None for k in call.model_fields["args"].annotation.model_fields}
+        expected = {"tool": expected["tool"], "args": {**nulls, **expected["args"]}}
+    return schema(answer=expected, confidence=0.8)
+
+
+def _is(call, expected):
+    tool = getattr(call, "model_fields", {}).get("tool")
+    return tool is not None and tool.annotation.__args__ == (expected["tool"],)
+
+
+@pytest.mark.parametrize("shape", TYPED)
+def test_a_typed_reply_scores_like_the_equivalent_local_reply(shape, monkeypatch, tmp_path):
+    """The same replies through the hosted path (task file, kaggle_rows, aggregate) and the
+    local path (runner.make_row, aggregate) give the same cell."""
+    items = runner.load_fixtures(shape)
+    escalate_every_third = [i % 3 == 0 for i in range(len(items))]
+
+    def script(ns, schema):
+        n = len(ns.llm.calls) - 1
+        reply = type("Reply", (), {})()
+        reply.content = _typed_reply(shape, schema, items[n], escalate_every_third[n])
+        reply._meta = {"input_tokens": 5, "output_tokens": 9, "raw_content": "{}"}
+        return reply
+
+    module, ns = _run_task(
+        shape, monkeypatch, tmp_path, script=script, env={"ESCALATION_LIMIT": str(len(items))}
+    )
+    assert len(ns.results) == len(items)
+    assert {r["schema"] for r in ns.results} == {"answer-typed"}
+    by_id = {r["item_id"]: r for r in ns.results}
+    rd = type("RD", (), {"shape": shape, "items": by_id})()
+    hosted_rows = rows_mod.make_rows(rd, "r", "m")
+    system = runner.system_prompt(shape)
+    local_rows = []
+    for item, esc in zip(items, escalate_every_third):
+        text = by_id[item["id"]]["text"]
+        assert json.loads(text)["answer"] == ("ESCALATE" if esc else item["expected"])
+        local_rows.append(
+            runner.make_row(
+                "r",
+                "m",
+                shape,
+                item,
+                system,
+                runner.user_prompt(shape, item),
+                lambda *_: {"text": text},
+            )
+        )
+    truth = aggregate.load_truth()
+    hosted = aggregate.aggregate(hosted_rows, truth)["m"][shape]
+    local = aggregate.aggregate(local_rows, truth)["m"][shape]
+    assert hosted["n_correct"] > 0 and hosted["n_escalated"] > 0  # a mix, not all-or-nothing
+    assert hosted["n_unparseable"] == 0
+    for key in local:
+        assert hosted[key] == local[key], key
+    for hosted_row, local_row in zip(hosted_rows, local_rows):
+        assert (hosted_row["answer"], hosted_row["confidence"], hosted_row["parse_ok"]) == (
+            local_row["answer"],
+            local_row["confidence"],
+            True,
+        )
+
+
+@pytest.mark.parametrize("shape", TYPED)
+def test_a_reply_the_typed_schema_rejects_still_scores_from_its_raw_text(
+    shape, monkeypatch, tmp_path
+):
+    """A model that writes ``escalate`` in lower case breaks the typed arm, but the raw
+    text is kept and aggregate.py scores it exactly as it scores a local reply."""
+    raw = json.dumps({"answer": "ESCALATE", "confidence": 0.7})
+
+    def script(ns, schema):
+        raise ns.ResponseParsingError(raw)
+
+    _, ns = _run_task(shape, monkeypatch, tmp_path, script=script)
+    by_id = {r["item_id"]: r for r in ns.results}
+    rows = rows_mod.make_rows(type("RD", (), {"shape": shape, "items": by_id})(), "r", "m")
+    done = [r for r in rows if r["fixture_id"] in by_id]
+    assert done and all(r["parse_ok"] and r["answer"] == "ESCALATE" for r in done)
+
+
+@pytest.mark.parametrize("shape", TYPED)
+def test_every_fixture_answer_is_expressible_in_the_typed_schema(shape, monkeypatch, tmp_path):
+    module = _answer_class(shape, monkeypatch, tmp_path)
+    for item in runner.load_fixtures(shape):
+        reply = _typed_reply(shape, module.Answer, item)
+        dumped = reply.model_dump(exclude_none=True)["answer"]
+        assert dumped == item["expected"], item["id"]
+        assert aggregate.is_correct(shape, dumped, {"answerable": item["answerable"], **item})
+
+
+@pytest.mark.parametrize("shape", TYPED)
+def test_the_guard_accepts_the_runner_schema_and_refuses_a_real_mismatch(
+    shape, monkeypatch, tmp_path
+):
+    """Rule: same envelope fields, same required set, same ``confidence`` type, and the typed
+    ``answer`` admits exactly the JSON types the export's ``answer`` admits (object, string)."""
+    module = _answer_class(shape, monkeypatch, tmp_path)
+    good = json.loads(json.dumps(runner.ANSWER_SCHEMA))
+    module.check_exported_schema(good)
+    assert module.answer_arm_types() == {"object", "string"}
+
+    def broken(edit):
+        schema = json.loads(json.dumps(good))
+        edit(schema)
+        with pytest.raises(ValueError, match="no longer matches"):
+            module.check_exported_schema(schema)
+
+    broken(lambda s: s["properties"].update(reason={"type": "string"}))  # a new field
+    broken(lambda s: s["required"].remove("confidence"))  # a looser required set
+    broken(lambda s: s["properties"]["confidence"].update(type="string"))
+    broken(lambda s: s["properties"]["answer"]["anyOf"].append({"type": "array"}))  # a new arm
+    broken(lambda s: s["properties"]["answer"]["anyOf"].pop(0))  # a dropped string arm
+    broken(lambda s: s["properties"]["answer"]["anyOf"].pop(1))  # a dropped object arm
+    # the typed side losing an arm is refused too
+    monkeypatch.setattr(module, "answer_arm_types", lambda *_: {"object"})
+    with pytest.raises(ValueError, match="no longer matches"):
+        module.check_exported_schema(good)
+
+
+def test_the_export_still_carries_the_open_runner_schema():
+    """The local runner and the exported dataset are unchanged: the typed schema is hosted only."""
+    for shape in TYPED:
+        schema = export.export_shape(shape)[0]["schema"]
+        assert schema == runner.ANSWER_SCHEMA
+        assert schema["properties"]["answer"] == {"anyOf": [{"type": "string"}, {"type": "object"}]}
+
+
+@pytest.mark.parametrize(
+    "model, expected",
+    [
+        ("google/gemini-3.8-flash", "low"),
+        ("google/gemini-3.1-pro-preview", "low"),
+        ("openai/gpt-5.5", "low"),
+        ("openai/gpt-oss-20b", "low"),
+        ("anthropic/claude-opus-5", None),
+        ("xai/grok-4.6", None),
+        ("deepseek-ai/deepseek-r1-0528", None),
+        ("qwen/qwen3-235b-a22b-instruct-2507", None),
+        (None, None),
+    ],
+)
+@pytest.mark.parametrize("shape", TYPED)
+def test_the_reasoning_level_follows_the_provider(shape, model, expected, monkeypatch, tmp_path):
+    _, ns = _run_task(shape, monkeypatch, tmp_path, model=model)
+    for call in ns.llm.calls:
+        assert call.get("reasoning") == expected and ("reasoning" in call) is (expected is not None)
+        assert call["max_tokens"] == 512  # the cap is never raised to make room
+    assert {r["reasoning"] for r in ns.results} == {expected}
+
+
+@pytest.mark.parametrize("shape", TYPED)
+def test_the_reasoning_level_can_be_overridden_or_left_to_the_model(shape, monkeypatch, tmp_path):
+    _, ns = _run_task(
+        shape, monkeypatch, tmp_path, model="google/g", env={"ESCALATION_REASONING": "high"}
+    )
+    assert all(call["reasoning"] == "high" for call in ns.llm.calls)
+    _, ns = _run_task(
+        shape, monkeypatch, tmp_path, model="google/g", env={"ESCALATION_REASONING": "default"}
+    )
+    assert all("reasoning" not in call for call in ns.llm.calls)
+    assert {r["reasoning"] for r in ns.results} == {None}
+
+
+@pytest.mark.parametrize("shape", ("judge", "ground"))
+def test_judge_and_ground_send_no_reasoning_level(shape, monkeypatch, tmp_path):
+    _, ns = _run_task(shape, monkeypatch, tmp_path, model="google/gemini-3.8-flash")
+    assert all("reasoning" not in call for call in ns.llm.calls)
+    assert all("reasoning" not in r for r in ns.results)
 
 
 # --- converter -------------------------------------------------------------------

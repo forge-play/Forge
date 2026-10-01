@@ -5,18 +5,26 @@
 # fits? This task only collects replies. It sends each exported prompt (system + user)
 # at temperature 0 and seed 0 and records the raw reply text per item. The reply is held to the
 # answer schema and the output cap; nothing is scored here; the benchmark's own aggregator scores the downloaded run files.
+#
+# Hosted/local difference: the local runner sends ``runner.ANSWER_SCHEMA``, whose ``answer``
+# is "a string or an open object". A hosted structured-output API drops an open object
+# (Gemini removes ``additionalProperties``), so a hosted model could only emit ``{}``
+# (gap a84645278b60). Here ``answer`` is typed: one explicit object per catalogue tool, or the
+# string ESCALATE. The reply text is the same JSON the aggregator reads for a local reply.
 
 # %%
 import json
 import os
 import time
+from functools import reduce
+from operator import or_
 from pathlib import Path
-from typing import Any
+from typing import Literal
 
 import kaggle_benchmarks as kbench
 import pandas as pd
 from kaggle_benchmarks.prompting import ResponseParsingError
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, create_model
 
 SHAPE = "route"
 DATASET_SLUG = "escalation-benchmark"
@@ -32,13 +40,120 @@ CAP_PARAM = os.environ.get("ESCALATION_CAP_PARAM", "auto")
 # The answer schema is sent with every call. Set ESCALATION_SCHEMA=none for a model that
 # rejects structured output; each row then records schema "none".
 SCHEMA_ON = os.environ.get("ESCALATION_SCHEMA", "answer") != "none"
+# Hidden reasoning is billed against the output cap, so a reasoning model can spend the 512
+# on thought and cut the answer off (one smoke item: 488 of 497 tokens). kaggle_benchmarks
+# 0.6.1 takes respond(reasoning="none"|"low"|"medium"|"high"): "reasoning_effort" for an
+# OpenAI-style model, a thinking level for Google GenAI. The level is set by model-name
+# prefix (the proxy names models "<vendor>/<model>"); a model with no entry gets none sent and
+# keeps its own default. "low" is the lowest level every model in a prefix is known to accept
+# (Gemini 3 cannot switch thinking off; OpenAI reasoning models take low/medium/high).
+# ESCALATION_REASONING overrides it: a level for every model, or "default" to send none.
+REASONING_BY_PREFIX = {"google/": "low", "openai/": "low"}
+REASONING = os.environ.get("ESCALATION_REASONING", "auto")
+
+
+# --- typed answer schema (hosted/local difference; a test pins it to the catalogue) ---
+ESCALATE = "ESCALATE"
+SCHEMA_LABEL = "answer-typed"  # the per-row ``schema`` value when the typed schema is sent
+# tool -> {argument: (type, required)}, copied from catalog/tools.json.
+TOOL_ARGS = {
+    "calendar_add_event": {"title": (str, True), "date": (str, True), "time": (str, False)},
+    "calendar_list_events": {"date": (str, True)},
+    "weather_current": {"city": (str, True)},
+    "weather_forecast": {"city": (str, True), "days": (int, True)},
+    "library_search": {"query": (str, True), "author": (str, False)},
+    "library_hold_book": {"isbn": (str, True), "branch": (str, True)},
+    "recipe_search": {
+        "ingredient": (str, True),
+        "diet": (Literal["any", "vegetarian", "vegan", "gluten_free"], False),
+    },
+    "recipe_scale": {"recipe_id": (str, True), "servings": (int, True)},
+    "transit_next_departure": {"stop": (str, True), "route": (str, True)},
+    "transit_plan_trip": {"origin": (str, True), "destination": (str, True)},
+    "convert_units": {"value": (float, True), "from_unit": (str, True), "to_unit": (str, True)},
+    "convert_currency": {"amount": (float, True), "from_code": (str, True), "to_code": (str, True)},
+    "timezone_convert": {"time": (str, True), "from_zone": (str, True), "to_zone": (str, True)},
+    "dictionary_define": {"word": (str, True)},
+    "translate_text": {"text": (str, True), "target_lang": (str, True)},
+    "tide_table": {"harbour": (str, True), "date": (str, True)},
+    "flight_status": {"flight_number": (str, True), "date": (str, True)},
+    "parcel_track": {"tracking_number": (str, True)},
+    "reminder_set": {"text": (str, True), "date": (str, True), "time": (str, True)},
+    "math_evaluate": {"expression": (str, True)},
+}
+_STRICT = ConfigDict(extra="forbid")
+
+
+def _tool_call_model(tool: str, args: dict) -> type[BaseModel]:
+    """One explicit object: ``tool`` fixed to this name, ``args`` limited to its arguments.
+
+    OpenAI strict structured output wants every property required, so an optional catalogue
+    argument is a required key that may be null. A null is dropped from the recorded
+    reply (``exclude_none``), so a call that leaves an optional argument out scores like a
+    local reply that omits it.
+    """
+    stem = "".join(part.title() for part in tool.split("_"))
+    fields = {
+        name: (kind, ...) if required else (kind | None, ...)
+        for name, (kind, required) in args.items()
+    }
+    args_model = create_model(f"{stem}Args", __config__=_STRICT, **fields)
+    return create_model(
+        f"{stem}Call", __config__=_STRICT, tool=(Literal[tool], ...), args=(args_model, ...)
+    )
+
+
+TOOL_CALLS = [_tool_call_model(tool, args) for tool, args in TOOL_ARGS.items()]
+
+
+def inline_refs(schema: dict) -> dict:
+    """The schema with every ``$ref`` replaced by its definition and ``$defs`` removed.
+
+    kaggle_benchmarks 0.6.1 treats a schema with ``$defs`` as nested: for an OpenAI-style
+    model it then drops ``response_format`` and only pastes the schema into the prompt, so
+    nothing is enforced. An inlined schema keeps the structured-output path.
+    """
+    defs = schema.get("$defs", {})
+
+    def walk(node: object) -> object:
+        if isinstance(node, dict):
+            if "$ref" in node:
+                return walk(defs[node["$ref"].rsplit("/", 1)[-1]])
+            return {key: walk(value) for key, value in node.items() if key != "$defs"}
+        if isinstance(node, list):
+            return [walk(value) for value in node]
+        return node
+
+    return walk(schema)
 
 
 class Answer(BaseModel):
-    """The reply envelope: runner.ANSWER_SCHEMA as a type the SDK accepts."""
+    """The reply envelope: ``answer`` is one tool call or the string ESCALATE."""
 
-    answer: str | dict[str, Any]
+    model_config = _STRICT
+
+    answer: reduce(or_, [*TOOL_CALLS, Literal[ESCALATE]])  # type: ignore[valid-type]
     confidence: float
+
+    @classmethod
+    def model_json_schema(cls, *args, **kwargs) -> dict:
+        return inline_refs(super().model_json_schema(*args, **kwargs))
+
+
+def answer_arm_types(model: type[BaseModel] = Answer) -> set[str]:
+    """The JSON types the typed ``answer`` admits: "object" and "string", read off its schema."""
+    schema = model.model_json_schema()
+    arms: set[str] = set()
+    stack = [schema["properties"]["answer"]]
+    while stack:
+        node = stack.pop()
+        stack.extend(node.get("anyOf", []))
+        if node.get("type") in ("object", "string"):
+            arms.add(node["type"])
+    return arms
+
+
+# --- end typed answer schema ---
 
 
 # %%
@@ -56,20 +171,40 @@ def find_prompts() -> Path:
     raise FileNotFoundError(f"{SHAPE}.jsonl not found under {root}; attach the dataset")
 
 
+def check_exported_schema(exported: dict) -> None:
+    """Refuse an exported schema the typed ``Answer`` does not cover.
+
+    The typed model is narrower than the exported one by design (explicit objects, not an
+    open object), so equality is not the rule. The rule: the same envelope fields, the same
+    required set, the same JSON type for ``confidence``, and the typed ``answer`` admits
+    every JSON type the exported ``answer`` admits and no other (object and string). A
+    dropped ESCALATE string, a dropped object arm, or a type added to the export is refused.
+    """
+    fields = set(Answer.model_fields)
+    typed = Answer.model_json_schema()["properties"]
+    answer_arms = {arm.get("type") for arm in exported["properties"]["answer"].get("anyOf", [])}
+    if (
+        set(exported["properties"]) != fields
+        or set(exported["required"]) != fields
+        or exported["properties"]["confidence"].get("type") != typed["confidence"].get("type")
+        or answer_arms != answer_arm_types()
+    ):
+        raise ValueError("the exported answer schema no longer matches the Answer type")
+
+
 def load_frame() -> pd.DataFrame:
     """One row per item: item_id, system, user. ESCALATION_LIMIT keeps the first N."""
     rows = []
+    checked = None
     for line in find_prompts().read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
         item = json.loads(line)
         system, user = item["messages"]
         assert system["role"] == "system" and user["role"] == "user"
-        exported = item["schema"]
-        if set(exported["properties"]) != set(Answer.model_fields) or set(
-            exported["required"]
-        ) != set(Answer.model_fields):
-            raise ValueError("the exported answer schema no longer matches the Answer type")
+        if item["schema"] != checked:  # every line carries the same schema; check it once
+            check_exported_schema(item["schema"])
+            checked = item["schema"]
         rows.append({"item_id": item["id"], "system": system["content"], "user": user["content"]})
     limit = os.environ.get("ESCALATION_LIMIT")
     return pd.DataFrame(rows[: int(limit)] if limit else rows)
@@ -87,6 +222,19 @@ def cap_kwargs(llm) -> dict:
     return {name: MAX_OUTPUT_TOKENS}
 
 
+def reasoning_kwargs(llm) -> dict:
+    """The ``reasoning`` level sent for this model, or nothing when it keeps its default."""
+    if REASONING == "default":
+        return {}
+    if REASONING != "auto":
+        return {"reasoning": REASONING}
+    name = str(getattr(llm, "model", None) or getattr(llm, "name", None) or "")
+    for prefix, level in REASONING_BY_PREFIX.items():
+        if name.startswith(prefix):
+            return {"reasoning": level}
+    return {}
+
+
 def reply_text(reply) -> tuple[str | None, str | None]:
     """The reply as the JSON text the aggregator parses, and the raw text when the SDK kept it.
 
@@ -97,28 +245,30 @@ def reply_text(reply) -> tuple[str | None, str | None]:
     raw = (getattr(reply, "_meta", None) or {}).get("raw_content")
     raw = raw if isinstance(raw, str) else None
     if isinstance(content, BaseModel):
-        return json.dumps(content.model_dump()), raw
+        return json.dumps(content.model_dump(exclude_none=True)), raw
     return (content if isinstance(content, str) else str(content)), None
 
 
-@kbench.task(name="escalation-route-item", store_task=False)
+@kbench.task(name="escalation-bench-route-item", store_task=False)
 def answer_item(llm, item_id: str, system: str, user: str) -> dict:
     """One item, one call. A failed call is a result, never retried."""
     started = time.monotonic()
     cap = cap_kwargs(llm)
+    reasoning = reasoning_kwargs(llm)
     result = {
         "item_id": item_id,
         "text": None,
         "error": None,
-        "schema": "answer" if SCHEMA_ON else "none",
+        "schema": SCHEMA_LABEL if SCHEMA_ON else "none",
         "cap": cap or None,
+        "reasoning": reasoning.get("reasoning"),
     }
     try:
         kbench.user.send(user)
         kwargs = {} if TEMPERATURE is None else {"temperature": TEMPERATURE}
         if SCHEMA_ON:
             kwargs["schema"] = Answer
-        reply = llm.respond(system=system, seed=SEED, **kwargs, **cap)
+        reply = llm.respond(system=system, seed=SEED, **kwargs, **cap, **reasoning)
         meta = getattr(reply, "_meta", None) or {}
         result["text"], raw = reply_text(reply)
         if raw is not None:
@@ -137,7 +287,7 @@ def answer_item(llm, item_id: str, system: str, user: str) -> dict:
 
 
 # %%
-@kbench.task(name="escalation-route", description="Escalation benchmark: raw replies.")
+@kbench.task(name="escalation-bench-route", description="Escalation benchmark: raw replies.")
 def escalation_route(llm) -> dict:
     frame = load_frame()
     runs = answer_item.evaluate(llm=[llm], evaluation_data=frame, on_failure="continue")

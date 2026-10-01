@@ -101,7 +101,7 @@ def reply_text(reply) -> tuple[str | None, str | None]:
     return (content if isinstance(content, str) else str(content)), None
 
 
-@kbench.task(name="escalation-ground-item", store_task=False)
+@kbench.task(name="escalation-bench-ground-item", store_task=False)
 def answer_item(llm, item_id: str, system: str, user: str) -> dict:
     """One item, one call. A failed call is a result, never retried."""
     started = time.monotonic()
@@ -137,7 +137,7 @@ def answer_item(llm, item_id: str, system: str, user: str) -> dict:
 
 
 # %%
-@kbench.task(name="escalation-ground", description="Escalation benchmark: raw replies.")
+@kbench.task(name="escalation-bench-ground", description="Escalation benchmark: raw replies.")
 def escalation_ground(llm) -> dict:
     frame = load_frame()
     runs = answer_item.evaluate(llm=[llm], evaluation_data=frame, on_failure="continue")

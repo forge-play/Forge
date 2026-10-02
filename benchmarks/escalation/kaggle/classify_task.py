@@ -103,12 +103,14 @@ def reasoning_kwargs(llm) -> dict:
 
 # Temperature. TEMPERATURE (0) is sent unless the model's provider refuses it. The OpenAI
 # gpt-5 family accepts only its default: gpt-5.4-nano answered every smoke2 call with
-# a 400 "'temperature' does not support 0 with this model". The SDK has no per-model
+# a 400 "'temperature' does not support 0 with this model". Claude Opus/Sonnet 5 reject
+# temperature as deprecated (400 on every day-2 frontier item). The SDK has no per-model
 # rule (respond() passes the value through; only prompt() gates it, and the proxy loader
 # switches that off), so the set is ours: openai/gpt-5 (nano: confirmed by smoke2; gpt-5.5:
-# inferred from the same family). gpt-oss-20b is not in it: smoke2 ran it with
-# temperature 0 and 0 errors. Every row records what was sent: 0, or "default".
-NO_TEMPERATURE_PREFIXES = ("openai/gpt-5",)
+# inferred from the same family) and anthropic/claude-opus-5 + anthropic/claude-sonnet-5
+# (day-2 frontier). gpt-oss-20b is not in it: smoke2 ran it with temperature 0 and 0
+# errors. Every row records what was sent: 0, or "default".
+NO_TEMPERATURE_PREFIXES = ("openai/gpt-5", "anthropic/claude-opus-5", "anthropic/claude-sonnet-5")
 
 
 def temperature_kwargs(llm) -> dict:

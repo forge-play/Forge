@@ -46,6 +46,7 @@ ALLOWED_OTHER = {
     "gate/privacy_gate.py",
     "runner.py",
     "aggregate.py",
+    "reliability.py",
     "socket_backend.py",
     "kaggle_export.py",
     "kaggle_rows.py",

@@ -77,12 +77,12 @@ def test_floor_picks_worst_shape_and_ceiling():
     assert fl["shapes_measured"] == 4
 
 
-def _rows_by_shape(wrong_shapes=()):
-    """Answerable items right (WRONG for wrong_shapes), unanswerable items ESCALATE."""
+def _rows_by_shape(wrong=None):
+    """Answerable items right (WRONG for shapes keyed in wrong), unanswerable items ESCALATE."""
     rows = []
     for shape in ("route", "classify", "judge", "ground"):
         for f in ids(shape, True, 4):
-            ans = "WRONG" if shape in wrong_shapes else TRUTH[f]["expected"]
+            ans = "WRONG" if (wrong or {}).get(shape) else TRUTH[f]["expected"]
             rows += rows_for("m", [(f, ans)])
         for f in ids(shape, False, 2):
             rows += rows_for("m", [(f, "ESCALATE")])
@@ -97,7 +97,7 @@ def test_floor_reports_every_shape_when_false_confidence_is_all_zero():
 
 
 def test_floor_reports_both_shapes_when_two_tie_on_the_task_floor():
-    fl = rel.floor(ag.aggregate(_rows_by_shape(("judge", "classify")), TRUTH))["m"]
+    fl = rel.floor(ag.aggregate(_rows_by_shape({"judge": True, "classify": True}), TRUTH))["m"]
     assert fl["task_floor"] == 0.0
     assert fl["task_floor_shapes"] == ["classify", "judge"]
     assert sorted(fl["task_floor_ci"]) == ["classify", "judge"]

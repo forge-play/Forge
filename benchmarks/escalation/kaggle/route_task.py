@@ -311,6 +311,19 @@ def answer_arm_types(model: type[BaseModel] = Answer) -> set[str]:
     return arms
 
 
+def schema_on(llm) -> bool:
+    """Whether this call sends the typed answer schema.
+
+    Anthropic rejects the 20-tool route union (compiled grammar too large - gap
+    7d504b4dc380). Other providers keep SCHEMA_ON / ESCALATION_SCHEMA.
+    ``ESCALATION_SCHEMA=none`` still forces off for every model. Route-only; lives
+    with the typed schema so the four-task body pin still strips it.
+    """
+    if not SCHEMA_ON:
+        return False
+    return not model_name(llm).startswith("anthropic/")
+
+
 # --- end typed answer schema ---
 
 
@@ -402,7 +415,7 @@ def answer_item(llm, item_id: str, system: str, user: str) -> dict:
         "item_id": item_id,
         "text": None,
         "error": None,
-        "schema": SCHEMA_LABEL if SCHEMA_ON else "none",
+        "schema": SCHEMA_LABEL if schema_on(llm) else "none",
         "cap": cap or None,
         "reasoning": reasoning.get("reasoning"),
         "temperature": temperature.get("temperature", "default"),
@@ -411,7 +424,7 @@ def answer_item(llm, item_id: str, system: str, user: str) -> dict:
     try:
         kbench.user.send(user)  # once: a retry repeats respond() only, never this
         kwargs = dict(temperature)
-        if SCHEMA_ON:
+        if schema_on(llm):
             kwargs["schema"] = Answer
         reply = respond_with_retry(
             llm, result, system=system, seed=SEED, **kwargs, **cap, **reasoning

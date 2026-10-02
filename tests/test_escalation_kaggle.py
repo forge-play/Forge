@@ -128,6 +128,8 @@ def _body(shape: str, *, drop_typed: bool = False) -> str:
         body = re.sub(
             r"# --- typed answer schema.*?# --- end typed answer schema ---\n", "", body, flags=re.S
         )
+        # route answer_item uses schema_on(llm); others use SCHEMA_ON — normalize for the pin
+        body = body.replace("schema_on(llm)", "SCHEMA_ON")
         body = re.sub(
             r"^from (functools|operator|typing|pydantic) import .*\n", "", body, flags=re.M
         )
@@ -313,6 +315,51 @@ def test_the_schema_can_be_switched_off_and_the_row_says_so(monkeypatch, tmp_pat
     assert all(call["schema"] is str for call in ns.llm.calls)  # respond's default: no schema
     assert {r["schema"] for r in ns.results} == {"none"}
     assert all(json.loads(r["text"])["answer"] == "ESCALATE" for r in ns.results)
+
+
+def test_route_schema_is_off_for_anthropic_and_on_for_other_models(monkeypatch, tmp_path):
+    """Gap 7d504b4dc380: Anthropic rejects the 20-tool route union; other providers keep it."""
+    module, ns = _run_task(
+        "route", monkeypatch, tmp_path, model="anthropic/claude-haiku-4-5-20251001"
+    )
+    assert module.schema_on(ns.llm) is False
+    assert all(call["schema"] is str for call in ns.llm.calls)
+    assert {r["schema"] for r in ns.results} == {"none"}
+
+    module, ns = _run_task("route", monkeypatch, tmp_path, model="openai/gpt-5.5")
+    assert module.schema_on(ns.llm) is True
+    assert all(call["schema"] is module.Answer for call in ns.llm.calls)
+    assert {r["schema"] for r in ns.results} == {"answer-typed"}
+
+    module, ns = _run_task("route", monkeypatch, tmp_path, model="google/gemini-3.8-flash")
+    assert module.schema_on(ns.llm) is True
+    assert all(call["schema"] is module.Answer for call in ns.llm.calls)
+    assert {r["schema"] for r in ns.results} == {"answer-typed"}
+
+
+def test_route_schema_none_overrides_even_for_non_anthropic(monkeypatch, tmp_path):
+    """ESCALATION_SCHEMA=none still forces schema off for every model, including non-Anthropic."""
+    module, ns = _run_task(
+        "route",
+        monkeypatch,
+        tmp_path,
+        model="openai/gpt-5.5",
+        env={"ESCALATION_SCHEMA": "none"},
+    )
+    assert module.schema_on(ns.llm) is False
+    assert all(call["schema"] is str for call in ns.llm.calls)
+    assert {r["schema"] for r in ns.results} == {"none"}
+
+    module, ns = _run_task(
+        "route",
+        monkeypatch,
+        tmp_path,
+        model="anthropic/claude-opus-5",
+        env={"ESCALATION_SCHEMA": "none"},
+    )
+    assert module.schema_on(ns.llm) is False
+    assert all(call["schema"] is str for call in ns.llm.calls)
+    assert {r["schema"] for r in ns.results} == {"none"}
 
 
 @pytest.mark.parametrize("shape", SHAPES)

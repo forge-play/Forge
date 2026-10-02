@@ -17,30 +17,33 @@ import aggregate as ag
 
 
 def floor(result: dict) -> dict:
-    """Per model: the worst shape on task score and on false confidence.
+    """Per model: the worst shapes on task score and on false confidence.
 
     `result` is aggregate.aggregate(rows, truth). Shapes with no measurable
-    rate are skipped, never treated as 0 or 1."""
+    rate are skipped, never treated as 0 or 1. Every shape tied at the worst
+    value is reported: `task_floor_shapes` and `false_confidence_ceiling_shapes`
+    are sorted lists, and the matching `_ci` is a dict of shape -> interval.
+    With no measurable shape the list is [], the dict {}, and the value None."""
     out = {}
     for model, cells in result.items():
         shapes = {s: c for s, c in cells.items() if s != "all"}
-        task = [(c["task_score"], s) for s, c in shapes.items() if c["task_score"] is not None]
-        fc = [
-            (c["false_confidence_rate"], s)
+        task = {s: c["task_score"] for s, c in shapes.items() if c["task_score"] is not None}
+        fc = {
+            s: c["false_confidence_rate"]
             for s, c in shapes.items()
             if c["false_confidence_rate"] is not None
-        ]
-        worst_task = min(task) if task else (None, None)
-        worst_fc = max(fc) if fc else (None, None)
+        }
+        task_floor = min(task.values()) if task else None
+        fc_ceiling = max(fc.values()) if fc else None
+        task_shapes = sorted(s for s, v in task.items() if v == task_floor)
+        fc_shapes = sorted(s for s, v in fc.items() if v == fc_ceiling)
         out[model] = {
-            "task_floor": worst_task[0],
-            "task_floor_shape": worst_task[1],
-            "task_floor_ci": shapes[worst_task[1]]["task_score_ci"] if worst_task[1] else None,
-            "false_confidence_ceiling": worst_fc[0],
-            "false_confidence_ceiling_shape": worst_fc[1],
-            "false_confidence_ceiling_ci": (
-                shapes[worst_fc[1]]["false_confidence_ci"] if worst_fc[1] else None
-            ),
+            "task_floor": task_floor,
+            "task_floor_shapes": task_shapes,
+            "task_floor_ci": {s: shapes[s]["task_score_ci"] for s in task_shapes},
+            "false_confidence_ceiling": fc_ceiling,
+            "false_confidence_ceiling_shapes": fc_shapes,
+            "false_confidence_ceiling_ci": {s: shapes[s]["false_confidence_ci"] for s in fc_shapes},
             "shapes_measured": len(task),
         }
     return out

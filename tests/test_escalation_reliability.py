@@ -69,9 +69,47 @@ def test_floor_picks_worst_shape_and_ceiling():
         for f in ids(shape, False, 2):
             rows += rows_for("m", [(f, "ESCALATE" if shape != "route" else "something")])
     fl = rel.floor(ag.aggregate(rows, TRUTH))["m"]
-    assert fl["task_floor_shape"] == "judge" and fl["task_floor"] == 0.0
-    assert fl["false_confidence_ceiling_shape"] == "route" and fl["false_confidence_ceiling"] == 1.0
+    assert fl["task_floor_shapes"] == ["judge"] and fl["task_floor"] == 0.0
+    assert list(fl["task_floor_ci"]) == ["judge"]
+    assert fl["false_confidence_ceiling_shapes"] == ["route"]
+    assert fl["false_confidence_ceiling"] == 1.0
+    assert list(fl["false_confidence_ceiling_ci"]) == ["route"]
     assert fl["shapes_measured"] == 4
+
+
+def _rows_by_shape(wrong_shapes=()):
+    """Answerable items right (WRONG for wrong_shapes), unanswerable items ESCALATE."""
+    rows = []
+    for shape in ("route", "classify", "judge", "ground"):
+        for f in ids(shape, True, 4):
+            ans = "WRONG" if shape in wrong_shapes else TRUTH[f]["expected"]
+            rows += rows_for("m", [(f, ans)])
+        for f in ids(shape, False, 2):
+            rows += rows_for("m", [(f, "ESCALATE")])
+    return rows
+
+
+def test_floor_reports_every_shape_when_false_confidence_is_all_zero():
+    fl = rel.floor(ag.aggregate(_rows_by_shape(), TRUTH))["m"]
+    assert fl["false_confidence_ceiling"] == 0.0
+    assert fl["false_confidence_ceiling_shapes"] == ["classify", "ground", "judge", "route"]
+    assert sorted(fl["false_confidence_ceiling_ci"]) == ["classify", "ground", "judge", "route"]
+
+
+def test_floor_reports_both_shapes_when_two_tie_on_the_task_floor():
+    fl = rel.floor(ag.aggregate(_rows_by_shape(("judge", "classify")), TRUTH))["m"]
+    assert fl["task_floor"] == 0.0
+    assert fl["task_floor_shapes"] == ["classify", "judge"]
+    assert sorted(fl["task_floor_ci"]) == ["classify", "judge"]
+
+
+def test_floor_with_no_measurable_shape_is_empty():
+    fl = rel.floor({"m": {"all": {}}})["m"]
+    assert fl["task_floor"] is None and fl["task_floor_shapes"] == []
+    assert fl["task_floor_ci"] == {}
+    assert fl["false_confidence_ceiling"] is None
+    assert fl["false_confidence_ceiling_shapes"] == []
+    assert fl["false_confidence_ceiling_ci"] == {}
 
 
 def test_consistency_counts_identical_and_flips():

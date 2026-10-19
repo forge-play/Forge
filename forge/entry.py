@@ -188,6 +188,7 @@ def open_bite(
     recognize_threshold: float = checkpoint.DEFAULT_RECOGNIZE_THRESHOLD,
     table: list[majors.Row] | None = None,
     main: str | Path | None = None,
+    defer_seal: bool = False,
 ) -> Entry:
     if not isinstance(sentence, str) or not sentence.strip():
         raise EntryError("an empty sentence is not a bite")
@@ -274,6 +275,7 @@ def open_bite(
         root=root,
         recognize_threshold=recognize_threshold,
         project=project_id,
+        defer_seal=defer_seal,
     )
     e.decision_outcome = outcome
     e.major = _major_from_chosen(outcome.chosen, ask)

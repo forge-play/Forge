@@ -563,6 +563,32 @@ class CheckpointMemory:
         except Exception as e:  # noqa: BLE001 — boundary
             raise self._wrap(e) from e
 
+    def propose(
+        self,
+        decision_description: str,
+        chosen_option_and_rationale: str,
+        *,
+        origin: str = "",
+    ) -> dict:
+        """Record this builder's answer as a DRAFT, not a seal — for a host that
+        seals once, at the end of a session (`run_checkpoint(defer_seal=True)`):
+        nothing in the middle of a session waits on a seal, and the draft is one
+        of the pieces the session's own seal is made over. Nothing is appended
+        to the chain; a proposal is not a decision (Nestor's
+        `EntityResolver.propose`). A draft landing on an already-sealed surface
+        returns that sealed row untouched.
+        """
+        try:
+            return self._resolver.propose(
+                decision_description, chosen_option_and_rationale, origin=origin
+            )
+        except _nestor().memory.ConflictingSealError as e:
+            raise CheckpointConflict(str(e)) from e
+        except _nestor().memory.RejectedPairError as e:
+            raise CheckpointRejected(str(e)) from e
+        except Exception as e:  # noqa: BLE001 — boundary
+            raise self._wrap(e) from e
+
     # -- rejection: both reachable, not just sealing -------------------------
 
     def reject_match(

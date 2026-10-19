@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.0](https://github.com/forge-play/Forge/compare/v0.8.1...v0.9.0) (2026-10-19)
+
+
+### Added
+
+* **checkpoint:** defer_seal — card answers as drafts for a host that seals at the session's end ([8fba8e5](https://github.com/forge-play/Forge/commit/8fba8e5d4453993645a0931e680797f03976f2cb))
+* **checkpoint:** defer_seal — card answers as drafts for a host that seals at the session's end ([9e369a3](https://github.com/forge-play/Forge/commit/9e369a3b242beabc057596f9c672dcb993bb3172))
+
 ## [0.8.1](https://github.com/forge-play/Forge/compare/v0.8.0...v0.8.1) (2026-09-30)
 
 

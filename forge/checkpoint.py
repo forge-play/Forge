@@ -325,6 +325,11 @@ class CheckpointOutcome:
     honestly report `band="socratic"`, which makes a rejected match
     indistinguishable from a fresh decision — and rejected matches are the most
     interesting cohort there is. `matched_band != band` IS the rejection.
+    `drafted`: True iff `run_checkpoint(defer_seal=True)` recorded this answer
+    as a Nestor draft instead of sealing it — the host seals once, at the end
+    of its session, over everything the session did. Then `sealed` is False,
+    `pair_id` is the draft's, and `attestation_id` is `""`: nothing was
+    committed for an attestation to sign off on yet.
     """
 
     decision_type: str
@@ -340,6 +345,7 @@ class CheckpointOutcome:
     pair_id: str = ""
     match_confidence: float | None = None
     matched_band: "Band | None" = None
+    drafted: bool = False
 
 
 # ── the flow ─────────────────────────────────────────────────────────────────
@@ -450,6 +456,27 @@ def _origin(project: str) -> str:
     return f"project={project}" if project else ""
 
 
+def _commit(
+    cm: "checkpoint_memory.CheckpointMemory",
+    surface: str,
+    canonical: str,
+    *,
+    builder_id: str,
+    root: Path,
+    by_human: bool,
+    project: str,
+    defer_seal: bool,
+) -> tuple[str, str]:
+    """Record one answer: `(pair_id, attestation_id)`. Sealed and attested, as
+    always — or, with `defer_seal`, proposed as a draft and not attested, for a
+    host whose one seal comes at the end of the session."""
+    if defer_seal:
+        return cm.propose(surface, canonical, origin=_origin(project)).get("pair_id") or "", ""
+    cm.seal(surface, canonical, origin=_origin(project))
+    pair_id = cm.check(surface).get("provenance", {}).get("pair_id")
+    return pair_id or "", _attest(builder_id, pair_id, canonical, root, by_human)
+
+
 def _seal_socratic_answer(
     cm: "checkpoint_memory.CheckpointMemory",
     decision: Decision,
@@ -461,6 +488,7 @@ def _seal_socratic_answer(
     project: str = "",
     matched_band: "Band | None" = None,
     match_confidence: float | None = None,
+    defer_seal: bool = False,
 ) -> CheckpointOutcome:
     """Run a full Socratic pass, seal the result, and attest it — the shared
     tail every path that falls through to full Socratic (a fresh decision-type,
@@ -474,24 +502,32 @@ def _seal_socratic_answer(
     match distinguishable from a decision nothing matched."""
     chosen_label, rationale, deferred = _full_socratic(decision, responder)
     canonical = _deferred_canonical(chosen_label) if deferred else f"{chosen_label}: {rationale}"
-    cm.seal(decision.surface, canonical, origin=_origin(project))
+    pair_id, attestation_id = _commit(
+        cm,
+        decision.surface,
+        canonical,
+        builder_id=builder_id,
+        root=root,
+        by_human=by_human,
+        project=project,
+        defer_seal=defer_seal,
+    )
     engagement, rubber_stamp = _engagement_fields(rationale, deferred, decision.surface)
-    pair_id = cm.check(decision.surface).get("provenance", {}).get("pair_id")
-    attestation_id = _attest(builder_id, pair_id, canonical, root, by_human)
     return CheckpointOutcome(
         decision_type=decision.decision_type,
         chosen=chosen_label,
         rationale=rationale,
         band="socratic",
         deferred=deferred,
-        sealed=True,
+        sealed=not defer_seal,
         memory_available=True,
         engagement=engagement,
         rubber_stamp=rubber_stamp,
         attestation_id=attestation_id,
-        pair_id=pair_id or "",
+        pair_id=pair_id,
         match_confidence=match_confidence,
         matched_band=matched_band,
+        drafted=defer_seal,
     )
 
 
@@ -504,6 +540,7 @@ def run_checkpoint(
     recognize_threshold: float = DEFAULT_RECOGNIZE_THRESHOLD,
     by_human: bool = False,
     project: str = "",
+    defer_seal: bool = False,
 ) -> CheckpointOutcome:
     """The D8 checkpoint, end to end: soft-Nestor gate, then route by band,
     present/confirm accordingly, seal what needs sealing. See module
@@ -515,6 +552,12 @@ def run_checkpoint(
     see module docstring's "Exception discipline" section. Never raises for
     "Nestor is absent"; that is precisely what the soft-Nestor gate below
     exists to turn into an honest `memory_available=False` outcome instead.
+
+    `defer_seal`: a host that seals once, at the end of its session, passes
+    True. A fresh answer, or a recognized one confirmed, is then proposed as a
+    Nestor draft (`drafted=True`, `sealed=False`) instead of sealed: an answer
+    given mid-session is a piece of the session, and the person's one seal is
+    over the session's whole. An auto confirm seals nothing either way.
     """
     if not decision.options:
         raise CheckpointError(
@@ -595,6 +638,7 @@ def run_checkpoint(
                 root=root,
                 by_human=by_human,
                 project=project,
+                defer_seal=defer_seal,
                 matched_band="auto",
                 match_confidence=result["confidence"],
             )
@@ -615,21 +659,29 @@ def run_checkpoint(
                 # Seal the NEW wording to the SAME answer — next time this
                 # exact phrasing is an auto hit, per the design doc's own
                 # "loose recognition" line.
-                cm.seal(decision.surface, prior_canonical, origin=_origin(project))
-                pair_id = cm.check(decision.surface).get("provenance", {}).get("pair_id")
-                attestation_id = _attest(builder_id, pair_id, prior_canonical, root, by_human)
+                pair_id, attestation_id = _commit(
+                    cm,
+                    decision.surface,
+                    prior_canonical,
+                    builder_id=builder_id,
+                    root=root,
+                    by_human=by_human,
+                    project=project,
+                    defer_seal=defer_seal,
+                )
                 return CheckpointOutcome(
                     decision_type=decision.decision_type,
                     chosen=prior_canonical,
                     rationale="",
                     band="recognize",
                     deferred=False,
-                    sealed=True,
+                    sealed=not defer_seal,
                     memory_available=True,
                     attestation_id=attestation_id,
-                    pair_id=pair_id or "",
+                    pair_id=pair_id,
                     match_confidence=result["confidence"],
                     matched_band="recognize",
+                    drafted=defer_seal,
                 )
             # "It's different" -> teach the memory not to conflate the two,
             # then fall through to full Socratic. No pair_id available at
@@ -648,6 +700,7 @@ def run_checkpoint(
                 root=root,
                 by_human=by_human,
                 project=project,
+                defer_seal=defer_seal,
                 matched_band="recognize",
                 match_confidence=result["confidence"],
             )
@@ -664,6 +717,7 @@ def run_checkpoint(
             by_human=by_human,
             project=project,
             match_confidence=result["confidence"],
+            defer_seal=defer_seal,
         )
 
 

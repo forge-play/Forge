@@ -29,6 +29,10 @@ invariants each part holds, and what is next. This one is maintained.
 (2026-11-02): the kernel's record discipline and the add-ons set against
 the engine as built, ranked by value for cost, with a first three bites.
 
+**The join** — `the-join.md` (2026-11-03): one record under the person's
+key, Willow's catalogue as the scan's table, and the stack as the plan the
+Forge resolves and the person seals before it runs.
+
 Decisions taken since the founding design are not in these files. They are
 drafts in the engine's own per-project Nestor, each with the recipe that
 checks it, waiting for a human seal. Documents are cited, never sealed.

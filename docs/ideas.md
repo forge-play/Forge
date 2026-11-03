@@ -46,7 +46,7 @@ and were not carried. A legend tag counts only when it LEADS the item text.
 
 5. ✅ **shipped**: vendoring went home (a9ee4c2, 2026-09-03) — willow-mcp pins `forge-play>=0.1.0,<1.0.0` and re-exports `human_loop`, `friction_floor` and the detection half of `model_egress` from `forge`; `denial()` stays with willow-mcp's consent store.
 6. The host side: the store's stub builder emits a `fork` from the entry's scan of a sentence, and its build spine calls `forge.build_loop.resolve` before the seam; the seam refuses an unresolved fork.
-7. The box: a real `BoxLookup` over the corpus and the app catalog.
+7. 🟡 **partial**: the box over the catalogue shipped (89a3ba6, 2026-11-03) — `forge/card_box.py` is a real `BoxLookup` over a Willow checkout's add-on cards, rendered by `forge/card_table.py` as rows for the keyword scan, wired by `--willow` on the entry (the-join.md). The corpus half, the box over ~/github, is not built.
 8. Model-proposed candidates: the fork is the seam; a local model that writes forks into a plan is the first thing that can use it.
 9. ✅ **shipped**: the PR-time deposit (eda2507, 2026-09-03) — `forge/deposit.py` writes `ci` rows and `refines` edges, propose-only, and reads willow-bot's webhook inbox; `tools/pr_deposit.py` is the caller; propose-only is a type, not a grep (f675a29). Paper: `the-pr-time-deposit.md`.
 10. The willow-bot bridge fix the deposit reads through (key on check id, carry `head_sha`) is on a branch in willow-bot, not merged.

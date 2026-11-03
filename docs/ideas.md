@@ -46,7 +46,7 @@ and were not carried. A legend tag counts only when it LEADS the item text.
 
 5. ✅ **shipped**: vendoring went home (a9ee4c2, 2026-09-03) — willow-mcp pins `forge-play>=0.1.0,<1.0.0` and re-exports `human_loop`, `friction_floor` and the detection half of `model_egress` from `forge`; `denial()` stays with willow-mcp's consent store.
 6. The host side: the store's stub builder emits a `fork` from the entry's scan of a sentence, and its build spine calls `forge.build_loop.resolve` before the seam; the seam refuses an unresolved fork.
-7. The box: a real `BoxLookup` over the corpus and the app catalog.
+7. 🟡 **partial**: the box over the catalogue shipped (89a3ba6, 2026-11-03) — `forge/card_box.py` is a real `BoxLookup` over a Willow checkout's add-on cards, rendered by `forge/card_table.py` as rows for the keyword scan, wired by `--willow` on the entry (the-join.md). The corpus half, the box over ~/github, is not built.
 8. Model-proposed candidates: the fork is the seam; a local model that writes forks into a plan is the first thing that can use it.
 9. ✅ **shipped**: the PR-time deposit (eda2507, 2026-09-03) — `forge/deposit.py` writes `ci` rows and `refines` edges, propose-only, and reads willow-bot's webhook inbox; `tools/pr_deposit.py` is the caller; propose-only is a type, not a grep (f675a29). Paper: `the-pr-time-deposit.md`.
 10. The willow-bot bridge fix the deposit reads through (key on check id, carry `head_sha`) is on a branch in willow-bot, not merged.
@@ -60,7 +60,7 @@ and were not carried. A legend tag counts only when it LEADS the item text.
 
 16. ✅ **shipped**: refuse on an ambiguous major (be6a00f, 2026-09-07) — both CLI responders raise rather than take `options[0]` when more than one option is on offer and none was named; nothing reaches memory, pinned by `test_the_refusal_writes_nothing_to_memory`.
 17. ✅ **shipped**: `--why` has no default (c42b73e, 2026-09-07) — argparse's help text no longer enters the record as a rationale; an empty rationale scores 0.0 and is flagged as the loudest rubber-stamp there is.
-18. 🟡 **partial**: `has_sealed` trusts unverified seals whenever the keyring is absent, which is every real run of the entry — the say-so shipped (47ba5c0: `seal_signatures_verified()` and the qualification on the `nestor` and `scan` tiers); the trust change itself waits on D11 identity, since neither running with a keyring nor weighing `by_human` is reachable today.
+18. 🟡 **partial**: the checkpoint asks the person's willow record first (86658e9, 2026-11-03), and a seal there is proved by the kernel under their key before it is served, so a record-answered decision is `sealed=True` on a verified seal with no keyring at all (the-join.md); the engine's own memory still trusts unverified seals — `has_sealed` trusts unverified seals whenever the keyring is absent, which is every real run of the entry — the say-so shipped (47ba5c0: `seal_signatures_verified()` and the qualification on the `nestor` and `scan` tiers); the trust change itself waits on D11 identity, since neither running with a keyring nor weighing `by_human` is reachable today.
 19. No `tool` row in the keyword table, and the first real sentence used the word — deliberately open: the row to argue is measured after the first ten workshops, not guessed after the first.
 
 ## E. The engagement defect (`the-forge-engagement-defect.md`)

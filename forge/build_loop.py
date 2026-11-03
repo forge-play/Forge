@@ -25,6 +25,13 @@ Refusals: a plan whose extraction refused a fork cannot be resolved (the
 reasons are in the error); a plan that still holds a fork after resolution is
 a bug and is refused rather than returned; a memory answer that names no
 option on offer is refused rather than guessed at.
+
+With `record` (the-join.md, thread 3), every fork goes through the checkpoint
+with the person's own willow record wired: a fork they sealed before is the
+auto band with no ask, and every answer given here is proposed onto the
+record to wait on their seal. A plan written by Willow's `forge` add-on
+(`suggest --plan`) names its forks `willow-<word>`, the same key the add-on
+proposes under, so the two sides read each other's decisions.
 """
 
 from __future__ import annotations
@@ -35,7 +42,14 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import calibration_ledger, checkpoint, checkpoint_memory, decision_extract, plan_shape
+from . import (
+    calibration_ledger,
+    checkpoint,
+    checkpoint_memory,
+    decision_extract,
+    plan_shape,
+    willow_record,
+)
 from .decision_extract import ORIGIN_CONFLICT, ORIGIN_ENTRY, ORIGIN_FORK, Extraction
 from .plan_shape import FileWrite, Fork, PlanDoc
 
@@ -129,6 +143,7 @@ def resolve(
     entry=None,
     extraction: Extraction | None = None,
     recognize_threshold: float = checkpoint.DEFAULT_RECOGNIZE_THRESHOLD,
+    record: "willow_record.RecordLookup | None" = None,
 ) -> Resolved:
     ex = extraction if extraction is not None else decision_extract.extract(plan, entry=entry)
     if ex.refused:
@@ -149,6 +164,7 @@ def resolve(
             responder=responder,
             root=root,
             recognize_threshold=recognize_threshold,
+            record=record,
         )
         out.outcomes.append(outcome)
         label = label_from_chosen(
@@ -244,21 +260,52 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="the rationale, if asked. No default: a rationale nobody typed is not one.",
     )
+    p.add_argument(
+        "--willow",
+        default=None,
+        help="a Willow checkout; with --box, its kernel.py asks the person's record first",
+    )
+    p.add_argument("--box", default=None, help="the person's willow box, asked and proposed to")
     p.add_argument("--json", action="store_true")
     return p
+
+
+def load_plan(path: Path | str) -> PlanDoc:
+    """A plan file, or Willow's `suggest --plan` envelope, which carries the
+    plan under `plan` (null when the sentence reached nothing to run)."""
+    try:
+        doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        raise plan_shape.PlanShapeError(f"cannot read plan at {path}: {e}") from e
+    if isinstance(doc, dict) and "entries" not in doc and "plan" in doc:
+        if doc["plan"] is None:
+            raise plan_shape.PlanShapeError(f"{path}: the envelope holds no plan (nothing to run)")
+        doc = doc["plan"]
+    return plan_shape.validate(doc)
 
 
 def main(argv: list[str] | None = None) -> int:
     a = build_parser().parse_args(argv)
     picks = dict(s.split("=", 1) for s in a.choose)
+    record = None
+    if (a.willow is None) != (a.box is None):
+        print("REFUSED: --willow and --box go together", file=sys.stderr)
+        return 2
+    if a.willow is not None:
+        record = willow_record.WillowRecord(Path(a.willow) / "kernel.py", a.box)
     try:
-        plan = plan_shape.load(a.plan)
+        plan = load_plan(a.plan)
         res = resolve(
-            plan, builder_id=a.builder_id, responder=_PickResponder(picks, a.why), root=Path(a.root)
+            plan,
+            builder_id=a.builder_id,
+            responder=_PickResponder(picks, a.why),
+            root=Path(a.root),
+            record=record,
         )
     except (
         plan_shape.PlanShapeError,
         BuildLoopError,
+        checkpoint.CheckpointError,
         checkpoint_memory.CheckpointMemoryError,
     ) as e:
         print(f"REFUSED: {e}", file=sys.stderr)
@@ -268,7 +315,8 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({**res.to_dict(), "scorecard": card}, indent=2, default=str))
     else:
         for o in res.outcomes:
-            print(f"{o.decision_type:24} band {o.band:9} → {res.chosen[o.decision_type]}")
+            line = f"{o.decision_type:24} band {o.band:9} → {res.chosen[o.decision_type]}"
+            print(line + (f"  record: {o.record}" if record is not None else ""))
         for pr in res.predictions:
             print(
                 f"  prediction {pr['claim']!r} @ {pr['confidence']:.2f} → "

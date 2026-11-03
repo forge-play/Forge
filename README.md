@@ -49,6 +49,8 @@ python demo/the_first_bite.py
 
 - `forge/keywords.toml` — the keyword → major table. A flat file to read and argue with.
 - `forge/majors.py` — the scan over it: a span of text in, hits out. Deterministic, model-free, two callers (the Forge's entry and the corpus's prose lane) through one interface.
+- `forge/card_box.py` — the box, tier 2 of the entry, over a Willow checkout's add-on cards, which `forge/card_table.py` renders as rows for the same scan: a sentence that names a job finds the cards that do it, and one word that reaches several cards is reported as a fork. `--willow PATH` on the entry wires it in.
+- `forge/willow_record.py` — the person's own willow record, asked first and through the kernel (`kernel.py bite`), never by reading their key: a stack they sealed for these words, and the option they sealed for a fork the catalogue raised. `--box BOX` beside `--willow` wires it in.
 - `forge/plan_shape.py` — the decision-bearing plan: `file_write` entries plus one `fork` kind that carries a decision (options, tradeoffs, a recommendation, a confidence). A model-written plan carries forks; nothing else it writes reaches the router.
 - `forge/decision_extract.py` — noticing *that* a decision is being made, by rule: a fork the proposer declared, a major the sentence left open, two writes to one path.
 - `forge/build_loop.py` — each decision through the checkpoint, the answer substituted back, no fork left; and the prediction recorded before, resolved after.

@@ -18,8 +18,11 @@ checkpoint router. `open_bite` takes a maker's opening sentence and:
      newest CI row and how old it is, or `none` (the-forge-shape.md §12,
      rule 3 — a stale answer reported as current turns "nobody asked" into
      "the box says no").
-  2. **looks in the box** — a `BoxLookup` seam. The real box (the corpus under
-     ~/github) is willow-side; the default here returns nothing and SAYS so.
+  2. **looks in the box** — a `BoxLookup` seam. The default, `NoBox`, returns
+     nothing and SAYS so. The first real one is `forge.card_box.CardBox`, over
+     a Willow checkout's add-on cards (the-join.md): pass its rows as
+     `catalogue` and the entry scans the sentence over them too, so the box
+     sees both the majors' hits and the catalogue's.
   3. **remote** — not built; recorded as `not_attempted`, never pretended.
 
   then scans the sentence (`forge/majors.py`). One major: the entry knows what
@@ -42,13 +45,23 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from . import checkpoint, checkpoint_memory, deposit, majors, paths, project_home, store_diff
+from . import (
+    checkpoint,
+    checkpoint_memory,
+    deposit,
+    majors,
+    paths,
+    project_home,
+    store_diff,
+    willow_record,
+)
 
 __all__ = [
     "Entry",
     "EntryError",
     "BoxLookup",
     "NoBox",
+    "RecordLookup",
     "Candidate",
     "open_bite",
     "DECISION_TYPE_MAJOR",
@@ -80,6 +93,9 @@ class BoxLookup(Protocol):
     def lookup(self, hits: list[majors.Hit]) -> list[Candidate]: ...
 
 
+RecordLookup = willow_record.RecordLookup  # tier 0, and the checkpoint's first word
+
+
 class NoBox:
     """The default box: nothing, and says so. The real lookup (the corpus,
     the app catalog) lives on the willow side; this is the seam it plugs into."""
@@ -96,9 +112,12 @@ class Entry:
     project_id: str
     builder_id: str
     hits: list[majors.Hit] = field(default_factory=list)
+    catalogue_hits: list[majors.Hit] = field(default_factory=list)  # the box's own scan
     majors: dict[str, list[str]] = field(default_factory=dict)  # major -> keywords
     major: str | None = None
     answer: str | None = None  # a sealed project answer, if any
+    record_answer: str | None = None  # a sealed stack for these words, if any
+    sealed_forks: dict[str, str] = field(default_factory=dict)  # decision_type -> chosen
     candidates: list[Candidate] = field(default_factory=list)
     tiers: dict[str, str] = field(
         default_factory=dict
@@ -108,6 +127,7 @@ class Entry:
     def to_dict(self) -> dict:
         d = asdict(self)
         d["hits"] = [h.__dict__ for h in self.hits]
+        d["catalogue_hits"] = [h.__dict__ for h in self.catalogue_hits]
         d["decision_outcome"] = asdict(self.decision_outcome) if self.decision_outcome else None
         return d
 
@@ -167,6 +187,17 @@ def _main_tier(store: object, main: str | Path | None) -> str:
     return store_diff.summary(d)
 
 
+def _catalogue_forks(hits: list[majors.Hit]) -> list[str]:
+    """The words that reached more than one card, in the order said — the
+    catalogue's own ambiguity, the same grouping `CardBox.forks` makes."""
+    by_word: dict[str, list[str]] = {}
+    for h in hits:
+        names = by_word.setdefault(h.matched, [])
+        if h.target not in names:
+            names.append(h.target)
+    return [w for w, ns in by_word.items() if len(ns) > 1]
+
+
 def _major_from_chosen(chosen: str, known: list[str]) -> str | None:
     """A prior seal's canonical string is `label` or `label: rationale`; the
     label is one of the majors that were on offer. Longest prefix wins."""
@@ -185,6 +216,8 @@ def open_bite(
     responder: checkpoint.Responder,
     root: Path = checkpoint_memory.DEFAULT_CHECKPOINT_ROOT,
     box: BoxLookup | None = None,
+    catalogue: list[majors.Row] | None = None,
+    record: RecordLookup | None = None,
     recognize_threshold: float = checkpoint.DEFAULT_RECOGNIZE_THRESHOLD,
     table: list[majors.Row] | None = None,
     main: str | Path | None = None,
@@ -193,6 +226,23 @@ def open_bite(
     if not isinstance(sentence, str) or not sentence.strip():
         raise EntryError("an empty sentence is not a bite")
     e = Entry(sentence=sentence.strip(), project_id=project_id, builder_id=builder_id)
+
+    # 0 — the person's record, before anything the engine keeps (the-join.md,
+    # thread 3). A stack they sealed for these very words is served first, by
+    # the kernel, under their key; the engine checks no seal itself. A record
+    # that refuses is a refusal here too: nothing is read past a break.
+    if record is None:
+        e.tiers["record"] = "no record wired"
+    else:
+        try:
+            e.record_answer = record.stack_for(e.sentence)
+        except willow_record.WillowRecordError as err:
+            raise EntryError(f"the record refused: {err}") from err
+        e.tiers["record"] = (
+            f"{record.name}: sealed stack for these words"
+            if e.record_answer is not None
+            else f"{record.name}: nothing sealed for these words"
+        )
 
     # 1 — Nestor, first, or refuse.
     r, store = _ask_project_nestor(project_id, e.sentence)
@@ -229,7 +279,24 @@ def open_bite(
     e.hits = majors.scan(e.sentence, table=table)
     e.majors = {m: [h.source for h in hs] for m, hs in majors.majors_for(e.hits).items()}
     box = box or NoBox()
-    e.candidates = list(box.lookup(e.hits))
+    # The catalogue is a second table for the same scan (the-join.md, thread
+    # 1): its hits reach the box and never the major decision below, so a
+    # sentence that names two jobs is two candidates, not an ambiguity.
+    e.catalogue_hits = majors.scan(e.sentence, table=catalogue) if catalogue else []
+    e.candidates = list(box.lookup(e.hits + e.catalogue_hits))
+    # 2b — a word that reached several cards is a fork the person may have
+    # settled already: ask the record for each, by the name both sides use.
+    if record is not None and e.catalogue_hits:
+        for word in _catalogue_forks(e.catalogue_hits):
+            dt = willow_record.decision_type(word)
+            try:
+                got = record.has_sealed(dt)
+            except willow_record.WillowRecordError as err:
+                raise EntryError(f"the record refused: {err}") from err
+            e.sealed_forks[dt] = got.chosen if got else ""
+        said = ", ".join(f"{dt}→{c}" if c else f"{dt} open" for dt, c in e.sealed_forks.items())
+        if said:
+            e.tiers["record"] += f"; forks: {said}"
     e.tiers["box"] = (
         f"{box.name}: {len(e.candidates)} candidate(s)" if e.candidates else f"{box.name}: nothing"
     )
@@ -276,6 +343,7 @@ def open_bite(
         recognize_threshold=recognize_threshold,
         project=project_id,
         defer_seal=defer_seal,
+        record=record,
     )
     e.decision_outcome = outcome
     e.major = _major_from_chosen(outcome.chosen, ask)
@@ -285,8 +353,12 @@ def open_bite(
     # An auto or recognize band means a prior sealed row answered instead of the
     # maker. Say whether that row's signature was checkable, for the same reason
     # the nestor tier does.
-    if outcome.matched_band is not None and not checkpoint_memory.seal_signatures_verified():
+    if outcome.record_subject and outcome.band == "auto" and outcome.record.endswith("confirmed"):
+        e.tiers["scan"] += " (the record's seal, under the person's key)"
+    elif outcome.matched_band is not None and not checkpoint_memory.seal_signatures_verified():
         e.tiers["scan"] += " — prior seal's SIGNATURE NOT VERIFIED"
+    if record is not None:
+        e.tiers["scan"] += f" — record: {outcome.record}"
     return e
 
 
@@ -368,12 +440,45 @@ def build_parser() -> argparse.ArgumentParser:
         "typed is not one, and an absent one seals empty and flags "
         "as a rubber-stamp rather than passing as a reason.",
     )
+    p.add_argument(
+        "--willow",
+        default=None,
+        help="a Willow checkout: its add-on cards become the box (tier 2) and a "
+        "second table for the scan. Without it the box is NoBox, and says so.",
+    )
+    p.add_argument(
+        "--box",
+        default=None,
+        dest="record_box",
+        help="with --willow: the person's willow box, asked first through that "
+        "checkout's kernel.py for a sealed stack and sealed forks.",
+    )
     p.add_argument("--json", action="store_true")
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
     a = build_parser().parse_args(argv)
+    box: BoxLookup | None = None
+    catalogue: list[majors.Row] | None = None
+    if a.willow is not None:
+        from . import card_box, card_table  # here, not above: card_box imports Candidate
+
+        try:
+            box = card_box.CardBox(a.willow)
+        except card_table.CardTableError as err:
+            print(f"REFUSED: {err}", file=sys.stderr)
+            return 2
+        catalogue = box.rows
+    record: RecordLookup | None = None
+    if a.record_box is not None:
+        if a.willow is None:
+            print(
+                "REFUSED: --box needs --willow, the checkout whose kernel.py asks it",
+                file=sys.stderr,
+            )
+            return 2
+        record = willow_record.WillowRecord(Path(a.willow) / "kernel.py", a.record_box)
     try:
         e = open_bite(
             a.sentence,
@@ -381,6 +486,9 @@ def main(argv: list[str] | None = None) -> int:
             builder_id=a.builder_id,
             responder=_PickResponder(a.choose, a.why),
             root=Path(a.root),
+            box=box,
+            catalogue=catalogue,
+            record=record,
         )
     except EntryError as err:
         print(f"REFUSED: {err}", file=sys.stderr)
@@ -409,6 +517,12 @@ def main(argv: list[str] | None = None) -> int:
     else:
         for tier, what in e.tiers.items():
             print(f"{tier:7} {what}")
+        for c in e.candidates:
+            print(f"cand    {c.name}: {c.why} ({c.where})")
+        if e.record_answer is not None:
+            print("stack   sealed for these words:")
+            for ln in e.record_answer.splitlines():
+                print(f"        {ln}")
         print(f"major   {e.major or '(none)'}")
         print(f"home    {home}")
     return 0

@@ -254,7 +254,7 @@ def test_the_entry_reports_the_main_diff_or_says_it_was_not_consulted(tmp_path, 
         root=tmp_path / "cp",
     )
     assert e.tiers["main"].startswith("not consulted")
-    assert list(e.tiers)[:3] == ["nestor", "deposit", "main"]
+    assert list(e.tiers)[:4] == ["record", "nestor", "deposit", "main"]
 
     main = _store(tmp_path / "main.db")
     _seal(main, "a tiny cli that renames files", "cli: it renames files")

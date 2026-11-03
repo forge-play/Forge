@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from forge import checkpoint, checkpoint_memory, entry, paths
+from forge import checkpoint, checkpoint_memory, entry, paths, willow_record
 from forge.checkpoint import ChoiceResult, Decision
 
 _HAS_NESTOR = checkpoint_memory.nestor_available()
@@ -229,7 +229,9 @@ def test_the_entry_reports_the_deposit_age_with_the_answer(home):
         root=home / "cp",
     )
     assert e.tiers["deposit"].startswith("none")
-    assert list(e.tiers)[:2] == ["nestor", "deposit"], "asked, then how current the answer is"
+    assert list(e.tiers)[:3] == ["record", "nestor", "deposit"], (
+        "the person's record first, then asked, then how current the answer is"
+    )
 
     store = SqliteStore(str(paths.project_nestor(PROJECT)))
     deposit.deposit_ci(
@@ -278,6 +280,143 @@ def test_the_box_seam_is_consulted_and_named(home):
     )
     assert e.candidates and e.candidates[0].name == "rally-site"
     assert e.tiers["box"] == "fake catalog: 1 candidate(s)"
+
+
+@_needs_nestor
+def test_the_card_box_and_its_catalogue_feed_the_box_tier_not_the_major(home, tmp_path):
+    from forge import card_box
+    from tests.test_card_table import make_willow
+
+    box = card_box.CardBox(make_willow(tmp_path / "Willow"))
+    e = entry.open_bite(
+        "a site that shows my email and what is due",
+        project_id=PROJECT,
+        builder_id=BUILDER,
+        responder=ScriptedResponder(),
+        root=home / "cp",
+        box=box,
+        catalogue=box.rows,
+    )
+    assert [c.name for c in e.candidates] == ["apple-mail", "mail", "coming-up", "renewals"]
+    assert e.tiers["box"].startswith("willow cards at ") and e.tiers["box"].endswith(
+        "(7 built, 1 ideas): 4 candidate(s)"
+    )
+    assert [h.target for h in e.hits] == ["web"], "the majors' scan is the keyword table's alone"
+    assert len(e.catalogue_hits) == 4
+    assert e.major == "web" and "one major" in e.tiers["scan"], "four cards are not an ambiguity"
+    assert len(e.to_dict()["catalogue_hits"]) == 4
+
+
+class FakeRecord:
+    name = "fake record"
+
+    def __init__(self, stack=None, sealed=None, refuse=None):
+        self.stack, self.sealed, self.refuse = stack, sealed or {}, refuse
+        self.asked: list[str] = []
+
+    def stack_for(self, sentence):
+        if self.refuse:
+            raise willow_record.WillowRecordError(self.refuse)
+        self.asked.append(sentence)
+        return self.stack
+
+    def has_sealed(self, dt):
+        self.asked.append(dt)
+        chosen = self.sealed.get(dt)
+        return willow_record.Sealed(dt, chosen, dt[7:], "proposal:" + "ab" * 32) if chosen else None
+
+    def propose(self, dt, chosen, *, over, why, surface="", word=None):
+        self.proposed = getattr(self, "proposed", []) + [(dt, chosen, over, why)]
+        return "proposal:" + "ef" * 32
+
+
+@_needs_nestor
+def test_the_record_is_asked_first_for_a_sealed_stack_and_sealed_forks(home, tmp_path):
+    from forge import card_box
+    from tests.test_card_table import make_willow
+
+    box = card_box.CardBox(make_willow(tmp_path / "Willow"))
+    rec = FakeRecord(stack="- mail -- --box {box}\n", sealed={"willow-email": "mail"})
+    e = entry.open_bite(
+        "a site that shows my email and what is due",
+        project_id=PROJECT,
+        builder_id=BUILDER,
+        responder=ScriptedResponder(),
+        root=home / "cp",
+        box=box,
+        catalogue=box.rows,
+        record=rec,
+    )
+    assert list(e.tiers)[0] == "record"
+    assert e.record_answer == "- mail -- --box {box}\n"
+    assert e.sealed_forks == {"willow-email": "mail", "willow-due": ""}
+    assert e.tiers["record"] == (
+        "fake record: sealed stack for these words; forks: willow-email→mail, willow-due open"
+    )
+    assert rec.asked == ["a site that shows my email and what is due", "willow-email", "willow-due"]
+    assert e.major == "web", "the record tier decides nothing for the engine yet"
+
+
+@_needs_nestor
+def test_a_major_sealed_on_the_record_is_the_auto_band_and_a_fresh_one_is_proposed(home):
+    rec = FakeRecord(sealed={entry.DECISION_TYPE_MAJOR: "web"})
+    e = entry.open_bite(
+        "an app",  # web, mobile or desktop: a decision
+        project_id=PROJECT,
+        builder_id=BUILDER,
+        responder=ScriptedResponder(),
+        root=home / "cp",
+        record=rec,
+    )
+    assert e.major == "web" and e.decision_outcome.band == "auto"
+    assert e.tiers["scan"].endswith(
+        "(the record's seal, under the person's key) — record: sealed 'web' (proposal:"
+        + "ab" * 32
+        + "), confirmed"
+    )
+    assert not hasattr(rec, "proposed"), "a confirmed seal proposes nothing"
+    fresh = FakeRecord()
+    e2 = entry.open_bite(
+        "an app",
+        project_id=PROJECT + "-2",
+        builder_id=BUILDER + "2",
+        responder=ScriptedResponder(choose="mobile"),
+        root=home / "cp",
+        record=fresh,
+    )
+    assert e2.major == "mobile" and e2.decision_outcome.band == "socratic"
+    assert fresh.proposed == [
+        (
+            entry.DECISION_TYPE_MAJOR,
+            "mobile",
+            ["web", "desktop"],
+            "because the rally has a website already",
+        )
+    ]
+    assert e2.tiers["scan"].endswith("— record: nothing sealed; proposed proposal:" + "ef" * 32)
+
+
+@_needs_nestor
+def test_no_record_says_so_and_a_refusing_record_refuses_the_bite(home):
+    e = entry.open_bite(
+        "a site",
+        project_id=PROJECT,
+        builder_id=BUILDER,
+        responder=ScriptedResponder(),
+        root=home / "cp",
+    )
+    assert (
+        e.tiers["record"] == "no record wired" and e.record_answer is None and e.sealed_forks == {}
+    )
+    with pytest.raises(entry.EntryError, match="the record refused: the chain is broken"):
+        entry.open_bite(
+            "a site",
+            project_id=PROJECT,
+            builder_id=BUILDER,
+            responder=ScriptedResponder(),
+            root=home / "cp",
+            record=FakeRecord(refuse="the chain is broken"),
+        )
 
 
 @_needs_nestor

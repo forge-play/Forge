@@ -244,3 +244,162 @@ def test_a_single_option_needs_no_pick():
     r = bl._PickResponder(picks={}, why=None)
     d = Decision(decision_type="t", surface="s", options=[Option("only", "the one option")])
     assert r.choose(d).chosen_label == "only"
+
+
+# ── the record wired in (the-join.md, thread 3; bite 5) ──────────────────────
+
+
+def _plan_with_one_fork(recommended=None, confidence=None) -> ps.PlanDoc:
+    return ps.validate(
+        {
+            "app_name": "willow-stack",
+            "entries": [
+                {
+                    "kind": "file_write",
+                    "dest_path": "steps/merkle.md",
+                    "content": "- merkle -- --box {box}\n",
+                },
+                {
+                    "kind": "fork",
+                    "decision_type": "willow-email",
+                    "surface": "“email” could be apple-mail, mail: which add-on?",
+                    "options": [
+                        {"label": "apple-mail", "tradeoff": "Apple Mail's .emlx"},
+                        {"label": "mail", "tradeoff": ".eml and mbox"},
+                    ],
+                    "recommended": recommended,
+                    "confidence": confidence,
+                    "resolves": {
+                        "apple-mail": [
+                            {
+                                "kind": "file_write",
+                                "dest_path": "steps/apple-mail.md",
+                                "content": "- apple-mail -- --box {box}\n",
+                            }
+                        ],
+                        "mail": [
+                            {
+                                "kind": "file_write",
+                                "dest_path": "steps/mail.md",
+                                "content": "- mail -- --box {box}\n",
+                            }
+                        ],
+                    },
+                },
+            ],
+        }
+    )
+
+
+@_needs_nestor
+def test_a_fork_sealed_on_the_record_is_the_auto_band_and_nobody_is_asked(tmp_path):
+    from tests.test_checkpoint_record import FakeRecord
+
+    rec = FakeRecord(sealed={"willow-email": "mail"})
+    responder = ScriptedResponder()
+    res = bl.resolve(
+        _plan_with_one_fork(), builder_id=BUILDER, responder=responder, root=tmp_path, record=rec
+    )
+    assert res.chosen == {"willow-email": "mail"} and not responder.choose_calls
+    assert len(responder.confirm_prompts) == 1 and "You sealed a" in responder.confirm_prompts[0]
+    o = res.outcomes[0]
+    assert o.band == "auto" and o.sealed and o.record.endswith(", confirmed")
+    assert [e.dest_path for e in res.plan.entries] == ["steps/merkle.md", "steps/mail.md"]
+    assert rec.proposed == []
+    assert res.to_dict()["outcomes"][0]["record_subject"] == "proposal:" + "cd" * 32
+
+
+@_needs_nestor
+def test_a_fresh_fork_is_answered_and_proposed_onto_the_record(tmp_path):
+    from tests.test_checkpoint_record import FakeRecord
+
+    rec = FakeRecord()
+    res = bl.resolve(
+        _plan_with_one_fork("mail", 0.8),
+        builder_id=BUILDER,
+        responder=ScriptedResponder({"willow-email": "apple-mail"}),
+        root=tmp_path,
+        record=rec,
+    )
+    assert res.chosen == {"willow-email": "apple-mail"}
+    assert rec.proposed == [
+        {
+            "dt": "willow-email",
+            "chosen": "apple-mail",
+            "over": ["mail"],
+            "why": "the originals must never change; the club has been burned before",
+            "surface": "“email” could be apple-mail, mail: which add-on?",
+        }
+    ]
+    assert res.outcomes[0].record.startswith("nothing sealed; proposed proposal:")
+    assert res.predictions[0]["outcome"] is False, "the maker did not pick the recommendation"
+
+
+def test_the_plan_file_may_be_willows_suggest_envelope(tmp_path):
+    plan = _plan_with_one_fork()
+    f = tmp_path / "suggest.json"
+    f.write_text(
+        json.dumps(
+            {"cards": {"built": 1, "ideas": 0}, "steps": [], "forks": {}, "plan": plan.to_dict()}
+        )
+    )
+    assert bl.load_plan(f).to_dict() == plan.to_dict()
+    g = tmp_path / "nothing.json"
+    g.write_text(json.dumps({"cards": {}, "steps": [], "forks": {}, "plan": None}))
+    with pytest.raises(ps.PlanShapeError, match="holds no plan"):
+        bl.load_plan(g)
+    h = tmp_path / "bare.json"
+    h.write_text(json.dumps(plan.to_dict()))
+    assert bl.load_plan(h).to_dict() == plan.to_dict()
+
+
+@_needs_nestor
+def test_cli_with_a_willow_and_a_box_asks_the_record_and_proposes_to_it(tmp_path, capsys):
+    from tests.test_willow_record import FAKE
+
+    willow = tmp_path / "Willow"
+    willow.mkdir()
+    (willow / "kernel.py").write_text(FAKE)
+    box = tmp_path / "box"
+    box.mkdir()
+    (box / "kernel.json").write_text("{}")
+    (box / "answers.json").write_text("{}")
+    f = tmp_path / "plan.json"
+    f.write_text(json.dumps(_plan_with_one_fork().to_dict()))
+    rc = bl.main(
+        [
+            str(f),
+            "--builder",
+            BUILDER,
+            "--root",
+            str(tmp_path / "cp"),
+            "--choose",
+            "willow-email=mail",
+            "--why",
+            "mbox is what I have",
+            "--willow",
+            str(willow),
+            "--box",
+            str(box),
+        ]
+    )
+    out = capsys.readouterr()
+    assert rc == 0, out.err
+    assert (
+        "willow-email             band socratic  → mail  record: nothing sealed; proposed proposal:"
+        in out.out
+    )
+    prop = json.loads((box / "proposed.jsonl").read_text().splitlines()[0])
+    assert json.loads(prop["data"])["chose"] == "mail" and prop["claim"].endswith(
+        "mbox is what I have"
+    )
+    assert (box / "asked.log").read_text().splitlines() == ["forge decision willow-email"] * 2, (
+        "asked once for a seal, once by propose before the door; both are rows"
+    )
+
+
+def test_cli_refuses_a_willow_without_a_box(tmp_path, capsys):
+    f = tmp_path / "plan.json"
+    f.write_text(json.dumps(_plan_with_one_fork().to_dict()))
+    assert bl.main([str(f), "--builder", BUILDER, "--willow", str(tmp_path)]) == 2
+    assert "--willow and --box go together" in capsys.readouterr().err

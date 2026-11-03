@@ -325,6 +325,10 @@ class FakeRecord:
         chosen = self.sealed.get(dt)
         return willow_record.Sealed(dt, chosen, dt[7:], "proposal:" + "ab" * 32) if chosen else None
 
+    def propose(self, dt, chosen, *, over, why, surface="", word=None):
+        self.proposed = getattr(self, "proposed", []) + [(dt, chosen, over, why)]
+        return "proposal:" + "ef" * 32
+
 
 @_needs_nestor
 def test_the_record_is_asked_first_for_a_sealed_stack_and_sealed_forks(home, tmp_path):
@@ -351,6 +355,45 @@ def test_the_record_is_asked_first_for_a_sealed_stack_and_sealed_forks(home, tmp
     )
     assert rec.asked == ["a site that shows my email and what is due", "willow-email", "willow-due"]
     assert e.major == "web", "the record tier decides nothing for the engine yet"
+
+
+@_needs_nestor
+def test_a_major_sealed_on_the_record_is_the_auto_band_and_a_fresh_one_is_proposed(home):
+    rec = FakeRecord(sealed={entry.DECISION_TYPE_MAJOR: "web"})
+    e = entry.open_bite(
+        "an app",  # web, mobile or desktop: a decision
+        project_id=PROJECT,
+        builder_id=BUILDER,
+        responder=ScriptedResponder(),
+        root=home / "cp",
+        record=rec,
+    )
+    assert e.major == "web" and e.decision_outcome.band == "auto"
+    assert e.tiers["scan"].endswith(
+        "(the record's seal, under the person's key) — record: sealed 'web' (proposal:"
+        + "ab" * 32
+        + "), confirmed"
+    )
+    assert not hasattr(rec, "proposed"), "a confirmed seal proposes nothing"
+    fresh = FakeRecord()
+    e2 = entry.open_bite(
+        "an app",
+        project_id=PROJECT + "-2",
+        builder_id=BUILDER + "2",
+        responder=ScriptedResponder(choose="mobile"),
+        root=home / "cp",
+        record=fresh,
+    )
+    assert e2.major == "mobile" and e2.decision_outcome.band == "socratic"
+    assert fresh.proposed == [
+        (
+            entry.DECISION_TYPE_MAJOR,
+            "mobile",
+            ["web", "desktop"],
+            "because the rally has a website already",
+        )
+    ]
+    assert e2.tiers["scan"].endswith("— record: nothing sealed; proposed proposal:" + "ef" * 32)
 
 
 @_needs_nestor

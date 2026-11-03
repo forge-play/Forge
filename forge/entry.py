@@ -93,17 +93,7 @@ class BoxLookup(Protocol):
     def lookup(self, hits: list[majors.Hit]) -> list[Candidate]: ...
 
 
-@runtime_checkable
-class RecordLookup(Protocol):
-    """Tier 0. The person's own record, under their key, asked through the
-    kernel (`forge.willow_record.WillowRecord`): a sealed stack for the
-    sentence, and a sealed choice for a fork the catalogue raised."""
-
-    name: str
-
-    def stack_for(self, sentence: str) -> str | None: ...
-
-    def has_sealed(self, decision_type: str) -> willow_record.Sealed | None: ...
+RecordLookup = willow_record.RecordLookup  # tier 0, and the checkpoint's first word
 
 
 class NoBox:
@@ -353,6 +343,7 @@ def open_bite(
         recognize_threshold=recognize_threshold,
         project=project_id,
         defer_seal=defer_seal,
+        record=record,
     )
     e.decision_outcome = outcome
     e.major = _major_from_chosen(outcome.chosen, ask)
@@ -362,8 +353,12 @@ def open_bite(
     # An auto or recognize band means a prior sealed row answered instead of the
     # maker. Say whether that row's signature was checkable, for the same reason
     # the nestor tier does.
-    if outcome.matched_band is not None and not checkpoint_memory.seal_signatures_verified():
+    if outcome.record_subject and outcome.band == "auto" and outcome.record.endswith("confirmed"):
+        e.tiers["scan"] += " (the record's seal, under the person's key)"
+    elif outcome.matched_band is not None and not checkpoint_memory.seal_signatures_verified():
         e.tiers["scan"] += " — prior seal's SIGNATURE NOT VERIFIED"
+    if record is not None:
+        e.tiers["scan"] += f" — record: {outcome.record}"
     return e
 
 

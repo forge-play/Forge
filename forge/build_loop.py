@@ -30,7 +30,7 @@ With `record` (the-join.md, thread 3), every fork goes through the checkpoint
 with the person's own willow record wired: a fork they sealed before is the
 auto band with no ask, and every answer given here is proposed onto the
 record to wait on their seal. A plan written by Willow's `forge` add-on
-(`suggest --json`) names its forks `willow-<word>`, the same key the add-on
+(`suggest --plan`) names its forks `willow-<word>`, the same key the add-on
 proposes under, so the two sides read each other's decisions.
 """
 
@@ -271,7 +271,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def load_plan(path: Path | str) -> PlanDoc:
-    """A plan file, or Willow's `suggest --json` envelope, which carries the
+    """A plan file, or Willow's `suggest --plan` envelope, which carries the
     plan under `plan` (null when the sentence reached nothing to run)."""
     try:
         doc = json.loads(Path(path).read_text(encoding="utf-8"))

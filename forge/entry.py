@@ -18,8 +18,11 @@ checkpoint router. `open_bite` takes a maker's opening sentence and:
      newest CI row and how old it is, or `none` (the-forge-shape.md §12,
      rule 3 — a stale answer reported as current turns "nobody asked" into
      "the box says no").
-  2. **looks in the box** — a `BoxLookup` seam. The real box (the corpus under
-     ~/github) is willow-side; the default here returns nothing and SAYS so.
+  2. **looks in the box** — a `BoxLookup` seam. The default, `NoBox`, returns
+     nothing and SAYS so. The first real one is `forge.card_box.CardBox`, over
+     a Willow checkout's add-on cards (the-join.md): pass its rows as
+     `catalogue` and the entry scans the sentence over them too, so the box
+     sees both the majors' hits and the catalogue's.
   3. **remote** — not built; recorded as `not_attempted`, never pretended.
 
   then scans the sentence (`forge/majors.py`). One major: the entry knows what
@@ -96,6 +99,7 @@ class Entry:
     project_id: str
     builder_id: str
     hits: list[majors.Hit] = field(default_factory=list)
+    catalogue_hits: list[majors.Hit] = field(default_factory=list)  # the box's own scan
     majors: dict[str, list[str]] = field(default_factory=dict)  # major -> keywords
     major: str | None = None
     answer: str | None = None  # a sealed project answer, if any
@@ -108,6 +112,7 @@ class Entry:
     def to_dict(self) -> dict:
         d = asdict(self)
         d["hits"] = [h.__dict__ for h in self.hits]
+        d["catalogue_hits"] = [h.__dict__ for h in self.catalogue_hits]
         d["decision_outcome"] = asdict(self.decision_outcome) if self.decision_outcome else None
         return d
 
@@ -185,6 +190,7 @@ def open_bite(
     responder: checkpoint.Responder,
     root: Path = checkpoint_memory.DEFAULT_CHECKPOINT_ROOT,
     box: BoxLookup | None = None,
+    catalogue: list[majors.Row] | None = None,
     recognize_threshold: float = checkpoint.DEFAULT_RECOGNIZE_THRESHOLD,
     table: list[majors.Row] | None = None,
     main: str | Path | None = None,
@@ -229,7 +235,11 @@ def open_bite(
     e.hits = majors.scan(e.sentence, table=table)
     e.majors = {m: [h.source for h in hs] for m, hs in majors.majors_for(e.hits).items()}
     box = box or NoBox()
-    e.candidates = list(box.lookup(e.hits))
+    # The catalogue is a second table for the same scan (the-join.md, thread
+    # 1): its hits reach the box and never the major decision below, so a
+    # sentence that names two jobs is two candidates, not an ambiguity.
+    e.catalogue_hits = majors.scan(e.sentence, table=catalogue) if catalogue else []
+    e.candidates = list(box.lookup(e.hits + e.catalogue_hits))
     e.tiers["box"] = (
         f"{box.name}: {len(e.candidates)} candidate(s)" if e.candidates else f"{box.name}: nothing"
     )
@@ -368,12 +378,29 @@ def build_parser() -> argparse.ArgumentParser:
         "typed is not one, and an absent one seals empty and flags "
         "as a rubber-stamp rather than passing as a reason.",
     )
+    p.add_argument(
+        "--willow",
+        default=None,
+        help="a Willow checkout: its add-on cards become the box (tier 2) and a "
+        "second table for the scan. Without it the box is NoBox, and says so.",
+    )
     p.add_argument("--json", action="store_true")
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
     a = build_parser().parse_args(argv)
+    box: BoxLookup | None = None
+    catalogue: list[majors.Row] | None = None
+    if a.willow is not None:
+        from . import card_box, card_table  # here, not above: card_box imports Candidate
+
+        try:
+            box = card_box.CardBox(a.willow)
+        except card_table.CardTableError as err:
+            print(f"REFUSED: {err}", file=sys.stderr)
+            return 2
+        catalogue = box.rows
     try:
         e = open_bite(
             a.sentence,
@@ -381,6 +408,8 @@ def main(argv: list[str] | None = None) -> int:
             builder_id=a.builder_id,
             responder=_PickResponder(a.choose, a.why),
             root=Path(a.root),
+            box=box,
+            catalogue=catalogue,
         )
     except EntryError as err:
         print(f"REFUSED: {err}", file=sys.stderr)
@@ -409,6 +438,8 @@ def main(argv: list[str] | None = None) -> int:
     else:
         for tier, what in e.tiers.items():
             print(f"{tier:7} {what}")
+        for c in e.candidates:
+            print(f"cand    {c.name}: {c.why} ({c.where})")
         print(f"major   {e.major or '(none)'}")
         print(f"home    {home}")
     return 0

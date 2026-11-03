@@ -281,6 +281,31 @@ def test_the_box_seam_is_consulted_and_named(home):
 
 
 @_needs_nestor
+def test_the_card_box_and_its_catalogue_feed_the_box_tier_not_the_major(home, tmp_path):
+    from forge import card_box
+    from tests.test_card_table import make_willow
+
+    box = card_box.CardBox(make_willow(tmp_path / "Willow"))
+    e = entry.open_bite(
+        "a site that shows my email and what is due",
+        project_id=PROJECT,
+        builder_id=BUILDER,
+        responder=ScriptedResponder(),
+        root=home / "cp",
+        box=box,
+        catalogue=box.rows,
+    )
+    assert [c.name for c in e.candidates] == ["apple-mail", "mail", "coming-up", "renewals"]
+    assert e.tiers["box"].startswith("willow cards at ") and e.tiers["box"].endswith(
+        "(7 built, 1 ideas): 4 candidate(s)"
+    )
+    assert [h.target for h in e.hits] == ["web"], "the majors' scan is the keyword table's alone"
+    assert len(e.catalogue_hits) == 4
+    assert e.major == "web" and "one major" in e.tiers["scan"], "four cards are not an ambiguity"
+    assert len(e.to_dict()["catalogue_hits"]) == 4
+
+
+@_needs_nestor
 def test_cli_asks_then_confirms(home, capsys):
     root = str(home / "cp")
     rc = entry.main(

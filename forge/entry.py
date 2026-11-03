@@ -45,13 +45,23 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from . import checkpoint, checkpoint_memory, deposit, majors, paths, project_home, store_diff
+from . import (
+    checkpoint,
+    checkpoint_memory,
+    deposit,
+    majors,
+    paths,
+    project_home,
+    store_diff,
+    willow_record,
+)
 
 __all__ = [
     "Entry",
     "EntryError",
     "BoxLookup",
     "NoBox",
+    "RecordLookup",
     "Candidate",
     "open_bite",
     "DECISION_TYPE_MAJOR",
@@ -83,6 +93,19 @@ class BoxLookup(Protocol):
     def lookup(self, hits: list[majors.Hit]) -> list[Candidate]: ...
 
 
+@runtime_checkable
+class RecordLookup(Protocol):
+    """Tier 0. The person's own record, under their key, asked through the
+    kernel (`forge.willow_record.WillowRecord`): a sealed stack for the
+    sentence, and a sealed choice for a fork the catalogue raised."""
+
+    name: str
+
+    def stack_for(self, sentence: str) -> str | None: ...
+
+    def has_sealed(self, decision_type: str) -> willow_record.Sealed | None: ...
+
+
 class NoBox:
     """The default box: nothing, and says so. The real lookup (the corpus,
     the app catalog) lives on the willow side; this is the seam it plugs into."""
@@ -103,6 +126,8 @@ class Entry:
     majors: dict[str, list[str]] = field(default_factory=dict)  # major -> keywords
     major: str | None = None
     answer: str | None = None  # a sealed project answer, if any
+    record_answer: str | None = None  # a sealed stack for these words, if any
+    sealed_forks: dict[str, str] = field(default_factory=dict)  # decision_type -> chosen
     candidates: list[Candidate] = field(default_factory=list)
     tiers: dict[str, str] = field(
         default_factory=dict
@@ -172,6 +197,17 @@ def _main_tier(store: object, main: str | Path | None) -> str:
     return store_diff.summary(d)
 
 
+def _catalogue_forks(hits: list[majors.Hit]) -> list[str]:
+    """The words that reached more than one card, in the order said — the
+    catalogue's own ambiguity, the same grouping `CardBox.forks` makes."""
+    by_word: dict[str, list[str]] = {}
+    for h in hits:
+        names = by_word.setdefault(h.matched, [])
+        if h.target not in names:
+            names.append(h.target)
+    return [w for w, ns in by_word.items() if len(ns) > 1]
+
+
 def _major_from_chosen(chosen: str, known: list[str]) -> str | None:
     """A prior seal's canonical string is `label` or `label: rationale`; the
     label is one of the majors that were on offer. Longest prefix wins."""
@@ -191,6 +227,7 @@ def open_bite(
     root: Path = checkpoint_memory.DEFAULT_CHECKPOINT_ROOT,
     box: BoxLookup | None = None,
     catalogue: list[majors.Row] | None = None,
+    record: RecordLookup | None = None,
     recognize_threshold: float = checkpoint.DEFAULT_RECOGNIZE_THRESHOLD,
     table: list[majors.Row] | None = None,
     main: str | Path | None = None,
@@ -199,6 +236,23 @@ def open_bite(
     if not isinstance(sentence, str) or not sentence.strip():
         raise EntryError("an empty sentence is not a bite")
     e = Entry(sentence=sentence.strip(), project_id=project_id, builder_id=builder_id)
+
+    # 0 — the person's record, before anything the engine keeps (the-join.md,
+    # thread 3). A stack they sealed for these very words is served first, by
+    # the kernel, under their key; the engine checks no seal itself. A record
+    # that refuses is a refusal here too: nothing is read past a break.
+    if record is None:
+        e.tiers["record"] = "no record wired"
+    else:
+        try:
+            e.record_answer = record.stack_for(e.sentence)
+        except willow_record.WillowRecordError as err:
+            raise EntryError(f"the record refused: {err}") from err
+        e.tiers["record"] = (
+            f"{record.name}: sealed stack for these words"
+            if e.record_answer is not None
+            else f"{record.name}: nothing sealed for these words"
+        )
 
     # 1 — Nestor, first, or refuse.
     r, store = _ask_project_nestor(project_id, e.sentence)
@@ -240,6 +294,19 @@ def open_bite(
     # sentence that names two jobs is two candidates, not an ambiguity.
     e.catalogue_hits = majors.scan(e.sentence, table=catalogue) if catalogue else []
     e.candidates = list(box.lookup(e.hits + e.catalogue_hits))
+    # 2b — a word that reached several cards is a fork the person may have
+    # settled already: ask the record for each, by the name both sides use.
+    if record is not None and e.catalogue_hits:
+        for word in _catalogue_forks(e.catalogue_hits):
+            dt = willow_record.decision_type(word)
+            try:
+                got = record.has_sealed(dt)
+            except willow_record.WillowRecordError as err:
+                raise EntryError(f"the record refused: {err}") from err
+            e.sealed_forks[dt] = got.chosen if got else ""
+        said = ", ".join(f"{dt}→{c}" if c else f"{dt} open" for dt, c in e.sealed_forks.items())
+        if said:
+            e.tiers["record"] += f"; forks: {said}"
     e.tiers["box"] = (
         f"{box.name}: {len(e.candidates)} candidate(s)" if e.candidates else f"{box.name}: nothing"
     )
@@ -384,6 +451,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="a Willow checkout: its add-on cards become the box (tier 2) and a "
         "second table for the scan. Without it the box is NoBox, and says so.",
     )
+    p.add_argument(
+        "--box",
+        default=None,
+        dest="record_box",
+        help="with --willow: the person's willow box, asked first through that "
+        "checkout's kernel.py for a sealed stack and sealed forks.",
+    )
     p.add_argument("--json", action="store_true")
     return p
 
@@ -401,6 +475,15 @@ def main(argv: list[str] | None = None) -> int:
             print(f"REFUSED: {err}", file=sys.stderr)
             return 2
         catalogue = box.rows
+    record: RecordLookup | None = None
+    if a.record_box is not None:
+        if a.willow is None:
+            print(
+                "REFUSED: --box needs --willow, the checkout whose kernel.py asks it",
+                file=sys.stderr,
+            )
+            return 2
+        record = willow_record.WillowRecord(Path(a.willow) / "kernel.py", a.record_box)
     try:
         e = open_bite(
             a.sentence,
@@ -410,6 +493,7 @@ def main(argv: list[str] | None = None) -> int:
             root=Path(a.root),
             box=box,
             catalogue=catalogue,
+            record=record,
         )
     except EntryError as err:
         print(f"REFUSED: {err}", file=sys.stderr)
@@ -440,6 +524,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{tier:7} {what}")
         for c in e.candidates:
             print(f"cand    {c.name}: {c.why} ({c.where})")
+        if e.record_answer is not None:
+            print("stack   sealed for these words:")
+            for ln in e.record_answer.splitlines():
+                print(f"        {ln}")
         print(f"major   {e.major or '(none)'}")
         print(f"home    {home}")
     return 0

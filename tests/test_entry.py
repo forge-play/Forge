@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from forge import checkpoint, checkpoint_memory, entry, paths
+from forge import checkpoint, checkpoint_memory, entry, paths, willow_record
 from forge.checkpoint import ChoiceResult, Decision
 
 _HAS_NESTOR = checkpoint_memory.nestor_available()
@@ -229,7 +229,9 @@ def test_the_entry_reports_the_deposit_age_with_the_answer(home):
         root=home / "cp",
     )
     assert e.tiers["deposit"].startswith("none")
-    assert list(e.tiers)[:2] == ["nestor", "deposit"], "asked, then how current the answer is"
+    assert list(e.tiers)[:3] == ["record", "nestor", "deposit"], (
+        "the person's record first, then asked, then how current the answer is"
+    )
 
     store = SqliteStore(str(paths.project_nestor(PROJECT)))
     deposit.deposit_ci(
@@ -303,6 +305,75 @@ def test_the_card_box_and_its_catalogue_feed_the_box_tier_not_the_major(home, tm
     assert len(e.catalogue_hits) == 4
     assert e.major == "web" and "one major" in e.tiers["scan"], "four cards are not an ambiguity"
     assert len(e.to_dict()["catalogue_hits"]) == 4
+
+
+class FakeRecord:
+    name = "fake record"
+
+    def __init__(self, stack=None, sealed=None, refuse=None):
+        self.stack, self.sealed, self.refuse = stack, sealed or {}, refuse
+        self.asked: list[str] = []
+
+    def stack_for(self, sentence):
+        if self.refuse:
+            raise willow_record.WillowRecordError(self.refuse)
+        self.asked.append(sentence)
+        return self.stack
+
+    def has_sealed(self, dt):
+        self.asked.append(dt)
+        chosen = self.sealed.get(dt)
+        return willow_record.Sealed(dt, chosen, dt[7:], "proposal:" + "ab" * 32) if chosen else None
+
+
+@_needs_nestor
+def test_the_record_is_asked_first_for_a_sealed_stack_and_sealed_forks(home, tmp_path):
+    from forge import card_box
+    from tests.test_card_table import make_willow
+
+    box = card_box.CardBox(make_willow(tmp_path / "Willow"))
+    rec = FakeRecord(stack="- mail -- --box {box}\n", sealed={"willow-email": "mail"})
+    e = entry.open_bite(
+        "a site that shows my email and what is due",
+        project_id=PROJECT,
+        builder_id=BUILDER,
+        responder=ScriptedResponder(),
+        root=home / "cp",
+        box=box,
+        catalogue=box.rows,
+        record=rec,
+    )
+    assert list(e.tiers)[0] == "record"
+    assert e.record_answer == "- mail -- --box {box}\n"
+    assert e.sealed_forks == {"willow-email": "mail", "willow-due": ""}
+    assert e.tiers["record"] == (
+        "fake record: sealed stack for these words; forks: willow-email→mail, willow-due open"
+    )
+    assert rec.asked == ["a site that shows my email and what is due", "willow-email", "willow-due"]
+    assert e.major == "web", "the record tier decides nothing for the engine yet"
+
+
+@_needs_nestor
+def test_no_record_says_so_and_a_refusing_record_refuses_the_bite(home):
+    e = entry.open_bite(
+        "a site",
+        project_id=PROJECT,
+        builder_id=BUILDER,
+        responder=ScriptedResponder(),
+        root=home / "cp",
+    )
+    assert (
+        e.tiers["record"] == "no record wired" and e.record_answer is None and e.sealed_forks == {}
+    )
+    with pytest.raises(entry.EntryError, match="the record refused: the chain is broken"):
+        entry.open_bite(
+            "a site",
+            project_id=PROJECT,
+            builder_id=BUILDER,
+            responder=ScriptedResponder(),
+            root=home / "cp",
+            record=FakeRecord(refuse="the chain is broken"),
+        )
 
 
 @_needs_nestor

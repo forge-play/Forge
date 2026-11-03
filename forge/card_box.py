@@ -40,8 +40,9 @@ from pathlib import Path
 
 from . import card_table, majors
 from .entry import Candidate
+from .willow_record import decision_type
 
-__all__ = ["CardBox"]
+__all__ = ["CardBox", "decision_type"]
 
 
 class CardBox:

@@ -86,6 +86,16 @@ def test_every_card_is_read_built_first_then_ideas(willow):
     assert idea.line == "Ask by email, answered by email."
 
 
+def test_where_is_posix_whatever_the_platform_separator(willow, monkeypatch):
+    """`where` goes into proposals and is compared across machines: it is an
+    identifier, so it is written with `/` even where the platform joins with
+    `\\` (the Windows leg found this on the first run)."""
+    cards = {c.name: c for c in card_table.read_cards(willow)}
+    assert cards["pdf"].where == "adapters/deps/pdf/README.md"
+    assert cards["email-ask"].where == "adapters/planned.json"
+    assert "\\" not in "".join(c.where for c in cards.values())
+
+
 def test_a_hyphenated_name_is_also_said_with_a_space(willow):
     cards = {c.name: c for c in card_table.read_cards(willow)}
     assert cards["coming-up"].spellings == ("coming-up", "coming up")

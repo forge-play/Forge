@@ -70,7 +70,7 @@ class Card:
     name: str
     line: str
     section: str
-    where: str  # the card's path inside the checkout, or adapters/planned.json
+    where: str  # the card's path inside the checkout, POSIX on every platform, or adapters/planned.json
     built: bool
     writes: str = ""
     network: str = ""
@@ -146,7 +146,7 @@ def read_cards(willow: Path | str) -> list[Card]:
                     name=folder.name,
                     line=h["line"],
                     section=h.get("section", ""),
-                    where=str(card.relative_to(root)),
+                    where=card.relative_to(root).as_posix(),  # an identifier, not a local path
                     built=True,
                     writes=h.get("writes", ""),
                     network=h.get("network", ""),
@@ -175,7 +175,7 @@ def read_cards(willow: Path | str) -> list[Card]:
                     name=p["name"],
                     line=str(p["line"]),
                     section=str(p.get("section", "")),
-                    where=str(planned.relative_to(root)),
+                    where=planned.relative_to(root).as_posix(),
                     built=False,
                     writes=str(p.get("writes", "")),
                     network=str(p.get("network", "")),

@@ -25,6 +25,10 @@ cross-references point at the repositories they were written in.
 **The engine as built** — `the-forge-engine.md`: what stands today, the
 invariants each part holds, and what is next. This one is maintained.
 
+**What it could take from Willow** — `the-forge-from-willow.md`
+(2026-11-02): the kernel's record discipline and the add-ons set against
+the engine as built, ranked by value for cost, with a first three bites.
+
 Decisions taken since the founding design are not in these files. They are
 drafts in the engine's own per-project Nestor, each with the recipe that
 checks it, waiting for a human seal. Documents are cited, never sealed.

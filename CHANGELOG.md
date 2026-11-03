@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.10.0](https://github.com/forge-play/Forge/compare/v0.9.0...v0.10.0) (2026-11-03)
+
+
+### Added
+
+* **build_loop:** the record in the build loop — every fork asked of it first, every answer proposed to it ([a95fc82](https://github.com/forge-play/Forge/commit/a95fc82d4a2608ba8596d576aebb06d596f30972))
+* **checkpoint:** the record in the bands — asked first, proposed to after ([86658e9](https://github.com/forge-play/Forge/commit/86658e95d8a9f3f30f8b44aa11a757ac71bc304c))
+* **entry:** the card box — tier 2 over Willow's add-on cards, as rows for the scan ([89a3ba6](https://github.com/forge-play/Forge/commit/89a3ba6c122a16b5235bb5a32017ca4efbf8ce09))
+* **entry:** the record first — the person's willow record, asked through the kernel ([ca8b43a](https://github.com/forge-play/Forge/commit/ca8b43a908b651941583411b1727e93967cfdca1))
+* the join — the card box, the record first, and the record in the bands, with the two papers behind it ([58aecef](https://github.com/forge-play/Forge/commit/58aecef6d60e4cc939b8cf674e0a6725a31ab074))
+
+
+### Fixed
+
+* **card_table:** a card's `where` is POSIX on every platform ([b8b9c2e](https://github.com/forge-play/Forge/commit/b8b9c2e7e8289c2f4fc91837b6973d363f0943ae))
+* **tests:** the stand-in kernel reads and writes UTF-8, as the real one does ([35b6829](https://github.com/forge-play/Forge/commit/35b68294c037b974cc1ab5326b8bb9fe6095021c))
+
 ## [0.9.0](https://github.com/forge-play/Forge/compare/v0.8.1...v0.9.0) (2026-10-19)
 
 

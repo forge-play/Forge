@@ -30,19 +30,19 @@ if not (box / "kernel.json").is_file():
 log = box / "asked.log"
 if verb == "bite":
     words = argv[-1]
-    log.open("a").write(words + "\\n")
-    answers = json.loads((box / "answers.json").read_text())
+    log.open("a", encoding="utf-8").write(words + "\\n")
+    answers = json.loads((box / "answers.json").read_text(encoding="utf-8"))
     if words in answers:
         print(json.dumps({"state": "sealed", "answer": answers[words], "by": "proposal:" + "ab" * 32}))
         sys.exit(0)
     print(json.dumps({"state": "empty", "bite_key": "x", "served": []}))
     sys.exit(42)
 if verb == "propose":
-    line = Path(argv[argv.index("--file") + 1]).read_text().splitlines()[0]
+    line = Path(argv[argv.index("--file") + 1]).read_text(encoding="utf-8").splitlines()[0]
     prop = json.loads(line)
     if "bad" in prop["claim"]:
         print("refused  line 0: a claim says why"); sys.exit(42)
-    (box / "proposed.jsonl").open("a").write(line + "\\n")
+    (box / "proposed.jsonl").open("a", encoding="utf-8").write(line + "\\n")
     print("pass  proposal:" + hashlib.sha256(line.encode()).hexdigest() + "  waiting on your seal")
     sys.exit(42)
 sys.exit(2)
@@ -72,7 +72,7 @@ def fake(tmp_path):
 
 def asked(rec: WillowRecord) -> list[str]:
     f = rec.box / "asked.log"
-    return f.read_text().splitlines() if f.is_file() else []
+    return f.read_text(encoding="utf-8").splitlines() if f.is_file() else []
 
 
 def test_decision_type_is_the_word_in_the_forges_charset():
@@ -133,7 +133,7 @@ def test_propose_bites_the_words_first_then_hands_one_line_to_the_door(fake):
     )
     assert subject.startswith("proposal:") and len(subject) == 9 + 64
     assert asked(fake) == ["forge decision major"]
-    line = (fake.box / "proposed.jsonl").read_text().splitlines()[0]
+    line = (fake.box / "proposed.jsonl").read_text(encoding="utf-8").splitlines()[0]
     prop = json.loads(line)
     assert prop["path"] == "forge/decisions/major.json" and prop["cites"] == []
     assert prop["claim"] == "for 'major': web over mobile, desktop; a site is served"
@@ -151,7 +151,7 @@ def test_propose_bites_the_words_first_then_hands_one_line_to_the_door(fake):
 
 def test_propose_names_the_word_said_when_given_one_and_says_no_reason(fake):
     fake.propose("willow-email", "mail", over=["apple-mail"], why="", word="email")
-    prop = json.loads((fake.box / "proposed.jsonl").read_text().splitlines()[0])
+    prop = json.loads((fake.box / "proposed.jsonl").read_text(encoding="utf-8").splitlines()[0])
     assert json.loads(prop["data"])["word"] == "email"
     assert prop["claim"].endswith("no reason given")
 

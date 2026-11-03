@@ -389,13 +389,13 @@ def test_cli_with_a_willow_and_a_box_asks_the_record_and_proposes_to_it(tmp_path
         "willow-email             band socratic  → mail  record: nothing sealed; proposed proposal:"
         in out.out
     )
-    prop = json.loads((box / "proposed.jsonl").read_text().splitlines()[0])
+    prop = json.loads((box / "proposed.jsonl").read_text(encoding="utf-8").splitlines()[0])
     assert json.loads(prop["data"])["chose"] == "mail" and prop["claim"].endswith(
         "mbox is what I have"
     )
-    assert (box / "asked.log").read_text().splitlines() == ["forge decision willow-email"] * 2, (
-        "asked once for a seal, once by propose before the door; both are rows"
-    )
+    assert (box / "asked.log").read_text(encoding="utf-8").splitlines() == [
+        "forge decision willow-email"
+    ] * 2, "asked once for a seal, once by propose before the door; both are rows"
 
 
 def test_cli_refuses_a_willow_without_a_box(tmp_path, capsys):

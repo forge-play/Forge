@@ -824,14 +824,16 @@ CAP_NAMES = ("max_tokens", "max_completion_tokens", "max_output_tokens")
 # slug -> (cap parameter name, reasoning level sent, temperature sent). The cap value is
 # 512 for every slug; the reasoning level is None when nothing is sent; the temperature is
 # 0 or "default" (none sent). openai/gpt-5.4-nano: "default" is confirmed by smoke2 (400 on
-# temperature 0). openai/gpt-5.5: "default" is inferred (same family, SDK silent). The
-# other nine send 0: confirmed by smoke2 for gpt-oss-20b, deepseek and gemini-3.8-flash
-# (no temperature error among their rows); inferred for the rest, which smoke2 did not run.
+# temperature 0). openai/gpt-5.5: "default" is inferred (same family, SDK silent).
+# anthropic/claude-opus-5 and anthropic/claude-sonnet-5: "default" is confirmed by the
+# day-2 frontier run (400, temperature deprecated, on every item). The other seven send 0:
+# confirmed by smoke2 for gpt-oss-20b, deepseek and gemini-3.8-flash (no temperature error
+# among their rows); inferred for the rest, which smoke2 did not run.
 RATIFIED = {
-    "anthropic/claude-opus-5": ("max_tokens", None, 0),
+    "anthropic/claude-opus-5": ("max_tokens", None, "default"),
     "openai/gpt-5.5": ("max_completion_tokens", "low", "default"),
     "google/gemini-3.1-pro-preview": ("max_tokens", "low", 0),
-    "anthropic/claude-sonnet-5": ("max_tokens", None, 0),
+    "anthropic/claude-sonnet-5": ("max_tokens", None, "default"),
     "google/gemini-3.8-flash": ("max_tokens", "low", 0),
     "deepseek-ai/deepseek-r1-0528": ("max_tokens", None, 0),
     "anthropic/claude-haiku-4-5": ("max_tokens", None, 0),

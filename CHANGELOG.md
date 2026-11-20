@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.11.0](https://github.com/forge-play/Forge/compare/v0.10.0...v0.11.0) (2026-11-20)
+
+
+### Added
+
+* **plan:** a blind fork asks without its recommendation, and is still scored ([0dea37f](https://github.com/forge-play/Forge/commit/0dea37f13a4234015ff6faf35ff291b36bedd282))
+
+
+### Fixed
+
+* **calibration:** a deferral is no pick, and memory's answers aren't scored ([8b82f85](https://github.com/forge-play/Forge/commit/8b82f85ff25245f3c82abc379a07551e1ff9ff26))
+
 ## [0.10.0](https://github.com/forge-play/Forge/compare/v0.9.0...v0.10.0) (2026-11-03)
 
 

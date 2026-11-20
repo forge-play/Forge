@@ -208,3 +208,57 @@ def test_cli_prints_the_extraction(capsys, tmp_path):
         cwd=str(Path(__file__).resolve().parents[1]),
     )
     assert r.returncode == 0 and json.loads(r.stdout)["nothing_to_decide"] is True
+
+
+# ── a blind fork: the recommendation kept for the ledger, not shown ──────────
+
+THREE = [{"label": n, "tradeoff": f"{n}'s cost"} for n in ("session cookie", "jwt", "passkey")]
+
+
+def test_blind_is_read_said_only_when_set_and_round_trips():
+    doc = ps.validate(_plan(_fork(blind=True)))
+    ((_, fork),) = doc.forks
+    assert fork.blind is True and fork.problems() == []
+    assert doc.to_dict()["entries"][0]["blind"] is True
+    assert ps.validate(doc.to_dict()) == doc
+    plain = ps.validate(_plan(_fork()))
+    assert "blind" not in plain.to_dict()["entries"][0], "a plan without it reads as before"
+
+
+@pytest.mark.parametrize("bad", ["yes", 1, None])
+def test_blind_that_is_not_a_boolean_is_refused(bad):
+    with pytest.raises(ps.PlanShapeError, match="blind must be true or false"):
+        ps.validate(_plan(_fork(blind=bad)))
+
+
+def test_blind_with_no_recommendation_is_a_problem():
+    doc = ps.validate(_plan(_fork(blind=True, recommended=None, confidence=None)))
+    ((_, fork),) = doc.forks
+    assert any("nothing to withhold" in p for p in fork.problems())
+
+
+def test_a_blind_forks_order_is_its_own_and_the_same_whatever_the_proposer_gave():
+    a = ps.validate(_plan(_fork(blind=True, options=THREE, resolves={})))
+    b = ps.validate(_plan(_fork(blind=True, options=THREE[::-1], resolves={})))
+    ((_, fa),), ((_, fb),) = a.forks, b.forks
+    assert [o.label for o in fa.shown] == [o.label for o in fb.shown], (
+        "the order says nothing of the proposer's, which may list its pick first"
+    )
+    assert sorted(o.label for o in fa.shown) == sorted(o["label"] for o in THREE)
+    assert {o.label: o.tradeoff for o in fa.shown} == {o["label"]: o["tradeoff"] for o in THREE}
+    in_view = ps.validate(_plan(_fork(options=THREE, resolves={})))
+    ((_, fv),) = in_view.forks
+    assert fv.shown == fv.options, "an in-view fork is asked in the proposer's order"
+
+
+def test_a_blind_fork_is_asked_with_no_recommendation_and_keeps_it_for_the_ledger():
+    ex = dx.extract(ps.validate(_plan(_fork(blind=True, options=THREE, resolves={}))))
+    (x,) = ex.items
+    assert x.blind is True and x.decision.recommended is None
+    assert x.recommended == "session cookie" and x.confidence == 0.7
+    ((_, fork),) = ps.validate(_plan(_fork(blind=True, options=THREE, resolves={}))).forks
+    assert [o.label for o in x.decision.options] == [o.label for o in fork.shown]
+    (d,) = ex.to_dict()["decisions"]
+    assert d["blind"] is True and d["recommended"] is None and d["confidence"] is None, (
+        "the extraction report is one a maker can read before answering"
+    )

@@ -63,6 +63,7 @@ class Extracted:
     indices: tuple[int, ...] = ()  # R3: every entry that conflicts
     recommended: str | None = None
     confidence: float | None = None
+    blind: bool = False  # asked without `recommended`, which is kept here for the ledger
 
 
 @dataclass(frozen=True)
@@ -85,6 +86,9 @@ class Extraction:
         return not self.items and not self.refused
 
     def to_dict(self) -> dict:
+        """What will be asked. A blind decision's recommendation and confidence
+        are withheld here too, as they are from the checkpoint: this report is
+        one a maker can read before answering."""
         return {
             "decisions": [
                 {
@@ -93,8 +97,9 @@ class Extraction:
                     "options": [o.label for o in x.decision.options],
                     "origin": x.origin,
                     "index": x.index,
-                    "recommended": x.recommended,
-                    "confidence": x.confidence,
+                    "recommended": None if x.blind else x.recommended,
+                    "confidence": None if x.blind else x.confidence,
+                    "blind": x.blind,
                 }
                 for x in self.items
             ],
@@ -131,6 +136,10 @@ def _r1_entry(entry) -> Extracted | None:
 
 
 def _r2_fork(i: int, f: Fork) -> Extracted | Refusal:
+    """A fork as the checkpoint will ask it. A blind fork's `Decision` has no
+    `recommended` and its options in the fork's own `shown` order, so neither
+    the maker nor a deferral can lean on the recommendation; the `Extracted`
+    keeps it, and its confidence, for the ledger."""
     problems = f.problems()
     if problems:
         return Refusal(index=i, reason="; ".join(problems))
@@ -138,14 +147,15 @@ def _r2_fork(i: int, f: Fork) -> Extracted | Refusal:
         decision=Decision(
             decision_type=f.decision_type,
             surface=f.surface,
-            options=tuple(Option(label=o.label, tradeoff=o.tradeoff) for o in f.options),
-            recommended=f.recommended,
+            options=tuple(Option(label=o.label, tradeoff=o.tradeoff) for o in f.shown),
+            recommended=None if f.blind else f.recommended,
         ),
         origin=ORIGIN_FORK,
         index=i,
         indices=(i,),
         recommended=f.recommended,
         confidence=f.confidence,
+        blind=f.blind,
     )
 
 

@@ -47,6 +47,7 @@ ALLOWED_OTHER = {
     "runner.py",
     "aggregate.py",
     "reliability.py",
+    "discrimination.py",
     "socket_backend.py",
     "kaggle_export.py",
     "kaggle_rows.py",

@@ -599,13 +599,19 @@ class CheckpointMemory:
         target_text: str = "",
         verifier: str | None = None,
         reason: str = "",
+        reopen_when: str = "",
     ) -> dict:
         """ "That explanation didn't fit THIS specific case" — D12's own
         framing. Suppresses `decision_description` as a query for the named
         pair (`pair_id`) or draft (`target_text`); the pair itself, and
         everything else that resolves to it, is untouched. Requires at
         least one of `pair_id`/`target_text`, same as
-        `nestor.memory.reject_match` itself."""
+        `nestor.memory.reject_match` itself.
+
+        `reopen_when` is Nestor's never versus not-yet: empty keeps the no
+        permanent, as before; a condition makes it a no to check again when
+        that condition holds. Passed through unchanged and returned on the
+        rejection."""
         verifier = self.builder_id if verifier is None else verifier
         try:
             return _nestor().memory.reject_match(
@@ -616,6 +622,7 @@ class CheckpointMemory:
                 target_text=target_text,
                 verifier=verifier,
                 reason=reason,
+                reopen_when=reopen_when,
                 store=self._store,
             )
         except ValueError:
@@ -801,6 +808,7 @@ def _cmd_reject_match(args: argparse.Namespace) -> int:
                 target_text=args.target or "",
                 verifier=args.verifier,
                 reason=args.reason or "",
+                reopen_when=args.reopen_when or "",
             )
     except CheckpointMemoryError as e:
         print(f"refused: {e}", file=sys.stderr)
@@ -848,6 +856,11 @@ def build_parser() -> argparse.ArgumentParser:
     rm.add_argument("--target", default=None)
     rm.add_argument("--verifier", default=None)
     rm.add_argument("--reason", default=None)
+    rm.add_argument(
+        "--reopen-when",
+        default=None,
+        help="the condition that makes this no an open question again; omit for a permanent no",
+    )
     rm.set_defaults(func=_cmd_reject_match)
 
     rp = sub.add_parser("reject-pair", help="the pattern itself was wrong; unseal everywhere")

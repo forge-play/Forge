@@ -34,6 +34,8 @@ actually rejecting anything.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from forge import checkpoint_memory
@@ -209,6 +211,35 @@ def test_reject_match_requires_pair_id_or_target_text(tmp_path):
         cm.seal(DECISION_TEXT, CHOSEN_OPTION)
         with pytest.raises(checkpoint_memory.CheckpointMemoryError, match="pair_id or target_text"):
             cm.reject_match(DECISION_TEXT_VARIANT)
+
+
+@_needs_nestor
+def test_reject_match_keeps_the_condition_that_would_reopen_it(tmp_path):
+    """A no with `reopen_when` is a not-yet: the condition reaches Nestor's
+    rejection unchanged. Without it the no is permanent, as before."""
+    with _open(tmp_path) as cm:
+        pair_id = cm.seal(DECISION_TEXT, CHOSEN_OPTION)["pair_id"]
+        not_yet = cm.reject_match(
+            DECISION_TEXT_VARIANT,
+            pair_id=pair_id,
+            reason="not the same call this time",
+            reopen_when="the archive moves off the shared drive",
+        )
+        assert not_yet["reopen_when"] == "the archive moves off the shared drive"
+        assert not_yet["reason"] == "not the same call this time"
+
+        never = cm.reject_match(DECISION_TEXT_VARIANT, target_text="some other draft")
+        assert never["reopen_when"] == ""
+
+
+@_needs_nestor
+def test_cli_reject_match_takes_reopen_when(tmp_path, capsys):
+    with _open(tmp_path) as cm:
+        pair_id = cm.seal(DECISION_TEXT, CHOSEN_OPTION)["pair_id"]
+    argv = ["--root", str(tmp_path / "checkpoints"), "reject-match", BUILDER_A, DECISION_TYPE]
+    argv += ["--surface", DECISION_TEXT_VARIANT, "--pair-id", pair_id]
+    assert checkpoint_memory.main(argv + ["--reopen-when", "the budget is reopened"]) == 0
+    assert json.loads(capsys.readouterr().out)["reopen_when"] == "the budget is reopened"
 
 
 # ── reject_pair: the pattern itself was wrong, unseal everywhere ───────────

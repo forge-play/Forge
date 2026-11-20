@@ -147,6 +147,32 @@ def test_picking_the_recommendation_resolves_true(tmp_path):
     assert calibration_ledger.scorecard(BUILDER, root=root)["summary"]["hit_rate"] == 1.0
 
 
+class DeferringResponder(ScriptedResponder):
+    """ "I don't know, you choose", at every fork."""
+
+    def choose(self, d):
+        self.choose_calls.append(d)
+        return ChoiceResult(deferred=True)
+
+
+@_needs_nestor
+def test_a_deferral_is_voided_not_scored_as_the_recommendation_picked(tmp_path):
+    """The checkpoint takes the recommendation when the maker defers; scoring
+    that as `chosen == recommended` was a hit the maker never made."""
+    root = tmp_path / "cp"
+    res = bl.resolve(
+        ps.load(FIXTURE), builder_id=BUILDER, responder=DeferringResponder(), root=root
+    )
+    (o,) = res.outcomes
+    assert o.deferred and res.chosen == {"where-the-dates-live": "sidecar json"}, (
+        "the plan still gets the recommendation, as before"
+    )
+    (p,) = res.predictions
+    assert p["outcome"] is None and p["void"] == bl.DEFERRED
+    card = calibration_ledger.scorecard(BUILDER, root=root)
+    assert card["resolved"] == 0 and card["void"] == 1 and card["pending"] == 0
+
+
 @_needs_nestor
 def test_a_fork_without_confidence_records_nothing(tmp_path):
     root = tmp_path / "cp"

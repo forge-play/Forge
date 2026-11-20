@@ -216,7 +216,11 @@ def test_scorecard_groups_without_changing_the_maths(tmp_path):
             root=tmp_path,
         )
     card = led.scorecard(BUILDER, group_by="band", root=tmp_path)
-    assert card["resolved"] == 3, "the ungrouped header survives grouping"
+    # the header scores the one pick made now; memory's two answers are kept,
+    # counted beside it, and shown in their own group
+    assert card["resolved"] == 1 and card["from_memory"] == 2 and card["void"] == 0
+    plain = led.scorecard(BUILDER, root=tmp_path)
+    assert all(card[k] == plain[k] for k in plain), "the ungrouped header survives grouping"
     assert card["groups"]["auto"]["n"] == 2 and card["groups"]["socratic"]["n"] == 1
     # stated 0.9 confidence, 0/2 correct in auto — the shape §5 predicts
     assert card["groups"]["auto"]["summary"]["hit_rate"] == 0.0
@@ -230,3 +234,48 @@ def test_rows_written_before_the_field_existed_group_as_unset(tmp_path):
     led.resolve_prediction(BUILDER, led._prediction_id("old row"), True, root=tmp_path)
     card = led.scorecard(BUILDER, group_by="band", root=tmp_path)
     assert list(card["groups"]) == ["(unset)"]
+    assert card["resolved"] == 1, "a row with no band is scored, as it was before bands"
+
+
+# ── what is ground truth: a pick made now, and only that ─────────────────────
+
+
+def test_a_voided_prediction_is_settled_kept_and_never_scored(tmp_path):
+    led.record_prediction(BUILDER, "maker picks a", 0.9, root=tmp_path)
+    pid = led._prediction_id("maker picks a")
+    rec = led.resolve_prediction(BUILDER, pid, None, void="deferred", root=tmp_path)
+    assert rec["resolved"] is True and rec["outcome"] is None and rec["void"] == "deferred"
+    card = led.scorecard(BUILDER, group_by="band", root=tmp_path)
+    assert card["resolved"] == 0 and card["void"] == 1 and card["pending"] == 0
+    assert card["groups"] == {}, "no outcome, so in no group's maths either"
+    with pytest.raises(led.CalibrationLedgerError, match="single-use"):
+        led.resolve_prediction(BUILDER, pid, True, root=tmp_path)
+
+
+def test_an_outcome_and_a_void_reason_go_one_or_the_other(tmp_path):
+    led.record_prediction(BUILDER, "maker picks b", 0.9, root=tmp_path)
+    pid = led._prediction_id("maker picks b")
+    with pytest.raises(led.CalibrationLedgerError, match="never both or neither"):
+        led.resolve_prediction(BUILDER, pid, None, root=tmp_path)
+    with pytest.raises(led.CalibrationLedgerError, match="never both or neither"):
+        led.resolve_prediction(BUILDER, pid, False, void="deferred", root=tmp_path)
+    assert led.scorecard(BUILDER, root=tmp_path)["pending"] == 1, "neither settled it"
+
+
+def test_answers_from_memory_never_raise_the_overconfidence_flag(tmp_path, monkeypatch):
+    """Five confident misses, all memory's: kept, grouped, and not the model's
+    to answer for, so nothing is routed."""
+    routed = []
+    monkeypatch.setattr(led.governance, "route_nudge", lambda *a, **k: routed.append(k) or k)
+    for i in range(led.MIN_N):
+        claim = f"memory claim {i}"
+        led.record_prediction(BUILDER, claim, 0.95, root=tmp_path)
+        led.resolve_prediction(
+            BUILDER, led._prediction_id(claim), False,
+            decision=_FakeOutcome(pair_id=f"m{i}", band="auto", matched_band="auto",
+                                  match_confidence=0.97, engagement=None, decision_type="t"),
+            root=tmp_path,
+        )  # fmt: skip
+    card = led.scorecard(BUILDER, root=tmp_path)
+    assert card["resolved"] == 0 and card["from_memory"] == led.MIN_N
+    assert led.overconfidence_signal(BUILDER, root=tmp_path) is None and routed == []

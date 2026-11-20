@@ -59,6 +59,24 @@ OVERCONFIDENCE_FLOOR = 0.10
 # against OPEN rows) — the correct "one live flag at a time" behavior.
 _SIGNAL_SOURCE_REF_PREFIX = "calibration-overconfidence:"
 
+# The bands where the answer came from the maker's earlier seal, not a pick
+# made now. A prediction settled there is kept (with its band, for the
+# per-band view) but never scored in the header: the earlier seal agreeing with
+# itself says nothing new about the predictor, and when the predictor's own
+# confidence was made from those seals, scoring it would count them twice.
+FROM_MEMORY = ("auto", "recognize")
+
+
+def scored(record: dict) -> bool:
+    """Whether a row counts in the scorecard's header and the overconfidence
+    signal: resolved, with an outcome (not voided), and not answered from
+    memory. Rows written before `band` existed have none and count, as before."""
+    return (
+        bool(record.get("resolved"))
+        and record.get("outcome") is not None
+        and record.get("band") not in FROM_MEMORY
+    )
+
 
 class CalibrationLedgerError(Exception):
     """This module's own refusal — a confidence outside the believed-direction
@@ -161,12 +179,17 @@ def record_prediction(
 def resolve_prediction(
     builder_id: str,
     prediction_id: str,
-    outcome: bool,
+    outcome: bool | None,
     *,
     decision: "object | None" = None,
+    void: str = "",
     root: Path | None = None,
 ) -> dict:
-    """Settle a pending prediction with ground truth (`outcome` True/False).
+    """Settle a pending prediction with ground truth (`outcome` True/False),
+    or void it: `outcome=None` with `void` saying why there is no ground truth
+    (a deferral: the maker handed the call back, so there was no pick to score
+    against). A voided row is settled and kept, single-use like any other, and
+    never scored. `void` with an outcome, or `None` without a reason, is refused.
 
     Refuses an unknown id, and refuses to re-resolve an already-settled one — a
     double-resolve would silently rewrite history (the same single-use guard the
@@ -189,8 +212,16 @@ def resolve_prediction(
             f"prediction {prediction_id!r} already resolved (outcome="
             f"{record.get('outcome')!r}) — a settled prediction is single-use"
         )
-    record["outcome"] = bool(outcome)
+    if (outcome is None) != bool(void.strip()):
+        raise CalibrationLedgerError(
+            "a prediction is settled with an outcome, or voided with a reason "
+            f"(outcome=None, void='why'), never both or neither: got outcome="
+            f"{outcome!r}, void={void!r}"
+        )
+    record["outcome"] = None if outcome is None else bool(outcome)
     record["resolved"] = True
+    if void:
+        record["void"] = void.strip()
     if decision is not None:
         record["decision_ref"] = getattr(decision, "pair_id", "") or ""
         record["band"] = getattr(decision, "band", "") or ""
@@ -206,14 +237,19 @@ def resolve_prediction(
 def scorecard(builder_id: str, *, group_by: str = "", root: Path | None = None) -> dict:
     """The model's calibration mirror: the `calibration.summary` header (brier,
     log_score, hit_rate, overconfidence) plus the `calibration.bins` reliability
-    table, over the builder's RESOLVED predictions, with a pending count so a
-    thin scorecard reads as thin, not as confident.
+    table, over the builder's SCORED predictions (see `scored`: resolved, not
+    voided, not answered from memory), with a pending count so a thin
+    scorecard reads as thin, not as confident, and the two that are kept but
+    not scored counted beside it: `void` (settled with no outcome, a deferral)
+    and `from_memory` (answered in the auto or recognize band).
 
     `group_by` names a row field (`"band"`, `"matched_band"`, `"decision_type"`,
     `"kind"`) and adds a `groups` mapping of that field's values to their own
-    summary/bins. The maths is unchanged — `calibration.summary` per group, no
-    new estimator. The ungrouped header always stays, so a grouped read can
-    never be mistaken for the whole picture.
+    summary/bins, over every resolved row with an outcome, memory's included,
+    so the per-band view still shows what memory's answers did. The maths is
+    unchanged — `calibration.summary` per group, no new estimator. The
+    ungrouped header always stays, so a grouped read can never be mistaken for
+    the whole picture.
 
     Rows written before a field existed simply have no value for it and land
     under `""`/`None` rendered as `"(unset)"` — reported as its own group rather
@@ -222,17 +258,20 @@ def scorecard(builder_id: str, *, group_by: str = "", root: Path | None = None) 
     store = _store(builder_id, root)
     all_recs = store.all(PREDICTIONS)
     resolved = [r for r in all_recs if r.get("resolved")]
-    pairs = [(float(r["confidence"]), bool(r["outcome"])) for r in resolved]
+    pairs = [(float(r["confidence"]), bool(r["outcome"])) for r in resolved if scored(r)]
+    with_outcome = [r for r in resolved if r.get("outcome") is not None]
     card = {
         "builder_id": store.builder_id,
         "resolved": len(pairs),
         "pending": sum(1 for r in all_recs if not r.get("resolved")),
+        "void": sum(1 for r in resolved if r.get("outcome") is None),
+        "from_memory": sum(1 for r in with_outcome if r.get("band") in FROM_MEMORY),
         "summary": calibration.summary(pairs),
         "bins": calibration.bins(pairs),
     }
     if group_by:
         groups: dict[str, list[tuple[float, bool]]] = {}
-        for r in resolved:
+        for r in with_outcome:
             key = r.get(group_by)
             key = "(unset)" if key in (None, "") else str(key)
             groups.setdefault(key, []).append((float(r["confidence"]), bool(r["outcome"])))

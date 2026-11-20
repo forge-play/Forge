@@ -21,6 +21,15 @@ opinion enters — which is the loop the Forge exists to close and which, until
 this module, nothing outside the ledger's own tests had ever called. A fork
 without a confidence records nothing: no fabricated 0.5.
 
+Only a pick is ground truth. "I don't know, you choose" hands the call back,
+and the checkpoint then takes the recommendation, so `chosen == recommended`
+would score the prediction as a hit the maker never made: the more a maker
+defers, the better calibrated the proposer would look. A deferral is
+therefore VOIDED (settled with no outcome, kept, never scored). An answer
+from memory (the auto or recognize band) is settled as usual and kept with
+its band, and the ledger's scorecard leaves it out of its header: it is the
+maker's earlier seal agreeing with itself, not a new pick.
+
 Refusals: a plan whose extraction refused a fork cannot be resolved (the
 reasons are in the error); a plan that still holds a fork after resolution is
 a bug and is refused rather than returned; a memory answer that names no
@@ -54,6 +63,9 @@ from .decision_extract import ORIGIN_CONFLICT, ORIGIN_ENTRY, ORIGIN_FORK, Extrac
 from .plan_shape import FileWrite, Fork, PlanDoc
 
 __all__ = ["BuildLoopError", "Resolved", "resolve", "label_from_chosen"]
+
+#: why a deferred answer's prediction has no outcome, kept on its row
+DEFERRED = "deferred: the maker handed the call back, so there was no pick to score"
 
 
 class BuildLoopError(Exception):
@@ -123,12 +135,22 @@ def _settle(
     prediction was about — the one moment both objects are in the same frame.
     Before 2026-09-07 they were appended to two separate lists on `Resolved`
     with no cross-reference, so the correlation existed for one loop iteration
-    and was then thrown away (docs/design/the-forge-pedagogy.md §5)."""
+    and was then thrown away (docs/design/the-forge-pedagogy.md §5).
+
+    A deferred answer is voided, not settled: the maker picked nothing, so
+    there is no outcome to hold the prediction to (see the module docstring)."""
     if pred is None or pred.get("already_settled"):
         return
-    rec = calibration_ledger.resolve_prediction(
-        builder_id, pred["prediction_id"], hit, decision=outcome, root=root
-    )
+    if outcome is not None and outcome.deferred:
+        rec = calibration_ledger.resolve_prediction(
+            builder_id, pred["prediction_id"], None, decision=outcome, root=root,
+            void=DEFERRED,
+        )  # fmt: skip
+        pred["void"] = rec["void"]
+    else:
+        rec = calibration_ledger.resolve_prediction(
+            builder_id, pred["prediction_id"], hit, decision=outcome, root=root
+        )
     pred["outcome"] = rec["outcome"]
     pred["decision_ref"] = rec["decision_ref"]
     pred["band"] = rec["band"]

@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import random
 from collections import defaultdict
 from pathlib import Path
@@ -117,7 +118,9 @@ def _pairs(rows: list[dict], truth: dict[str, dict]) -> list[tuple[float, bool, 
 
 
 def _mean(xs: list[float]) -> float | None:
-    return sum(xs) / len(xs) if xs else None
+    # fsum: Python 3.11's sum adds floats naively, 3.12's compensates, so a
+    # plain sum gives a different last digit on each (0.9500000000000003).
+    return math.fsum(xs) / len(xs) if xs else None
 
 
 def discrimination(

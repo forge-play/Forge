@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/forge-play/Forge/compare/v0.11.0...v0.12.0) (2026-11-20)
+
+
+### Added
+
+* reject_match keeps the condition that would reopen a no ([fa789ce](https://github.com/forge-play/Forge/commit/fa789ce3c57864a9b6077bf3b13f77c418b1b3c3))
+
 ## [0.11.0](https://github.com/forge-play/Forge/compare/v0.10.0...v0.11.0) (2026-11-20)
 
 

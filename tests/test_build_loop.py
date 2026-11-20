@@ -173,6 +173,60 @@ def test_a_deferral_is_voided_not_scored_as_the_recommendation_picked(tmp_path):
     assert card["resolved"] == 0 and card["void"] == 1 and card["pending"] == 0
 
 
+def _blind_fixture() -> ps.PlanDoc:
+    raw = json.loads(FIXTURE.read_text())
+    raw["entries"][1]["blind"] = True
+    return ps.validate(raw)
+
+
+@_needs_nestor
+def test_a_blind_fork_is_asked_without_its_recommendation_and_still_scored(tmp_path):
+    root = tmp_path / "cp"
+    r = ScriptedResponder({"where-the-dates-live": "sidecar json"})  # the hidden recommendation
+    res = bl.resolve(_blind_fixture(), builder_id=BUILDER, responder=r, root=root)
+    (asked,) = r.choose_calls
+    assert asked.recommended is None, "the maker is never shown it"
+    (p,) = res.predictions
+    assert p["blind"] is True and p["outcome"] is True and p["confidence"] == 0.8
+    card = calibration_ledger.scorecard(BUILDER, group_by="blind", root=root)
+    assert card["resolved"] == 1 and list(card["groups"]) == ["True"]
+
+
+@_needs_nestor
+def test_a_deferral_on_a_blind_fork_cannot_fall_back_to_the_recommendation(tmp_path):
+    root = tmp_path / "cp"
+    plan = _blind_fixture()
+    ((_, fork),) = plan.forks
+    res = bl.resolve(plan, builder_id=BUILDER, responder=DeferringResponder(), root=root)
+    assert res.chosen == {"where-the-dates-live": fork.shown[0].label}, (
+        "the first option as asked, in the engine's order: not the proposer's pick by design"
+    )
+    (p,) = res.predictions
+    assert p["outcome"] is None and p["void"] == bl.DEFERRED
+
+
+@_needs_nestor
+def test_in_view_and_blind_predictions_group_apart(tmp_path):
+    root = tmp_path / "cp"
+    bl.resolve(
+        ps.load(FIXTURE),
+        builder_id=BUILDER,
+        responder=ScriptedResponder({"where-the-dates-live": "sidecar json"}),
+        root=root,
+    )
+    raw = json.loads(FIXTURE.read_text())
+    raw["entries"][1].update(blind=True, decision_type="where-the-times-live")
+    bl.resolve(
+        ps.validate(raw),
+        builder_id=BUILDER,
+        responder=ScriptedResponder({"where-the-times-live": "exif in place"}),
+        root=root,
+    )
+    groups = calibration_ledger.scorecard(BUILDER, group_by="blind", root=root)["groups"]
+    assert groups["False"]["summary"]["hit_rate"] == 1.0, "in view: followed"
+    assert groups["True"]["summary"]["hit_rate"] == 0.0, "blind: the proposer missed"
+
+
 @_needs_nestor
 def test_a_fork_without_confidence_records_nothing(tmp_path):
     root = tmp_path / "cp"

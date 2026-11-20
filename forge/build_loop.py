@@ -115,13 +115,19 @@ def _predict(builder_id: str, x: decision_extract.Extracted, root: Path) -> dict
             x.confidence,
             kind="fork",
             decision_type=x.decision.decision_type,
+            blind=x.blind,
             root=root,
         )
     except calibration_ledger.CalibrationLedgerError as e:
         # The same claim already settled (a re-run of a resolved plan). A
         # settled prediction is history; do not re-open it, do not fabricate.
         return {"claim": claim, "confidence": x.confidence, "already_settled": True, "note": str(e)}
-    return {"claim": claim, "confidence": x.confidence, "prediction_id": rec["id"]}
+    return {
+        "claim": claim,
+        "confidence": x.confidence,
+        "prediction_id": rec["id"],
+        "blind": x.blind,
+    }
 
 
 def _settle(

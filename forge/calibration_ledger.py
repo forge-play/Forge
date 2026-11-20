@@ -125,6 +125,7 @@ def record_prediction(
     prediction_id: str | None = None,
     kind: str = "",
     decision_type: str = "",
+    blind: bool | None = None,
     root: Path | None = None,
 ) -> dict:
     """Record the model's stated confidence in a claim, pending ground truth.
@@ -138,7 +139,12 @@ def record_prediction(
     `decision_type` is recorded as its own field rather than left to be parsed
     back out of `claim`'s prefix — a decision_type containing a colon, or a
     reworded claim, breaks that parse silently. It is the coarse grouping axis
-    `scorecard(group_by=...)` reads."""
+    `scorecard(group_by=...)` reads.
+
+    `blind` says whether the maker was asked without the claim in view (True),
+    with it (False), or isn't known (None: a caller that isn't a fork).
+    `scorecard(group_by="blind")` sets the two side by side: an in-view hit
+    rate can be lifted by the recommendation itself, a blind one cannot."""
     if not isinstance(claim, str) or not claim.strip():
         raise CalibrationLedgerError("claim must be a non-empty string")
     c = _check_confidence(confidence)
@@ -157,6 +163,7 @@ def record_prediction(
         "confidence": c,
         "kind": kind,
         "decision_type": decision_type,
+        "blind": blind,
         "outcome": None,
         "resolved": False,
         # ── the join, filled at RESOLVE time, not here ──────────────────────

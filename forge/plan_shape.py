@@ -17,6 +17,7 @@ subset of it. One new entry kind:
                  {"label": "exif in place", "tradeoff": "…"}],
      "recommended": "sidecar json",                   # the proposer's default, or null
      "confidence": 0.8,                               # P(maker picks recommended) in [0.5, 1], or null
+     "blind": false,                                  # optional: ask without the recommendation
      "resolves": {"sidecar json": [<file_write>…],    # what each option becomes once chosen
                   "exif in place": [<file_write>…]}}
 
@@ -25,6 +26,14 @@ forks, and NOTHING ELSE it writes reaches the router — `decision_extract`
 turns forks into `checkpoint.Decision`s by rule, and `build_loop` runs them
 through memory. `confidence` is what the calibration ledger records before
 the maker answers and resolves after: ground truth that arrives on its own.
+
+A recommendation the maker can see is one they can follow, and a pick that
+follows it says how far they trust the proposer, not how often it is right
+(Willow's forge add-on, willow-memory/Willow#382). A `blind` fork keeps its
+recommendation and confidence for the ledger and asks without either: the
+`Decision` the checkpoint gets has no `recommended`, and its options come in
+an order of the engine's own, not the proposer's (which may list its pick
+first). A blind fork needs a `recommended`: with none, nothing is withheld.
 
 `validate` refuses a plan that is not a plan (bad app_name, no entries, an
 unknown kind, a fork whose `resolves` is not file writes). A fork that IS a
@@ -36,6 +45,7 @@ build loop refuses to resolve a plan that holds one.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -91,10 +101,22 @@ class Fork:
     recommended: str | None = None
     confidence: float | None = None
     resolves: dict[str, tuple[FileWrite, ...]] = field(default_factory=dict)
+    blind: bool = False
 
     @property
     def labels(self) -> tuple[str, ...]:
         return tuple(o.label for o in self.options)
+
+    @property
+    def shown(self) -> tuple[ForkOption, ...]:
+        """The options in the order they are asked: the proposer's, or for a
+        blind fork the engine's own, by the hash of the decision_type and each
+        label, so the same fork is always asked the same way and its order
+        says nothing of which one was recommended."""
+        if not self.blind:
+            return self.options
+        key = lambda o: hashlib.sha256(f"{self.decision_type}\0{o.label}".encode()).hexdigest()  # noqa: E731
+        return tuple(sorted(self.options, key=key))
 
     def problems(self) -> list[str]:
         """Why this fork cannot be asked. Empty means it can."""
@@ -121,13 +143,15 @@ class Fork:
                 out.append(
                     f"confidence {self.confidence} outside [0.5, 1.0] — state it in the direction believed"
                 )
+        if self.blind and self.recommended is None:
+            out.append("blind with no recommended option — there is nothing to withhold")
         for k in self.resolves:
             if k not in labels:
                 out.append(f"resolves names {k!r}, which is not an option")
         return out
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "kind": KIND_FORK,
             "decision_type": self.decision_type,
             "surface": self.surface,
@@ -136,6 +160,9 @@ class Fork:
             "confidence": self.confidence,
             "resolves": {k: [w.to_dict() for w in v] for k, v in self.resolves.items()},
         }
+        if self.blind:  # said only when set, so a plan without it reads as before
+            d["blind"] = True
+        return d
 
 
 Entry = Union[FileWrite, Fork]
@@ -193,12 +220,16 @@ def _fork(raw: dict, where: str) -> Fork:
     conf = raw.get("confidence")
     if conf is not None and not isinstance(conf, (int, float)):
         raise PlanShapeError(f"{where}: confidence must be a number or null")
+    blind = raw.get("blind", False)
+    if not isinstance(blind, bool):  # "yes", 1: not read as anything, refused
+        raise PlanShapeError(f"{where}: blind must be true or false")
     return Fork(
         decision_type=str(raw.get("decision_type", "")),
         surface=str(raw.get("surface", "")),
         options=tuple(options),
         recommended=raw.get("recommended") if isinstance(raw.get("recommended"), str) else None,
         confidence=float(conf) if conf is not None else None,
+        blind=blind,
         resolves=resolves,
     )
 

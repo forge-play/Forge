@@ -5,7 +5,6 @@
 
 ### Added
 
-* reject_match keeps the condition that would reopen a no ([458ff5d](https://github.com/forge-play/Forge/commit/458ff5dc3c858a8146ca5cef9e2211875b34a460))
 * reject_match keeps the condition that would reopen a no ([fa789ce](https://github.com/forge-play/Forge/commit/fa789ce3c57864a9b6077bf3b13f77c418b1b3c3))
 
 ## [0.11.0](https://github.com/forge-play/Forge/compare/v0.10.0...v0.11.0) (2026-11-20)

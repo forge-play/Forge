@@ -164,3 +164,11 @@ The paper (operator, 2026-09-12) adds two post-bite steps: a maker-visible proje
 91. The first real rows of `forge/surfaces.toml` beyond the paper's sketch: argued from real bites that went to the wrong surface, not guessed before the first ten workshops (the same rule as item 19).
 92. Almanac discovery: an explicit configured list of `catalog.json` paths or URLs, or a well-known path under `~/.forge`.
 93. Whether pulled candidates may later be written into the project home as drafts — never machine-sealed, never into the live Nestor store (Phase 6, after the adapters are stable; converges with item 7's real `BoxLookup`).
+
+## N. The escalation benchmark (`benchmarks/escalation/`)
+
+Added 2026-11-20. The benchmark had no item here, so the reconciler saw none of its work (willow-mcp gap `cbab5cc93528`). Its landed parts (the runner, `aggregate.py`, `reliability.py`, the Kaggle tasks) are not carried back as items here; these are what its rows asked next.
+
+94. Discrimination as its own view: whether a model's stated confidence is higher on its right answers than its wrong ones (AUROC with a stratified bootstrap interval), beside the Brier score that mixes it with calibration, and the best "escalate below t" gate per model. What the rows on the maintainer's machine showed is `docs/analysis/escalation-discrimination-2026-11-20.md`.
+95. The gate's threshold chosen on held-out rows, or fixed before a run, so its catch rate is not scored on the rows that chose it (item 94's write-up calls its own figures optimistic for this reason).
+96. A larger unanswerable set, so a hosted model's few wrong answers give an AUROC interval narrow enough to say "does not discriminate" rather than "not shown to".

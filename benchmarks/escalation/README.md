@@ -94,6 +94,20 @@ shape, the task score, the false-confidence rate, the over-escalation rate, the
 unparseable rate (counted in neither rate) and a Brier score with a five-bin
 reliability table.
 
+Brier mixes calibration with discrimination: whether the stated confidence is
+higher when the answer is right. `discrimination.py` measures the second on
+the same pairs. Per model it gives the AUROC of confidence against
+rightness (0.5 knows nothing of when it is wrong), with a stratified bootstrap
+interval, the mean confidence on right and on wrong answers and on the
+false-confident ones, and the best "escalate below t" gate, as the share of
+false-confident answers it catches while sending at most `--max-cost` of the
+right ones to a person. What the rows on the maintainer's machine showed is in
+`docs/analysis/escalation-discrimination-2026-11-20.md`.
+
+```
+python benchmarks/escalation/discrimination.py rows.jsonl [more.jsonl ...] [--format md|json] [--max-cost 0.10]
+```
+
 Where the benchmark runs somewhere with no route to the model server, but a
 delegate on a Unix socket can reach it, use `socket_backend.py`. It sends the
 same request as `ollama_http` (temperature 0, the same answer schema, Qwen

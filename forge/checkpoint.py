@@ -235,8 +235,16 @@ class Responder(Protocol):
         it simply never gets asked, and resurface-held behaves exactly as it
         did before the wire (engagement `None` → Good).
 
-    Deliberately NOT required beyond confirm/choose: `justify` is optional (see
-    above), and anything about follow-up questions that test whether the maker
+      * `reopen_when(prompt) -> str` — OPTIONAL. Asked once when the maker
+        says a remembered answer is not this call ("not this" from auto, "it's
+        different" from recognize), before the full Socratic: what would make
+        it the same call again? The answer goes to `reject_match` as Nestor's
+        `reopen_when`, so the no is a not-yet with its condition. Returning
+        `""` keeps the no permanent. Duck-typed like `justify`: a `Responder`
+        without it is never asked, and its no is permanent, as it was before.
+
+    Deliberately NOT required beyond confirm/choose: `justify` and
+    `reopen_when` are optional (see above), and anything about follow-up questions that test whether the maker
     actually understood a FRESH pick (vs. just chose) stays out — bite 3 scores
     the rationale a maker volunteers, it does not interrogate.
     """
@@ -246,6 +254,8 @@ class Responder(Protocol):
     def choose(self, decision: Decision) -> ChoiceResult: ...
 
     def justify(self, prompt: str) -> str: ...
+
+    def reopen_when(self, prompt: str) -> str: ...
 
 
 # ── the outcome ──────────────────────────────────────────────────────────────
@@ -341,6 +351,11 @@ class CheckpointOutcome:
     made. A confirm from the record is `band="auto"` with `sealed=True` and
     `match_confidence=1.0`: the kernel proved the seal under the person's
     key, which is more than any row of the engine's own memory can say.
+
+    `reopen_when`: on an escape ("not this", "it's different"), the condition
+    the maker gave under which the rejected match becomes the same call again,
+    as recorded on Nestor's rejection. `""` when the no is permanent, the
+    responder was not asked, or nothing was rejected.
     """
 
     decision_type: str
@@ -359,9 +374,27 @@ class CheckpointOutcome:
     drafted: bool = False
     record: str = ""
     record_subject: str = ""
+    reopen_when: str = ""
 
 
 # ── the flow ─────────────────────────────────────────────────────────────────
+
+
+def _ask_reopen_when(responder: Responder, prior: str, decision_type: str) -> str:
+    """Ask what would make a rejected match the same call again, via the
+    Responder's OPTIONAL `reopen_when`. Duck-typed, as `justify` is: a
+    responder without it is never asked and this returns "" (a permanent no).
+    A non-string or blank answer is "" too, so a maker who names no condition
+    and a responder that cannot be asked land in the same place."""
+    ask = getattr(responder, "reopen_when", None)
+    if not callable(ask):
+        return ""
+    prompt = (
+        f"You said this is not the same call as {prior!r} for {decision_type!r}. "
+        f"What would make it the same call again? (leave blank for never)"
+    )
+    answer = ask(prompt)
+    return answer.strip() if isinstance(answer, str) else ""
 
 
 def _full_socratic(decision: Decision, responder: Responder) -> tuple[str, str, bool]:
@@ -502,6 +535,7 @@ def _seal_socratic_answer(
     matched_band: "Band | None" = None,
     match_confidence: float | None = None,
     defer_seal: bool = False,
+    reopen_when: str = "",
 ) -> CheckpointOutcome:
     """Run a full Socratic pass, seal the result, and attest it — the shared
     tail every path that falls through to full Socratic (a fresh decision-type,
@@ -541,6 +575,7 @@ def _seal_socratic_answer(
         match_confidence=match_confidence,
         matched_band=matched_band,
         drafted=defer_seal,
+        reopen_when=reopen_when,
     )
 
 
@@ -736,10 +771,12 @@ def _route(
             # DOES carry a pair_id in its provenance (unlike the
             # sub-threshold case below), so reject_match uses that.
             pair_id = result.get("provenance", {}).get("pair_id", "")
+            reopen_when = _ask_reopen_when(responder, canonical, decision.decision_type)
             cm.reject_match(
                 decision.surface,
                 pair_id=pair_id,
                 reason="maker said this was not the same call as the prior sealed answer",
+                reopen_when=reopen_when,
             )
             return _seal_socratic_answer(
                 cm,
@@ -752,6 +789,7 @@ def _route(
                 defer_seal=defer_seal,
                 matched_band="auto",
                 match_confidence=result["confidence"],
+                reopen_when=reopen_when,
             )
 
         # ── recognize band: a real, sub-threshold hit ───────────────────
@@ -798,10 +836,12 @@ def _route(
             # then fall through to full Socratic. No pair_id available at
             # this tier (see module docstring) — target_text is the real
             # identifying handle Nestor's own resolve() gave us.
+            reopen_when = _ask_reopen_when(responder, prior_canonical, decision.decision_type)
             cm.reject_match(
                 decision.surface,
                 target_text=prior_canonical,
                 reason="maker said this was not the same call as the recognized prior seal",
+                reopen_when=reopen_when,
             )
             return _seal_socratic_answer(
                 cm,
@@ -814,6 +854,7 @@ def _route(
                 defer_seal=defer_seal,
                 matched_band="recognize",
                 match_confidence=result["confidence"],
+                reopen_when=reopen_when,
             )
 
         # ── socratic band: low confidence, or nothing sealed yet at all ──

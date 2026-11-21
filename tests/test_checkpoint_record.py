@@ -1,8 +1,10 @@
 """forge/checkpoint.py with the person's record wired in (the-join.md,
-thread 3): the record is asked first, a standing seal is a confirm and
-nothing else, and every answer the maker gives or confirms is proposed onto
-the record to wait on their seal. The record here is a stand-in; the real
-one is `forge.willow_record.WillowRecord`, tested in its own file."""
+thread 3): the record is the only memory. A standing seal is a confirm and
+nothing else, anything it does not hold is asked in full, and the answer is
+proposed onto the record with what was shown, to wait on their seal. No
+store of the engine's own is opened, with Nestor installed or not. The
+record here is a stand-in; the real one is
+`forge.willow_record.WillowRecord`, tested in its own file."""
 
 from __future__ import annotations
 
@@ -17,6 +19,7 @@ from tests.test_checkpoint import (
     REWORDED_SURFACE,
     ChoiceResult,
     Decision,
+    ReopeningResponder,
     ScriptedResponder,
     _needs_nestor,
     _seal_original_auth_decision,
@@ -43,12 +46,13 @@ class FakeRecord:
         chosen = self.sealed.get(dt)
         return willow_record.Sealed(dt, chosen, dt, "proposal:" + "cd" * 32) if chosen else None
 
-    def propose(self, dt, chosen, *, over, why, surface="", word=None):
+    def propose(self, dt, chosen, *, over, why, surface="", word=None, kept=None):
         if self.refuse_propose:
             raise willow_record.WillowRecordError(self.refuse_propose)
-        self.proposed.append(
-            {"dt": dt, "chosen": chosen, "over": over, "why": why, "surface": surface}
-        )
+        row = {"dt": dt, "chosen": chosen, "over": over, "why": why, "surface": surface}
+        if kept is not None:  # said only when something rides with the pick
+            row["kept"] = kept
+        self.proposed.append(row)
         return "proposal:" + "ef" * 32
 
 
@@ -60,7 +64,6 @@ def test_the_record_is_a_record_lookup_too():
     assert isinstance(FakeRecord(), willow_record.RecordLookup)
 
 
-@_needs_nestor
 def test_a_standing_seal_on_the_record_is_a_confirm_and_touches_no_memory(tmp_path):
     rec = FakeRecord(sealed={DECISION_TYPE: "JWT bearer token"})
     responder = ScriptedResponder(confirm_answers=[True])
@@ -72,13 +75,13 @@ def test_a_standing_seal_on_the_record_is_a_confirm_and_touches_no_memory(tmp_pa
     assert out.record == "sealed 'JWT bearer token' (proposal:" + "cd" * 32 + "), confirmed"
     assert out.record_subject == "proposal:" + "cd" * 32
     assert out.rationale == "" and out.engagement is None and out.pair_id == ""
+    assert out.memory_available is True, "the record is the memory, and it answered"
     assert "You sealed a" in responder.confirm_prompts[0] and not responder.choose_calls
     assert rec.proposed == [], "nothing to propose: the record already holds it"
     assert not any(tmp_path.iterdir()), "the engine's memory was never opened"
 
 
-@_needs_nestor
-def test_not_this_falls_through_to_memory_and_the_new_answer_is_proposed(tmp_path):
+def test_not_this_asks_in_full_and_proposes_the_new_answer_sealing_nothing(tmp_path):
     rec = FakeRecord(sealed={DECISION_TYPE: "JWT bearer token"})
     responder = ScriptedResponder(
         confirm_answers=[False],
@@ -89,8 +92,12 @@ def test_not_this_falls_through_to_memory_and_the_new_answer_is_proposed(tmp_pat
     out = checkpoint.run_checkpoint(
         decision(), builder_id=BUILDER_A, responder=responder, root=tmp_path, record=rec
     )
-    assert out.band == "socratic" and out.chosen == "session cookie + CSRF" and out.sealed is True
-    assert out.matched_band is None, "the engine's own memory proposed nothing"
+    assert out.band == "socratic" and out.chosen == "session cookie + CSRF"
+    assert out.sealed is False, "proposed: the seal is the person's, and comes later"
+    assert out.matched_band == "auto" and out.match_confidence == 1.0, (
+        "the record offered its seal and the maker said not this"
+    )
+    assert out.pair_id == "" and out.attestation_id == "" and out.engagement is not None
     assert (
         out.record
         == "sealed 'JWT bearer token', maker said not this; proposed proposal:" + "ef" * 32
@@ -105,9 +112,37 @@ def test_not_this_falls_through_to_memory_and_the_new_answer_is_proposed(tmp_pat
             "surface": ORIGINAL_SURFACE,
         }
     ]
+    assert not any(tmp_path.iterdir()), "the engine's memory was never opened"
 
 
-@_needs_nestor
+def test_not_this_keeps_what_would_reopen_the_no_on_the_new_proposal(tmp_path):
+    rec = FakeRecord(sealed={DECISION_TYPE: "JWT bearer token"})
+    responder = ReopeningResponder(
+        "  when the app is stateless again ",
+        confirm_answers=[False],
+        choose_answers=[ChoiceResult(chosen_label="session cookie + CSRF", rationale="x")],
+    )
+    out = checkpoint.run_checkpoint(
+        decision(), builder_id=BUILDER_A, responder=responder, root=tmp_path, record=rec
+    )
+    assert out.reopen_when == "when the app is stateless again"
+    assert "'JWT bearer token'" in responder.reopen_prompts[0]
+    assert rec.proposed[0]["kept"] == {"reopen_when": "when the app is stateless again"}
+
+
+def test_a_fresh_ask_never_asks_what_would_reopen_anything(tmp_path):
+    rec = FakeRecord()
+    responder = ReopeningResponder(
+        "never reached",
+        choose_answers=[ChoiceResult(chosen_label="JWT bearer token", rationale="stateless")],
+    )
+    out = checkpoint.run_checkpoint(
+        decision(), builder_id=BUILDER_A, responder=responder, root=tmp_path, record=rec
+    )
+    assert out.reopen_when == "" and responder.reopen_prompts == []
+    assert out.matched_band is None and "kept" not in rec.proposed[0]
+
+
 def test_a_seal_for_an_option_not_on_offer_is_said_and_the_maker_is_asked(tmp_path):
     rec = FakeRecord(sealed={DECISION_TYPE: "magic link"})
     responder = ScriptedResponder(
@@ -117,42 +152,81 @@ def test_a_seal_for_an_option_not_on_offer_is_said_and_the_maker_is_asked(tmp_pa
         decision(), builder_id=BUILDER_A, responder=responder, root=tmp_path, record=rec
     )
     assert out.band == "socratic" and not responder.confirm_prompts
+    assert out.matched_band is None, "nothing was offered to say no to"
     assert out.record.startswith("sealed 'magic link', not an option here; proposed ")
     assert rec.proposed[0]["chosen"] == "JWT bearer token"
 
 
-@_needs_nestor
 def test_nothing_sealed_is_said_and_a_deferral_is_proposed_with_its_reason(tmp_path):
     rec = FakeRecord()
     responder = ScriptedResponder(choose_answers=[ChoiceResult(deferred=True)])
     out = checkpoint.run_checkpoint(
         decision(), builder_id=BUILDER_A, responder=responder, root=tmp_path, record=rec
     )
-    assert out.deferred and out.chosen == "session cookie + CSRF"
+    assert out.deferred and out.chosen == "session cookie + CSRF" and out.engagement is None
     assert out.record.startswith("nothing sealed; proposed ")
     assert rec.proposed[0]["why"].startswith("deferred: the maker reviewed the tradeoff")
+    assert rec.proposed[0]["kept"] == {"deferred": True}, "no pick was made, and the row says so"
     assert rec.asked == [DECISION_TYPE]
 
 
-@_needs_nestor
-def test_the_engines_own_auto_confirm_is_proposed_to_the_record_too(tmp_path):
-    _seal_original_auth_decision(tmp_path)
+def test_what_the_fork_showed_rides_on_the_proposal_with_where_the_pick_fell(tmp_path):
     rec = FakeRecord()
-    responder = ScriptedResponder(confirm_answers=[True])
+    kept = {
+        "kind": "fork",
+        "offered": ["JWT bearer token", "session cookie + CSRF"],
+        "recommended": "JWT bearer token",
+        "confidence": 0.8,
+        "blind": False,
+    }
+    responder = ScriptedResponder(
+        choose_answers=[ChoiceResult(chosen_label="session cookie + CSRF", rationale="state")]
+    )
+    checkpoint.run_checkpoint(
+        decision(), builder_id=BUILDER_A, responder=responder, root=tmp_path, record=rec, kept=kept
+    )
+    assert rec.proposed[0]["kept"] == {**kept, "rank": 2}
+    assert "rank" not in kept, "the caller's own dict is left as it was given"
+
+
+def test_a_pick_that_was_never_offered_has_no_rank(tmp_path):
+    rec = FakeRecord()
+    responder = ScriptedResponder(
+        choose_answers=[ChoiceResult(chosen_label="JWT bearer token", rationale="stateless")]
+    )
+    checkpoint.run_checkpoint(
+        decision(),
+        builder_id=BUILDER_A,
+        responder=responder,
+        root=tmp_path,
+        record=rec,
+        kept={"offered": ["magic link"]},
+    )
+    assert rec.proposed[0]["kept"] == {"offered": ["magic link"], "rank": None}
+
+
+@_needs_nestor
+def test_a_seal_in_the_engines_own_memory_is_not_asked_once_a_record_is_wired(tmp_path):
+    _seal_original_auth_decision(tmp_path)
+    before = sorted(p.name for p in tmp_path.rglob("*") if p.is_file())
+    rec = FakeRecord()
+    responder = ScriptedResponder(
+        choose_answers=[ChoiceResult(chosen_label="JWT bearer token", rationale="stateless")]
+    )
     out = checkpoint.run_checkpoint(
         decision(), builder_id=BUILDER_A, responder=responder, root=tmp_path, record=rec
     )
-    assert out.band == "auto" and out.matched_band == "auto" and out.pair_id
-    assert out.record.startswith("nothing sealed; proposed ") and out.record_subject
-    assert rec.proposed[0]["chosen"] == out.chosen and rec.proposed[0]["over"] == [
-        "JWT bearer token"
-    ]
+    assert out.band == "socratic" and not responder.confirm_prompts, (
+        "the record holds nothing, so the maker is asked; the engine's own row says nothing here"
+    )
+    assert (
+        out.pair_id == "" and out.matched_band is None and rec.proposed[0]["chosen"] == out.chosen
+    )
+    assert sorted(p.name for p in tmp_path.rglob("*") if p.is_file()) == before
 
 
-@_needs_nestor
-def test_a_recognized_confirm_is_proposed_under_the_rewording(tmp_path):
-    _seal_original_auth_decision(tmp_path)
-    rec = FakeRecord()
+def test_a_reworded_question_of_a_sealed_type_is_the_confirm(tmp_path):
+    rec = FakeRecord(sealed={DECISION_TYPE: "JWT bearer token"})
     responder = ScriptedResponder(confirm_answers=[True])
     out = checkpoint.run_checkpoint(
         Decision(decision_type=DECISION_TYPE, surface=REWORDED_SURFACE, options=AUTH_OPTIONS),
@@ -162,12 +236,10 @@ def test_a_recognized_confirm_is_proposed_under_the_rewording(tmp_path):
         record=rec,
         recognize_threshold=0.5,
     )
-    assert out.band == "recognize"
-    assert rec.proposed[0]["surface"] == REWORDED_SURFACE and rec.proposed[0]["why"] == ""
+    assert out.band == "auto" and out.chosen == "JWT bearer token" and rec.proposed == []
 
 
-@_needs_nestor
-def test_defer_seal_still_proposes_to_the_record(tmp_path):
+def test_defer_seal_changes_nothing_with_a_record_nothing_was_going_to_be_sealed(tmp_path):
     rec = FakeRecord()
     responder = ScriptedResponder(
         choose_answers=[ChoiceResult(chosen_label="JWT bearer token", rationale="stateless")]
@@ -180,10 +252,11 @@ def test_defer_seal_still_proposes_to_the_record(tmp_path):
         record=rec,
         defer_seal=True,
     )
-    assert out.drafted and not out.sealed and out.record_subject == "proposal:" + "ef" * 32
+    assert not out.drafted and not out.sealed and out.record_subject == "proposal:" + "ef" * 32
+    assert not any(tmp_path.iterdir()), "no draft in a store of the engine's own either"
 
 
-def test_the_record_can_answer_and_take_proposals_without_nestor(tmp_path, monkeypatch):
+def test_the_record_path_is_the_same_with_nestor_absent(tmp_path, monkeypatch):
     monkeypatch.setattr(checkpoint.checkpoint_memory, "nestor_available", lambda: False)
     rec = FakeRecord(sealed={DECISION_TYPE: "JWT bearer token"})
     out = checkpoint.run_checkpoint(
@@ -193,7 +266,7 @@ def test_the_record_can_answer_and_take_proposals_without_nestor(tmp_path, monke
         root=tmp_path,
         record=rec,
     )
-    assert out.band == "auto" and out.sealed is True and out.memory_available is False
+    assert out.band == "auto" and out.sealed is True and out.memory_available is True
     fresh = checkpoint.run_checkpoint(
         decision(),
         builder_id=BUILDER_A,
@@ -204,7 +277,7 @@ def test_the_record_can_answer_and_take_proposals_without_nestor(tmp_path, monke
         root=tmp_path,
         record=rec,
     )
-    assert fresh.band == "socratic" and fresh.memory_available is False and not fresh.sealed
+    assert fresh.band == "socratic" and fresh.memory_available is True and not fresh.sealed
     assert fresh.record_subject and rec.proposed[0]["chosen"] == "session cookie + CSRF"
 
 

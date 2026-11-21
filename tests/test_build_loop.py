@@ -9,6 +9,7 @@ shares.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -329,7 +330,7 @@ def test_a_single_option_needs_no_pick():
 # ── the record wired in (the-join.md, thread 3; bite 5) ──────────────────────
 
 
-def _plan_with_one_fork(recommended=None, confidence=None) -> ps.PlanDoc:
+def _plan_with_one_fork(recommended=None, confidence=None, blind=False) -> ps.PlanDoc:
     return ps.validate(
         {
             "app_name": "willow-stack",
@@ -349,6 +350,7 @@ def _plan_with_one_fork(recommended=None, confidence=None) -> ps.PlanDoc:
                     ],
                     "recommended": recommended,
                     "confidence": confidence,
+                    "blind": blind,
                     "resolves": {
                         "apple-mail": [
                             {
@@ -371,15 +373,20 @@ def _plan_with_one_fork(recommended=None, confidence=None) -> ps.PlanDoc:
     )
 
 
-@_needs_nestor
 def test_a_fork_sealed_on_the_record_is_the_auto_band_and_nobody_is_asked(tmp_path):
     from tests.test_checkpoint_record import FakeRecord
 
     rec = FakeRecord(sealed={"willow-email": "mail"})
     responder = ScriptedResponder()
     res = bl.resolve(
-        _plan_with_one_fork(), builder_id=BUILDER, responder=responder, root=tmp_path, record=rec
+        _plan_with_one_fork("mail", 0.8),
+        builder_id=BUILDER,
+        responder=responder,
+        root=tmp_path,
+        record=rec,
     )
+    assert res.predictions == [], "their earlier seal agreeing with itself is no new pick"
+    assert not any(tmp_path.iterdir()), "no ledger and no memory of the engine's own"
     assert res.chosen == {"willow-email": "mail"} and not responder.choose_calls
     assert len(responder.confirm_prompts) == 1 and "You sealed a" in responder.confirm_prompts[0]
     o = res.outcomes[0]
@@ -389,8 +396,7 @@ def test_a_fork_sealed_on_the_record_is_the_auto_band_and_nobody_is_asked(tmp_pa
     assert res.to_dict()["outcomes"][0]["record_subject"] == "proposal:" + "cd" * 32
 
 
-@_needs_nestor
-def test_a_fresh_fork_is_answered_and_proposed_onto_the_record(tmp_path):
+def test_a_fresh_fork_is_proposed_with_its_prediction_on_the_same_row(tmp_path):
     from tests.test_checkpoint_record import FakeRecord
 
     rec = FakeRecord()
@@ -409,10 +415,83 @@ def test_a_fresh_fork_is_answered_and_proposed_onto_the_record(tmp_path):
             "over": ["mail"],
             "why": "the originals must never change; the club has been burned before",
             "surface": "“email” could be apple-mail, mail: which add-on?",
+            "kept": {
+                "kind": "fork",
+                "offered": ["apple-mail", "mail"],
+                "recommended": "mail",
+                "confidence": 0.8,
+                "blind": False,
+                "rank": 1,
+            },
         }
     ]
     assert res.outcomes[0].record.startswith("nothing sealed; proposed proposal:")
-    assert res.predictions[0]["outcome"] is False, "the maker did not pick the recommendation"
+    assert res.outcomes[0].sealed is False
+    assert res.predictions == [
+        {
+            "claim": "willow-email: maker picks mail",
+            "confidence": 0.8,
+            "blind": False,
+            "on_record": "proposal:" + "ef" * 32,
+        }
+    ], "no outcome here: the row is scored once the person seals it"
+    assert not any(tmp_path.iterdir()), "nothing went to a ledger of the engine's own"
+    assert calibration_ledger.scorecard(BUILDER, root=tmp_path)["resolved"] == 0
+
+
+def test_a_blind_fork_keeps_the_order_shown_and_the_recommendation_unsaid(tmp_path):
+    from tests.test_checkpoint_record import FakeRecord
+
+    rec = FakeRecord()
+    plan = _plan_with_one_fork("mail", 0.7, blind=True)
+    responder = ScriptedResponder({"willow-email": "mail"})
+    res = bl.resolve(plan, builder_id=BUILDER, responder=responder, root=tmp_path, record=rec)
+    asked = responder.choose_calls[0]
+    assert asked.recommended is None, "blind: the maker was shown no recommendation"
+    kept = rec.proposed[0]["kept"]
+    assert kept["blind"] is True and kept["recommended"] is None
+    assert kept["proposer_first"] == "mail" and kept["confidence"] == 0.7
+    assert kept["offered"] == ["apple-mail", "mail"], "the proposer's order, as it wrote it"
+    assert kept["shown"] == [o.label for o in asked.options], "and the order the maker saw"
+    assert kept["rank"] == 2, "where the pick fell in the proposer's order"
+    assert res.predictions[0]["blind"] is True
+
+
+def test_a_fork_with_no_confidence_is_proposed_and_predicts_nothing(tmp_path):
+    from tests.test_checkpoint_record import FakeRecord
+
+    rec = FakeRecord()
+    res = bl.resolve(
+        _plan_with_one_fork(),
+        builder_id=BUILDER,
+        responder=ScriptedResponder({"willow-email": "mail"}),
+        root=tmp_path,
+        record=rec,
+    )
+    assert res.predictions == [], "a suggestion, not a claim: nothing to score"
+    kept = rec.proposed[0]["kept"]
+    assert kept["recommended"] is None and kept["confidence"] is None and kept["rank"] == 2
+
+
+def test_a_deferral_on_the_record_is_kept_and_voided(tmp_path):
+    from tests.test_checkpoint_record import FakeRecord
+
+    class Defers(ScriptedResponder):
+        def choose(self, d):
+            self.choose_calls.append(d)
+            return ChoiceResult(deferred=True)
+
+    rec = FakeRecord()
+    res = bl.resolve(
+        _plan_with_one_fork("mail", 0.8),
+        builder_id=BUILDER,
+        responder=Defers(),
+        root=tmp_path,
+        record=rec,
+    )
+    assert res.chosen == {"willow-email": "mail"}, "handed back, so the recommendation is taken"
+    assert rec.proposed[0]["kept"]["deferred"] is True
+    assert res.predictions[0]["void"] == bl.DEFERRED, "taking it for them is not them picking it"
 
 
 def test_the_plan_file_may_be_willows_suggest_envelope(tmp_path):
@@ -433,7 +512,6 @@ def test_the_plan_file_may_be_willows_suggest_envelope(tmp_path):
     assert bl.load_plan(h).to_dict() == plan.to_dict()
 
 
-@_needs_nestor
 def test_cli_with_a_willow_and_a_box_asks_the_record_and_proposes_to_it(tmp_path, capsys):
     from tests.test_willow_record import FAKE
 
@@ -469,10 +547,13 @@ def test_cli_with_a_willow_and_a_box_asks_the_record_and_proposes_to_it(tmp_path
         "willow-email             band socratic  → mail  record: nothing sealed; proposed proposal:"
         in out.out
     )
+    assert "record: 1 proposed, waiting on your seal" in out.out and "scorecard" not in out.out
+    assert not (tmp_path / "cp").exists(), "no store of the engine's own was opened"
     prop = json.loads((box / "proposed.jsonl").read_text(encoding="utf-8").splitlines()[0])
-    assert json.loads(prop["data"])["chose"] == "mail" and prop["claim"].endswith(
-        "mbox is what I have"
-    )
+    data = json.loads(prop["data"])
+    assert data["chose"] == "mail" and prop["claim"].endswith("mbox is what I have")
+    assert data["offered"] == ["apple-mail", "mail"] and data["rank"] == 2
+    assert data["word"] == "willow-email", "what rides with the pick replaces no field of its own"
     assert (box / "asked.log").read_text(encoding="utf-8").splitlines() == [
         "forge decision willow-email"
     ] * 2, "asked once for a seal, once by propose before the door; both are rows"
@@ -483,3 +564,43 @@ def test_cli_refuses_a_willow_without_a_box(tmp_path, capsys):
     f.write_text(json.dumps(_plan_with_one_fork().to_dict()))
     assert bl.main([str(f), "--builder", BUILDER, "--willow", str(tmp_path)]) == 2
     assert "--willow and --box go together" in capsys.readouterr().err
+
+
+@pytest.mark.skipif(not os.environ.get("WILLOW_KERNEL"), reason="WILLOW_KERNEL names no kernel.py")
+def test_against_a_real_kernel_the_loop_closes_on_one_record(tmp_path):
+    """Asked, proposed with what was shown, sealed with the key, and the next
+    build is the confirm: one record, and nothing of the engine's own."""
+    import subprocess
+    import sys
+
+    from forge.willow_record import WillowRecord
+
+    kernel = os.environ["WILLOW_KERNEL"]
+    pile = tmp_path / "pile"
+    pile.mkdir()
+    (pile / "a.txt").write_text("nothing about email here\n")
+    box, key, root = tmp_path / "box", tmp_path / "k.key", tmp_path / "cp"
+    init = [sys.executable, kernel, "init", "--box", str(box), "--pile", str(pile), "--key", str(key)]  # fmt: skip
+    assert subprocess.run(init, capture_output=True, check=False).returncode == 0
+    rec = WillowRecord(Path(kernel), box)
+    plan = _plan_with_one_fork("mail", 0.8)
+
+    first = bl.resolve(
+        plan,
+        builder_id=BUILDER,
+        responder=ScriptedResponder({"willow-email": "apple-mail"}),
+        root=root,
+        record=rec,
+    )
+    subject = first.predictions[0]["on_record"]
+    row = json.loads(json.loads((box / "proposals" / (subject[9:] + ".json")).read_text())["data"])
+    assert row["chose"] == "apple-mail" and row["offered"] == ["apple-mail", "mail"]
+    assert (row["recommended"], row["confidence"], row["rank"]) == ("mail", 0.8, 1)
+
+    seal = [sys.executable, kernel, "seal", "--box", str(box), subject]
+    assert subprocess.run(seal, capture_output=True, check=False).returncode == 0
+    again = ScriptedResponder()
+    second = bl.resolve(plan, builder_id=BUILDER, responder=again, root=root, record=rec)
+    assert second.outcomes[0].band == "auto" and second.chosen == {"willow-email": "apple-mail"}
+    assert not again.choose_calls and second.predictions == []
+    assert not root.exists(), "no store of the engine's own, before the seal or after"

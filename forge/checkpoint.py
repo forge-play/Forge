@@ -296,7 +296,8 @@ class CheckpointOutcome:
     re-seal needed — it was already sealed going in).
     `memory_available`: mirrors `checkpoint_memory.nestor_available()` at
     the START of this run — the soft-Nestor gate's own honest record,
-    independent of `sealed`.
+    independent of `sealed`. With a record wired it is True: the record is
+    the memory, and it answered.
     `engagement`: the bite-3 seal-time engagement signal — how substantively
     the maker's FRESH `rationale` engaged this decision, on [0,1] (see
     `checkpoint_engagement`). `None` when there was no fresh rationale to
@@ -346,16 +347,20 @@ class CheckpointOutcome:
     own record said, when one was wired — `"not wired"`, `"nothing sealed"`,
     `"sealed 'x' (proposal:…), confirmed"`, `"sealed 'x', not an option here"`
     or `"sealed 'x', maker said not this"` — and, after any answer the maker
-    gave or confirmed, `"; proposed proposal:…"`. `record_subject` is the
+    gave, `"; proposed proposal:…"`. `record_subject` is the
     proposal the record's seal names on a confirm, else the proposal just
     made. A confirm from the record is `band="auto"` with `sealed=True` and
     `match_confidence=1.0`: the kernel proved the seal under the person's
-    key, which is more than any row of the engine's own memory can say.
+    key, which is more than any row of the engine's own memory can say. An
+    answer proposed onto the record is `sealed=False` until the person seals
+    it, and `matched_band="auto"` with `band="socratic"` is the maker saying
+    "not this" to a standing seal.
 
     `reopen_when`: on an escape ("not this", "it's different"), the condition
     the maker gave under which the rejected match becomes the same call again,
-    as recorded on Nestor's rejection. `""` when the no is permanent, the
-    responder was not asked, or nothing was rejected.
+    as recorded on Nestor's rejection or, with a record, on the new proposal.
+    `""` when the no is permanent, the responder was not asked, or nothing was
+    rejected.
     """
 
     decision_type: str
@@ -590,9 +595,12 @@ def run_checkpoint(
     project: str = "",
     defer_seal: bool = False,
     record: "willow_record.RecordLookup | None" = None,
+    kept: dict | None = None,
 ) -> CheckpointOutcome:
-    """The D8 checkpoint, end to end: the person's record first, then the
-    soft-Nestor gate, then route by band,
+    """The D8 checkpoint, end to end. With a `record`, the person's record is
+    the only memory there is: it is asked, the maker is asked what it does not
+    hold, and the answer is proposed onto it. Without one, the soft-Nestor
+    gate, then route by band,
     present/confirm accordingly, seal what needs sealing. See module
     docstring for the three bands and where each one's "prior answer" comes
     from. Raises `CheckpointError` for this orchestrator's own refusals
@@ -603,14 +611,28 @@ def run_checkpoint(
     "Nestor is absent"; that is precisely what the soft-Nestor gate below
     exists to turn into an honest `memory_available=False` outcome instead.
 
-    `record`: the person's own willow record (`forge.willow_record`), asked
-    before the engine's memory. A decision it holds a standing seal for, whose
-    option is on offer here, is a light confirm and nothing else: `band="auto"`,
-    `sealed=True`, no memory touched, no re-seal, no proposal. Every other
-    outcome that ends in an answer the maker gave or confirmed is proposed onto
-    the record afterwards, in the add-on's own shape, to wait on the person's
-    seal; the engine never seals there. A record that refuses is a
-    `CheckpointError`. `None` means not wired, and is said so in the outcome.
+    `record`: the person's own willow record (`forge.willow_record`). Wired,
+    it is the memory, and the engine's own (Nestor) is never opened: one
+    record holds the question, what was shown, the pick and the person's seal,
+    so nothing is kept in a second store to be joined to it later. A decision
+    it holds a standing seal for, whose option is on offer here, is a light
+    confirm and nothing else: `band="auto"`, `sealed=True`, no proposal. Any
+    other is asked in full (`band="socratic"`) and the answer proposed onto
+    the record, in the add-on's own shape, to wait on the person's seal:
+    `sealed=False`, since the engine never seals there. There is no recognize
+    band on this path: the record is asked by `decision_type`, so a reworded
+    question of a type the person sealed is already the confirm. A maker who
+    says "not this" to a standing seal is asked what would make it the same
+    call again (`reopen_when`), and that is kept on the new proposal. A record
+    that refuses is a `CheckpointError`. `None` means not wired, and is said
+    so in the outcome.
+
+    `kept`: what the fork showed and what its proposer held (`offered`,
+    `recommended`, `confidence`, `blind`, ...), from the caller that has the
+    fork (`build_loop`). With a record it goes on the proposal's own row with
+    the pick, its `rank` among `offered`, and `deferred` when the maker handed
+    the call back, so a sealed row is a scored outcome by itself. Without a
+    record it is not used.
 
     `defer_seal`: a host that seals once, at the end of its session, passes
     True. A fresh answer, or a recognized one confirmed, is then proposed as a
@@ -623,38 +645,8 @@ def run_checkpoint(
             f"Decision {decision.decision_type!r} has no options — nothing to present"
         )
 
-    # ── the person's record, first (the-join.md, thread 3) ─────────────────
-    note = "not wired"
     if record is not None:
-        try:
-            held = record.has_sealed(decision.decision_type)
-        except willow_record.WillowRecordError as err:
-            raise CheckpointError(f"the record refused: {err}") from err
-        labels = [o.label for o in decision.options]
-        if held is None:
-            note = "nothing sealed"
-        elif held.chosen not in labels:
-            note = f"sealed {held.chosen!r}, not an option here"
-        else:
-            prompt = (
-                f"You sealed a {decision.decision_type!r} decision before "
-                f"— you chose: {held.chosen}. Same call here?"
-            )
-            if responder.confirm(prompt):
-                return CheckpointOutcome(
-                    decision_type=decision.decision_type,
-                    chosen=held.chosen,
-                    rationale="",
-                    band="auto",
-                    deferred=False,
-                    sealed=True,  # under the person's key, proved by the kernel
-                    memory_available=checkpoint_memory.nestor_available(),
-                    match_confidence=1.0,
-                    matched_band="auto",
-                    record=f"sealed {held.chosen!r} ({held.subject}), confirmed",
-                    record_subject=held.subject,
-                )
-            note = f"sealed {held.chosen!r}, maker said not this"
+        return _by_record(record, decision, responder, kept)
     outcome = _route(
         decision,
         builder_id=builder_id,
@@ -665,24 +657,90 @@ def run_checkpoint(
         project=project,
         defer_seal=defer_seal,
     )
-    return _propose_to_record(record, note, decision, outcome)
+    return dataclasses.replace(outcome, record="not wired")
+
+
+def _by_record(
+    record: "willow_record.RecordLookup",
+    decision: Decision,
+    responder: Responder,
+    kept: dict | None,
+) -> CheckpointOutcome:
+    """The checkpoint with the person's record as its only memory (the-join.md,
+    thread 3, taken the whole way): ask the record, ask the maker what it does
+    not hold, propose the answer. No store of the engine's own is opened."""
+    try:
+        held = record.has_sealed(decision.decision_type)
+    except willow_record.WillowRecordError as err:
+        raise CheckpointError(f"the record refused: {err}") from err
+    labels = [o.label for o in decision.options]
+    said_not_this, reopen_when = False, ""
+    if held is None:
+        note = "nothing sealed"
+    elif held.chosen not in labels:
+        note = f"sealed {held.chosen!r}, not an option here"
+    else:
+        prompt = (
+            f"You sealed a {decision.decision_type!r} decision before "
+            f"— you chose: {held.chosen}. Same call here?"
+        )
+        if responder.confirm(prompt):
+            return CheckpointOutcome(
+                decision_type=decision.decision_type,
+                chosen=held.chosen,
+                rationale="",
+                band="auto",
+                deferred=False,
+                sealed=True,  # under the person's key, proved by the kernel
+                memory_available=True,
+                match_confidence=1.0,
+                matched_band="auto",
+                record=f"sealed {held.chosen!r} ({held.subject}), confirmed",
+                record_subject=held.subject,
+            )
+        note = f"sealed {held.chosen!r}, maker said not this"
+        said_not_this = True
+        reopen_when = _ask_reopen_when(responder, held.chosen, decision.decision_type)
+    chosen, rationale, deferred = _full_socratic(decision, responder)
+    engagement, rubber_stamp = _engagement_fields(rationale, deferred, decision.surface)
+    outcome = CheckpointOutcome(
+        decision_type=decision.decision_type,
+        chosen=chosen,
+        rationale=rationale,
+        band="socratic",
+        deferred=deferred,
+        sealed=False,  # proposed; the seal is the person's, and comes later
+        memory_available=True,
+        engagement=engagement,
+        rubber_stamp=rubber_stamp,
+        match_confidence=1.0 if said_not_this else None,
+        matched_band="auto" if said_not_this else None,
+        reopen_when=reopen_when,
+    )
+    return _propose_to_record(record, note, decision, outcome, kept)
 
 
 def _propose_to_record(
-    record: "willow_record.RecordLookup | None",
+    record: "willow_record.RecordLookup",
     note: str,
     decision: Decision,
     outcome: CheckpointOutcome,
+    kept: dict | None = None,
 ) -> CheckpointOutcome:
-    """Every answer the maker gave or confirmed, onto the person's record as
-    one proposal under the decision's words, waiting on their seal. The
-    engine's memory keeps its own row either way; the record is where the
-    person's key is."""
-    if record is None:
-        return dataclasses.replace(outcome, record=note)
+    """The maker's answer onto the person's record as one proposal under the
+    decision's words, waiting on their seal, with what was shown beside it:
+    the pick and what it is scored against are one row."""
     why = outcome.rationale
     if outcome.deferred and not why:
         why = "deferred: the maker reviewed the tradeoff and handed the call to the Forge"
+    row = dict(kept or {})
+    offered = row.get("offered")
+    if isinstance(offered, list):
+        row["rank"] = offered.index(outcome.chosen) + 1 if outcome.chosen in offered else None
+    if outcome.deferred:  # no pick was made: kept, and never scored as one
+        row["deferred"] = True
+    if outcome.reopen_when:
+        row["reopen_when"] = outcome.reopen_when
     try:
         subject = record.propose(
             decision.decision_type,
@@ -690,6 +748,7 @@ def _propose_to_record(
             over=[o.label for o in decision.options if o.label != outcome.chosen],
             why=why,
             surface=decision.surface,
+            **({"kept": row} if row else {}),
         )
     except willow_record.WillowRecordError as err:
         raise CheckpointError(f"the record refused the proposal: {err}") from err

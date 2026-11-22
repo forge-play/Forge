@@ -5,10 +5,8 @@
 
 ### Added
 
-* **checkpoint:** an escape asks what would reopen the no ([f98bff4](https://github.com/forge-play/Forge/commit/f98bff4418c230a875094b31cd980050796da37c))
-* **checkpoint:** with a record wired, the record is the only memory ([b8c1176](https://github.com/forge-play/Forge/commit/b8c1176ea9be0027b0eb69410c9924a5833f691e))
 * **checkpoint:** with a record wired, the record is the only memory ([b36015f](https://github.com/forge-play/Forge/commit/b36015ff3c9ee71392ac73754440410482d4b7b3))
-* reject_match keeps the condition that would reopen a no ([458ff5d](https://github.com/forge-play/Forge/commit/458ff5dc3c858a8146ca5cef9e2211875b34a460))
+* **checkpoint:** an escape asks what would reopen the no ([f98bff4](https://github.com/forge-play/Forge/commit/f98bff4418c230a875094b31cd980050796da37c))
 * reject_match keeps the condition that would reopen a no ([fa789ce](https://github.com/forge-play/Forge/commit/fa789ce3c57864a9b6077bf3b13f77c418b1b3c3))
 
 ## [0.11.0](https://github.com/forge-play/Forge/compare/v0.10.0...v0.11.0) (2026-11-20)

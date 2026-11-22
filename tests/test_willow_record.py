@@ -156,6 +156,20 @@ def test_propose_names_the_word_said_when_given_one_and_says_no_reason(fake):
     assert prop["claim"].endswith("no reason given")
 
 
+def test_what_is_kept_rides_on_the_row_and_replaces_no_field_of_the_decision(fake):
+    fake.propose(
+        "willow-email",
+        "mail",
+        over=["apple-mail"],
+        why="mbox",
+        kept={"offered": ["apple-mail", "mail"], "confidence": 0.8, "rank": 2, "chose": "not this"},
+    )
+    prop = json.loads((fake.box / "proposed.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    data = json.loads(prop["data"])
+    assert data["offered"] == ["apple-mail", "mail"] and data["confidence"] == 0.8
+    assert data["rank"] == 2 and data["chose"] == "mail", "the pick is the pick, whatever was kept"
+
+
 def test_a_proposal_the_door_turns_back_is_raised(fake):
     with pytest.raises(WillowRecordError, match="turned the proposal back"):
         fake.propose("major", "web", over=[], why="bad")

@@ -86,6 +86,19 @@ class ScriptedResponder:
         return self._choose_answers.pop(0)
 
 
+class ReopeningResponder(ScriptedResponder):
+    """A maker who can also be asked what would reopen a no."""
+
+    def __init__(self, reopen_answer, **kw):
+        super().__init__(**kw)
+        self._reopen_answer = reopen_answer
+        self.reopen_prompts: list[str] = []
+
+    def reopen_when(self, prompt: str) -> str:
+        self.reopen_prompts.append(prompt)
+        return self._reopen_answer
+
+
 # ── the auth-flow fixture the design doc's own loose-recognition example uses ──
 #
 # Same decision_type/surface/answer the design doc's "Decisions settled
@@ -1056,3 +1069,98 @@ def test_a_rejected_match_is_distinguishable_from_a_fresh_decision(tmp_path):
     assert fresh.band == "socratic" and fresh.matched_band is None, (
         "nothing was proposed, so nothing was rejected"
     )
+
+
+# ── a no kept with what would reopen it ──────────────────────────────────────
+
+
+def _spy_on_reject_match(monkeypatch):
+    calls = []
+    original = checkpoint.checkpoint_memory.CheckpointMemory.reject_match
+
+    def _spy(self, *a, **kw):
+        calls.append((a, kw, original(self, *a, **kw)))
+        return calls[-1][2]
+
+    monkeypatch.setattr(checkpoint.checkpoint_memory.CheckpointMemory, "reject_match", _spy)
+    return calls
+
+
+_JWT = ChoiceResult(chosen_label="JWT bearer token", rationale="a public API client, no browser")
+
+
+@_needs_nestor
+@pytest.mark.parametrize(
+    "surface, band", [(REWORDED_SURFACE, "recognize"), (ORIGINAL_SURFACE, "auto")]
+)
+def test_an_escape_asks_what_would_reopen_the_no_and_keeps_the_answer(
+    tmp_path, monkeypatch, surface, band
+):
+    root = tmp_path / "checkpoints"
+    _seal_original_auth_decision(root)
+    calls = _spy_on_reject_match(monkeypatch)
+    responder = ReopeningResponder(
+        "  the form moves behind the company login  ",
+        confirm_answers=[False],
+        choose_answers=[_JWT],
+    )
+    decision = Decision(decision_type=DECISION_TYPE, surface=surface, options=AUTH_OPTIONS)
+
+    outcome = checkpoint.run_checkpoint(
+        decision, builder_id=BUILDER_A, responder=responder, root=root
+    )
+
+    # Asked once, after the no and before the full Socratic, naming the prior.
+    assert len(responder.reopen_prompts) == 1
+    assert CHOSEN_ANSWER in responder.reopen_prompts[0]
+    assert outcome.matched_band == band and outcome.band == "socratic"
+    # The condition reached Nestor's rejection, trimmed, and the outcome says it.
+    (_, kwargs, rejection) = calls[0]
+    assert kwargs["reopen_when"] == "the form moves behind the company login"
+    assert rejection["reopen_when"] == "the form moves behind the company login"
+    assert outcome.reopen_when == "the form moves behind the company login"
+
+
+@_needs_nestor
+@pytest.mark.parametrize("answer", ["", "   ", None])
+def test_a_blank_answer_keeps_the_no_permanent(tmp_path, monkeypatch, answer):
+    root = tmp_path / "checkpoints"
+    _seal_original_auth_decision(root)
+    calls = _spy_on_reject_match(monkeypatch)
+    responder = ReopeningResponder(answer, confirm_answers=[False], choose_answers=[_JWT])
+    decision = Decision(decision_type=DECISION_TYPE, surface=REWORDED_SURFACE, options=AUTH_OPTIONS)
+
+    outcome = checkpoint.run_checkpoint(
+        decision, builder_id=BUILDER_A, responder=responder, root=root
+    )
+
+    assert calls[0][2]["reopen_when"] == "" and outcome.reopen_when == ""
+
+
+@_needs_nestor
+def test_a_responder_that_cannot_be_asked_gives_a_permanent_no_as_before(tmp_path, monkeypatch):
+    root = tmp_path / "checkpoints"
+    _seal_original_auth_decision(root)
+    calls = _spy_on_reject_match(monkeypatch)
+    responder = ScriptedResponder(confirm_answers=[False], choose_answers=[_JWT])
+    decision = Decision(decision_type=DECISION_TYPE, surface=REWORDED_SURFACE, options=AUTH_OPTIONS)
+
+    outcome = checkpoint.run_checkpoint(
+        decision, builder_id=BUILDER_A, responder=responder, root=root
+    )
+
+    assert calls[0][2]["reopen_when"] == "" and outcome.reopen_when == ""
+
+
+@_needs_nestor
+def test_a_confirm_never_asks_what_would_reopen_it(tmp_path):
+    root = tmp_path / "checkpoints"
+    _seal_original_auth_decision(root)
+    responder = ReopeningResponder("unused", confirm_answers=[True])
+    decision = Decision(decision_type=DECISION_TYPE, surface=ORIGINAL_SURFACE, options=AUTH_OPTIONS)
+
+    outcome = checkpoint.run_checkpoint(
+        decision, builder_id=BUILDER_A, responder=responder, root=root
+    )
+
+    assert responder.reopen_prompts == [] and outcome.reopen_when == ""

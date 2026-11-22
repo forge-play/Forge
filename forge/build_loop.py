@@ -35,12 +35,20 @@ reasons are in the error); a plan that still holds a fork after resolution is
 a bug and is refused rather than returned; a memory answer that names no
 option on offer is refused rather than guessed at.
 
-With `record` (the-join.md, thread 3), every fork goes through the checkpoint
-with the person's own willow record wired: a fork they sealed before is the
-auto band with no ask, and every answer given here is proposed onto the
-record to wait on their seal. A plan written by Willow's `forge` add-on
-(`suggest --plan`) names its forks `willow-<word>`, the same key the add-on
-proposes under, so the two sides read each other's decisions.
+With `record` (the-join.md, thread 3), the person's own willow record is the
+only memory and the only ledger: a fork they sealed before is the auto band
+with no ask, and every answer given here is proposed onto the record to wait
+on their seal. Nothing is written to the calibration ledger. What the ledger
+would have held is on the proposal's own row instead, in the shape Willow's
+`forge` add-on writes: `offered` (the proposer's order), `recommended` and
+`confidence`, `blind` (with the order `shown` and the recommendation kept
+unsaid as `proposer_first`), the pick's `rank`, and `deferred` when no pick
+was made. A row the person seals is then a scored outcome with nothing to
+join, and one they never seal is never scored. A fork answered from the
+record proposes nothing: it is their earlier seal agreeing with itself. A
+plan written by the add-on (`suggest --plan`) names its forks
+`willow-<word>`, the same key the add-on proposes under, so the two sides
+read each other's decisions.
 """
 
 from __future__ import annotations
@@ -78,7 +86,7 @@ class Resolved:
     outcomes: list[checkpoint.CheckpointOutcome] = field(default_factory=list)
     predictions: list[dict] = field(
         default_factory=list
-    )  # {claim, confidence, outcome | already_settled}
+    )  # {claim, confidence, outcome | already_settled}, or with a record {..., on_record}
     chosen: dict[str, str] = field(default_factory=dict)  # decision_type -> chosen label
 
     def to_dict(self) -> dict:
@@ -130,6 +138,43 @@ def _predict(builder_id: str, x: decision_extract.Extracted, root: Path) -> dict
     }
 
 
+def _kept(plan: PlanDoc, x: decision_extract.Extracted) -> dict | None:
+    """What a fork showed and what its proposer held, for the proposal's row.
+    None for a decision that is no fork (the entry's major, a conflict)."""
+    if x.origin != ORIGIN_FORK or x.index is None:
+        return None
+    fork = plan.entries[x.index]
+    assert isinstance(fork, Fork)
+    kept: dict = {
+        "kind": "fork",
+        "offered": list(fork.labels),
+        "recommended": None if fork.blind else fork.recommended,
+        "confidence": fork.confidence,
+        "blind": fork.blind,
+    }
+    if fork.blind:  # nothing was recommended; what was held is kept under its own name
+        kept["shown"] = [o.label for o in fork.shown]
+        kept["proposer_first"] = fork.recommended
+    return kept
+
+
+def _on_record(x: decision_extract.Extracted, outcome: checkpoint.CheckpointOutcome) -> dict | None:
+    """The prediction as the record holds it, for `Resolved.predictions`: a
+    scored fork the maker was asked, by the proposal it rides on. None for a
+    fork with no confidence, or one the record answered."""
+    if x.recommended is None or x.confidence is None or outcome.band == "auto":
+        return None
+    pred = {
+        "claim": f"{x.decision.decision_type}: maker picks {x.recommended}",
+        "confidence": x.confidence,
+        "blind": x.blind,
+        "on_record": outcome.record_subject,
+    }
+    if outcome.deferred:
+        pred["void"] = DEFERRED
+    return pred
+
+
 def _settle(
     builder_id: str,
     pred: dict | None,
@@ -145,8 +190,8 @@ def _settle(
 
     A deferred answer is voided, not settled: the maker picked nothing, so
     there is no outcome to hold the prediction to (see the module docstring)."""
-    if pred is None or pred.get("already_settled"):
-        return
+    if pred is None or pred.get("already_settled") or "on_record" in pred:
+        return  # nothing to settle, or it settles when the person seals its row
     if outcome is not None and outcome.deferred:
         rec = calibration_ledger.resolve_prediction(
             builder_id, pred["prediction_id"], None, decision=outcome, root=root,
@@ -185,7 +230,8 @@ def resolve(
     drop: set[int] = set()
 
     for x in ex.items:
-        pred = _predict(builder_id, x, root)
+        # with a record, the proposal's row is the prediction; no second ledger
+        pred = None if record is not None else _predict(builder_id, x, root)
         outcome = checkpoint.run_checkpoint(
             x.decision,
             builder_id=builder_id,
@@ -193,6 +239,7 @@ def resolve(
             root=root,
             recognize_threshold=recognize_threshold,
             record=record,
+            kept=_kept(plan, x) if record is not None else None,
         )
         out.outcomes.append(outcome)
         label = label_from_chosen(
@@ -204,6 +251,8 @@ def resolve(
                 f"{[o.label for o in x.decision.options]} — refusing to guess"
             )
         out.chosen[x.decision.decision_type] = label
+        if record is not None:
+            pred = _on_record(x, outcome)
         _settle(builder_id, pred, label == x.recommended, root, outcome)
         if pred is not None:
             out.predictions.append(pred)
@@ -338,20 +387,30 @@ def main(argv: list[str] | None = None) -> int:
     ) as e:
         print(f"REFUSED: {e}", file=sys.stderr)
         return 2
-    card = calibration_ledger.scorecard(a.builder_id, root=Path(a.root))
+    # with a record there is no ledger of the engine's own to read a card from
+    card = None if record is not None else calibration_ledger.scorecard(a.builder_id, root=Path(a.root))  # fmt: skip
     if a.json:
-        print(json.dumps({**res.to_dict(), "scorecard": card}, indent=2, default=str))
+        doc = res.to_dict() if card is None else {**res.to_dict(), "scorecard": card}
+        print(json.dumps(doc, indent=2, default=str))
     else:
         for o in res.outcomes:
             line = f"{o.decision_type:24} band {o.band:9} → {res.chosen[o.decision_type]}"
             print(line + (f"  record: {o.record}" if record is not None else ""))
         for pr in res.predictions:
+            if "on_record" in pr:
+                said = "voided, no pick" if pr.get("void") else "scored once you seal it"
+                print(f"  prediction {pr['claim']!r} @ {pr['confidence']:.2f} → on {pr['on_record']}, {said}")  # fmt: skip
+                continue
             print(
                 f"  prediction {pr['claim']!r} @ {pr['confidence']:.2f} → "
                 f"{'already settled' if pr.get('already_settled') else pr.get('outcome')}"
             )
         print(f"resolved plan: {len(res.plan.entries)} entries, no forks")
-        print(f"scorecard: {card['resolved']} resolved, {card['pending']} pending")
+        if card is not None:
+            print(f"scorecard: {card['resolved']} resolved, {card['pending']} pending")
+        else:
+            waiting = sum(1 for o in res.outcomes if o.record_subject and not o.sealed)
+            print(f"record: {waiting} proposed, waiting on your seal")
     return 0
 
 

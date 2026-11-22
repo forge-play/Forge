@@ -29,6 +29,12 @@ Three questions the Forge puts to a record, the `RecordLookup` protocol:
                                 in the same shape Willow's `forge` add-on
                                 writes. Returns the proposal's subject. The
                                 engine proposes; it never seals (CONST-0-2).
+                                `kept` is what the fork showed and what its
+                                proposer held (`offered`, `recommended`,
+                                `confidence`, `blind`, `rank`, ...), on the
+                                same row as the pick, so that once the person
+                                seals it the row is a scored outcome with
+                                nothing to join.
 
 Every question is a row on the person's record, the engine's included: that
 is the kernel's rule ("every step is written to a tamper-evident log"), not a
@@ -116,6 +122,7 @@ class RecordLookup(Protocol):
         why: str,
         surface: str = "",
         word: str | None = None,
+        kept: dict | None = None,
     ) -> str: ...
 
 
@@ -177,13 +184,16 @@ class WillowRecord:
         why: str,
         surface: str = "",
         word: str | None = None,
+        kept: dict | None = None,
     ) -> str:
         """One proposal under `question(dt)`: the bite first, so the door has
         a question to hold it to, then the line. Returns the subject the
         person will seal or decline. The line's shape is the add-on's, so
-        either side reads what the other wrote."""
+        either side reads what the other wrote. `kept` rides on the same row
+        and never replaces a field named here."""
         self._run("bite", question(dt))
         data = {
+            **(kept or {}),
             "word": word if word is not None else dt,
             "decision_type": dt,
             "chose": chosen,

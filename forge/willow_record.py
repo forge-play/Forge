@@ -65,17 +65,26 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 __all__ = [
+    "Deferred",
     "Sealed",
     "RecordLookup",
     "WillowRecord",
     "WillowRecordError",
     "decision_type",
     "question",
+    "not_now_question",
     "DECISION_PATH",
+    "NOT_NOW",
+    "NOT_NOW_PATH",
 ]
 
 #: where a decision is proposed, inside the box's `written/`
 DECISION_PATH = "forge/decisions/{}.json"
+#: what a fork left for later says it chose, and where it is proposed: not
+#: deciding is a decision, kept under its own question so the fork's own stays
+#: open for the pick to come
+NOT_NOW = "not-now"
+NOT_NOW_PATH = "forge/not-now/{}.json"
 
 
 class WillowRecordError(Exception):
@@ -94,12 +103,30 @@ def question(decision_type: str) -> str:
     return f"forge decision {decision_type}"
 
 
+def not_now_question(decision_type: str) -> str:
+    """The words a fork left for later is proposed and asked under: never the
+    decision's own, so sealing a not-now leaves the decision unanswered."""
+    return f"forge not now {decision_type}"
+
+
 @dataclass(frozen=True)
 class Sealed:
     decision_type: str
     chosen: str
     word: str
     subject: str  # the proposal the seal names, `proposal:<sha256>`
+    #: the other picks, when the person took more than one at this fork:
+    #: `chosen` is the first of them, and these the rest, in their order
+    also: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class Deferred:
+    """A fork the person sealed as not now: left undecided on purpose."""
+
+    decision_type: str
+    why: str
+    subject: str
 
 
 @runtime_checkable
@@ -169,7 +196,26 @@ class WillowRecord:
             ) from e
         if not isinstance(chosen, str) or not isinstance(word, str):
             raise WillowRecordError(f"the sealed answer for {question(dt)!r} is not a decision")
-        return Sealed(decision_type=dt, chosen=chosen, word=word, subject=str(doc.get("by", "")))
+        also = data.get("also") or []
+        also = tuple(n for n in also if isinstance(n, str)) if isinstance(also, list) else ()
+        return Sealed(decision_type=dt, chosen=chosen, word=word,
+                      subject=str(doc.get("by", "")), also=also)  # fmt: skip
+
+    def has_deferred(self, dt: str) -> Deferred | None:
+        """The not-now the person sealed for this fork, else None."""
+        doc = self.ask(not_now_question(dt))
+        if doc is None:
+            return None
+        try:
+            data = json.loads(doc.get("answer", ""))
+            chosen = data["chose"]
+        except (ValueError, KeyError, TypeError) as e:
+            raise WillowRecordError(
+                f"the sealed answer for {not_now_question(dt)!r} is not a not-now: {e}"
+            ) from e
+        if chosen != NOT_NOW:
+            raise WillowRecordError(f"the sealed answer for {not_now_question(dt)!r} is not a not-now")
+        return Deferred(decision_type=dt, why=str(data.get("why", "")), subject=str(doc.get("by", "")))
 
     def stack_for(self, sentence: str) -> str | None:
         doc = self.ask(sentence)
@@ -185,12 +231,15 @@ class WillowRecord:
         surface: str = "",
         word: str | None = None,
         kept: dict | None = None,
+        also: list[str] | None = None,
     ) -> str:
         """One proposal under `question(dt)`: the bite first, so the door has
         a question to hold it to, then the line. Returns the subject the
         person will seal or decline. The line's shape is the add-on's, so
         either side reads what the other wrote. `kept` rides on the same row
-        and never replaces a field named here."""
+        and never replaces a field named here. `also` is the other picks
+        when the person took more than one at this fork; said only then, so
+        one pick reads as it always has."""
         self._run("bite", question(dt))
         data = {
             **(kept or {}),
@@ -201,12 +250,48 @@ class WillowRecord:
             "why": why,
             "surface": surface,
         }
-        prop = {
+        taken = [chosen]
+        if also:
+            data["also"] = [n for n in also if n != chosen]
+            taken += data["also"]
+        return self._proposed({
             "path": DECISION_PATH.format(dt),
             "data": json.dumps(data, sort_keys=True, ensure_ascii=False),
             "cites": [],
-            "claim": f"for {dt!r}: {chosen} over {', '.join(over) or 'nothing'}; {why or 'no reason given'}",
+            "claim": f"for {dt!r}: {' and '.join(taken)} over {', '.join(over) or 'nothing'}; {why or 'no reason given'}",
+        })  # fmt: skip
+
+    def propose_not_now(
+        self,
+        dt: str,
+        *,
+        why: str = "",
+        word: str | None = None,
+        shown: list[str] | None = None,
+        kept: dict | None = None,
+    ) -> str:
+        """A fork left for later, as its own proposal under
+        `not_now_question(dt)`: sealed, it says the person chose not to decide
+        yet, and the fork's own question stays open. `shown` is what they were
+        shown, in the order they saw it. Returns the subject."""
+        self._run("bite", not_now_question(dt))
+        data = {
+            **(kept or {}),
+            "word": word if word is not None else dt,
+            "decision_type": dt,
+            "chose": NOT_NOW,
+            "why": why,
+            "shown": list(shown or []),
         }
+        return self._proposed({
+            "path": NOT_NOW_PATH.format(dt),
+            "data": json.dumps(data, sort_keys=True, ensure_ascii=False),
+            "cites": [],
+            "claim": f"for {dt!r}: not now; {why or 'no reason given'}",
+        })  # fmt: skip
+
+    def _proposed(self, prop: dict) -> str:
+        """One line through the door; the subject it passed under."""
         with tempfile.TemporaryDirectory() as tmp:
             f = Path(tmp) / "proposal.jsonl"
             f.write_text(json.dumps(prop, ensure_ascii=False) + "\n", encoding="utf-8")

@@ -213,3 +213,62 @@ def test_against_a_real_kernel_a_seal_is_served_and_a_forgery_is_not(tmp_path):
     pf.write_text(pf.read_text().replace("simpler", "simplest"))
     assert rec.has_sealed(dt).chosen == "apple-mail", "the first no longer stands; the second does"
     assert k("verify", "--box", str(box)).returncode == 42, "and verify says a sealed file drifted"
+
+
+# ── a fork left for later, and a fork settled with more than one pick ─────────
+
+
+def test_several_picks_are_one_decision_and_read_back_in_order(fake):
+    dt = "willow-feeds"
+    fake.propose(dt, "rss", over=["opml"], why="both", word="feeds", also=["mastodon", "rss"])
+    line = json.loads((fake.box / "proposed.jsonl").read_text().splitlines()[-1])
+    data = json.loads(line["data"])
+    assert data["chose"] == "rss" and data["also"] == ["mastodon"]  # the first not said twice
+    assert line["claim"].startswith("for 'willow-feeds': rss and mastodon over opml")
+    answers = json.loads((fake.box / "answers.json").read_text())
+    answers[willow_record.question(dt)] = line["data"]
+    (fake.box / "answers.json").write_text(json.dumps(answers))
+    got = fake.has_sealed(dt)
+    assert (got.chosen, got.also) == ("rss", ("mastodon",))
+
+
+def test_one_pick_reads_and_is_written_as_it_always_was(fake):
+    fake.propose("willow-one", "mail", over=["eml"], why="", word="one")
+    line = json.loads((fake.box / "proposed.jsonl").read_text().splitlines()[-1])
+    assert "also" not in json.loads(line["data"])
+    assert line["claim"] == "for 'willow-one': mail over eml; no reason given"
+    assert fake.has_sealed("willow-email").also == ()
+
+
+def test_not_now_is_its_own_proposal_under_its_own_question(fake):
+    subject = fake.propose_not_now("willow-email", why="after the move", word="email",
+                                   shown=["mail", "apple-mail"])  # fmt: skip
+    assert subject.startswith("proposal:")
+    line = json.loads((fake.box / "proposed.jsonl").read_text().splitlines()[-1])
+    data = json.loads(line["data"])
+    assert line["path"] == "forge/not-now/willow-email.json"
+    assert data["chose"] == willow_record.NOT_NOW and data["shown"] == ["mail", "apple-mail"]
+    asked = (fake.box / "asked.log").read_text().splitlines()
+    assert asked[-1] == willow_record.not_now_question("willow-email")
+    assert willow_record.not_now_question("willow-email") != willow_record.question("willow-email")
+
+
+def test_a_sealed_not_now_is_deferred_and_leaves_the_decision_open(fake):
+    dt = "willow-due"
+    assert fake.has_deferred(dt) is None
+    answers = json.loads((fake.box / "answers.json").read_text())
+    answers[willow_record.not_now_question(dt)] = json.dumps(
+        {"word": "due", "decision_type": dt, "chose": "not-now", "why": "later"}
+    )
+    (fake.box / "answers.json").write_text(json.dumps(answers))
+    got = fake.has_deferred(dt)
+    assert got.why == "later" and got.subject.startswith("proposal:")
+    assert fake.has_sealed(dt) is None  # the decision itself is still unanswered
+
+
+def test_a_sealed_answer_under_not_nows_words_that_isnt_one_is_refused(fake):
+    answers = json.loads((fake.box / "answers.json").read_text())
+    answers[willow_record.not_now_question("willow-x")] = json.dumps({"chose": "mail"})
+    (fake.box / "answers.json").write_text(json.dumps(answers))
+    with pytest.raises(WillowRecordError):
+        fake.has_deferred("willow-x")

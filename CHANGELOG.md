@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.0](https://github.com/forge-play/Forge/compare/v0.12.0...v0.13.0) (2026-11-26)
+
+
+### Added
+
+* **willow_record:** a fork may be left for later or settled with several picks; forks.py for blind forks and stated confidence ([a12021e](https://github.com/forge-play/Forge/commit/a12021ed16876447db4b912a1f115445ad94b0f3))
+* **willow_record:** a fork may be left for later or settled with several picks; forks.py holds how a fork is asked and scored ([55f93bf](https://github.com/forge-play/Forge/commit/55f93bf1333dced0f322770f3e186ecb9fd08379))
+
 ## [0.12.0](https://github.com/forge-play/Forge/compare/v0.11.0...v0.12.0) (2026-11-22)
 
 

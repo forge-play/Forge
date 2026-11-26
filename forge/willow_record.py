@@ -214,8 +214,12 @@ class WillowRecord:
                 f"the sealed answer for {not_now_question(dt)!r} is not a not-now: {e}"
             ) from e
         if chosen != NOT_NOW:
-            raise WillowRecordError(f"the sealed answer for {not_now_question(dt)!r} is not a not-now")
-        return Deferred(decision_type=dt, why=str(data.get("why", "")), subject=str(doc.get("by", "")))
+            raise WillowRecordError(
+                f"the sealed answer for {not_now_question(dt)!r} is not a not-now"
+            )
+        return Deferred(
+            decision_type=dt, why=str(data.get("why", "")), subject=str(doc.get("by", ""))
+        )
 
     def stack_for(self, sentence: str) -> str | None:
         doc = self.ask(sentence)
